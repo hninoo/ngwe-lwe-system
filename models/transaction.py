@@ -1,0 +1,23 @@
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+
+@dataclass
+class Transaction:
+    id: Optional[int] = None
+    transaction_type: Optional[str] = None  # 'deposit' | 'withdraw' | 'transfer' | 'exchange'
+    account_id: Optional[int] = None
+    to_account_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    amount: Optional[float] = None
+    commission_amount: Optional[float] = None
+    customer_fee: Optional[float] = None
+    balance_change: Optional[float] = None
+    currency: Optional[str] = None
+    exchange_rate: Optional[float] = None
+    screenshot_path: Optional[str] = None
+    note: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
