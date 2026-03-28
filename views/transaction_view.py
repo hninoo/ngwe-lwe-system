@@ -224,6 +224,11 @@ class TransactionView(QMainWindow):
         self._account_combo.currentIndexChanged.connect(self._on_account_changed)
         layout.addWidget(self._account_combo)
 
+        # Account balance hint
+        self._balance_hint = QLabel("")
+        self._balance_hint.setVisible(False)
+        layout.addWidget(self._balance_hint)
+
         # To Account (transfer only)
         self._to_account_label = self._field_label("To Account")
         layout.addWidget(self._to_account_label)
@@ -357,12 +362,14 @@ class TransactionView(QMainWindow):
     def _on_amount_changed(self) -> None:
         try:
             self._recalculate()
+            self._update_balance_hint()
         except Exception:
             pass
 
     def _on_account_changed(self, index: int) -> None:
         try:
             self._recalculate()
+            self._update_balance_hint()
         except Exception:
             pass
 
@@ -415,7 +422,7 @@ class TransactionView(QMainWindow):
             self._account_combo.clear()
             self._to_account_combo.clear()
             for a in self._accounts_cache:
-                label = f"{a.get('account_name', '')} — {a.get('phone_number', '')} [{a.get('account_type', '')}]"
+                label = self._account_label(a)
                 self._account_combo.addItem(label)
                 self._to_account_combo.addItem(label)
         except Exception:
@@ -517,6 +524,23 @@ class TransactionView(QMainWindow):
             if to_idx == from_idx:
                 return "From နှင့် To Account တူလို့မရပါ"
 
+        return self._validate_balance()
+
+    def _validate_balance(self) -> Optional[str]:
+        account = self._get_selected_account()
+        if account is None:
+            return None
+
+        action = self._selected_action
+        if action == "withdraw":
+            return None
+
+        balance = self._get_fresh_balance(account["id"])
+        amount = self._parse_amount()
+        projected = self._calc_projected_balance(balance, amount)
+
+        if projected < 0:
+            return f"Balance မလုံလောက်ပါ (လက်ရှိ: {balance:,.0f} MMK)"
         return None
 
     def _clear_form(self) -> None:
@@ -598,6 +622,64 @@ class TransactionView(QMainWindow):
             f"QPushButton:hover {{ background: {BORDER_COLOR}; }}"
         )
         self._txn_table.setCellWidget(row, 7, btn)
+
+    # ── Account balance hint ──
+
+    def _get_fresh_balance(self, account_id: int) -> float:
+        try:
+            acc = self._api.get_account(account_id)
+            return float(acc.get("balance", 0))
+        except Exception:
+            return 0.0
+
+    def _calc_projected_balance(self, balance: float, amount: float) -> float:
+        account = self._get_selected_account()
+        if account is None or amount <= 0:
+            return balance
+
+        commission = self._calc_commission(account, amount)
+        change = self._calc_balance_change(account, amount, commission)
+        action = self._selected_action
+
+        if action == "deposit":
+            return balance + change
+        elif action in ("withdraw", "exchange"):
+            return balance - change
+        elif action == "transfer":
+            return balance - change
+        return balance
+
+    def _update_balance_hint(self) -> None:
+        account = self._get_selected_account()
+        if account is None:
+            self._balance_hint.setVisible(False)
+            return
+
+        balance = self._get_fresh_balance(account["id"])
+        amount = self._parse_amount()
+
+        if amount <= 0:
+            self._balance_hint.setText(f"လက်ရှိ Balance: {balance:,.0f} MMK")
+            bal_color = ACCENT_GREEN if balance >= 0 else ACCENT_RED
+            self._balance_hint.setStyleSheet(
+                f"color: {bal_color}; font-size: 12px; font-style: italic; padding-left: 2px;"
+            )
+        else:
+            projected = self._calc_projected_balance(balance, amount)
+            proj_color = ACCENT_GREEN if projected >= 0 else ACCENT_RED
+            self._balance_hint.setText(
+                f"လက်ရှိ: {balance:,.0f} → ငွေလွှဲပြီး: {projected:,.0f} MMK"
+            )
+            self._balance_hint.setStyleSheet(
+                f"color: {proj_color}; font-size: 12px; font-style: italic; padding-left: 2px;"
+            )
+
+        self._balance_hint.setVisible(True)
+
+    def _account_label(self, account: dict) -> str:
+        name = account.get("account_name", "")
+        phone = account.get("phone_number", "")
+        return f"{name} | {phone}"
 
     # ── Helpers ──
 
