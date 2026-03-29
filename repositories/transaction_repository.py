@@ -26,6 +26,7 @@ class TransactionRepository(BaseRepository):
             balance_change=float(row["balance_change"]),
             currency=row["currency"],
             exchange_rate=float(row["exchange_rate"]) if row.get("exchange_rate") else None,
+            fee_account_id=row.get("fee_account_id"),
             screenshot_path=row.get("screenshot_path"),
             note=row.get("note"),
             created_by=row["created_by"],

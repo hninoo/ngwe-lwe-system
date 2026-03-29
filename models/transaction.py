@@ -17,6 +17,7 @@ class Transaction:
     balance_change: Optional[float] = None
     currency: Optional[str] = None
     exchange_rate: Optional[float] = None
+    fee_account_id: Optional[int] = None
     screenshot_path: Optional[str] = None
     note: Optional[str] = None
     created_by: Optional[int] = None

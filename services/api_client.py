@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+REQUEST_TIMEOUT = 10  # seconds
 
 
 class ApiClient:
@@ -33,17 +34,17 @@ class ApiClient:
         return {"Authorization": f"Bearer {self._token}"}
 
     def _get(self, path: str, params: Optional[dict] = None) -> Any:
-        resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), params=params)
+        resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), params=params, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
 
     def _post(self, path: str, data: Optional[dict] = None) -> Any:
-        resp = requests.post(f"{BASE_URL}{path}", headers=self._headers(), json=data)
+        resp = requests.post(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
 
     def _patch(self, path: str, data: Optional[dict] = None) -> Any:
-        resp = requests.patch(f"{BASE_URL}{path}", headers=self._headers(), json=data)
+        resp = requests.patch(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
 
@@ -83,7 +84,9 @@ class ApiClient:
         amount: float,
         customer_name: str,
         customer_phone: str,
-        screenshot_path: str,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
         return self._post("/transactions/deposit", {
@@ -92,6 +95,8 @@ class ApiClient:
             "customer_name": customer_name,
             "customer_phone": customer_phone,
             "screenshot_path": screenshot_path,
+            "customer_fee": customer_fee,
+            "fee_account_id": fee_account_id,
             "note": note,
         })
 
@@ -101,7 +106,9 @@ class ApiClient:
         amount: float,
         customer_name: str,
         customer_phone: str,
-        screenshot_path: str,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
         return self._post("/transactions/withdraw", {
@@ -110,6 +117,8 @@ class ApiClient:
             "customer_name": customer_name,
             "customer_phone": customer_phone,
             "screenshot_path": screenshot_path,
+            "customer_fee": customer_fee,
+            "fee_account_id": fee_account_id,
             "note": note,
         })
 
@@ -118,7 +127,9 @@ class ApiClient:
         from_account_id: int,
         to_account_id: int,
         amount: float,
-        screenshot_path: str,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
         return self._post("/transactions/transfer", {
@@ -126,6 +137,8 @@ class ApiClient:
             "to_account_id": to_account_id,
             "amount": amount,
             "screenshot_path": screenshot_path,
+            "customer_fee": customer_fee,
+            "fee_account_id": fee_account_id,
             "note": note,
         })
 
@@ -134,7 +147,9 @@ class ApiClient:
         account_id: int,
         amount: float,
         currency: str,
-        screenshot_path: str,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
         return self._post("/transactions/exchange", {
@@ -142,6 +157,8 @@ class ApiClient:
             "amount": amount,
             "currency": currency,
             "screenshot_path": screenshot_path,
+            "customer_fee": customer_fee,
+            "fee_account_id": fee_account_id,
             "note": note,
         })
 

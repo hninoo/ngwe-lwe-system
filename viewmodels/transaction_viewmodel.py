@@ -1,3 +1,4 @@
+import math
 from typing import Optional
 
 from models.account import Account
@@ -38,23 +39,38 @@ class TransactionViewModel:
             return 0.0
         return service.default_customer_fee or 0.0
 
+    @staticmethod
+    def round_fee(amount: float) -> int:
+        return math.ceil(amount / 50) * 50
+
+    def _update_fee_account(self, fee_account_id: Optional[int], fee: float) -> None:
+        if fee_account_id is None or fee <= 0:
+            return
+        acc = self._account_repo.get_by_id(fee_account_id)
+        if acc is None:
+            return
+        new_balance = (acc.balance or 0.0) + fee
+        self._account_repo.update_balance(fee_account_id, new_balance)
+
     def create_deposit(
         self,
         account_id: int,
         amount: float,
         customer_name: str,
         customer_phone: str,
-        screenshot_path: str,
         created_by: int,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount)
         balance_change = self._calc_balance_change(account, amount, commission)
-        customer_fee = self._get_customer_fee(account)
 
         new_balance = (account.balance or 0.0) + balance_change
         self._account_repo.update_balance(account_id, new_balance)
+        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "deposit",
@@ -66,6 +82,7 @@ class TransactionViewModel:
             "customer_fee": customer_fee,
             "balance_change": balance_change,
             "currency": "MMK",
+            "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
             "note": note,
             "created_by": created_by,
@@ -79,17 +96,19 @@ class TransactionViewModel:
         amount: float,
         customer_name: str,
         customer_phone: str,
-        screenshot_path: str,
         created_by: int,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount)
         balance_change = self._calc_balance_change(account, amount, commission)
-        customer_fee = self._get_customer_fee(account)
 
         new_balance = (account.balance or 0.0) - balance_change
         self._account_repo.update_balance(account_id, new_balance)
+        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "withdraw",
@@ -101,6 +120,7 @@ class TransactionViewModel:
             "customer_fee": customer_fee,
             "balance_change": -balance_change,
             "currency": "MMK",
+            "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
             "note": note,
             "created_by": created_by,
@@ -113,8 +133,10 @@ class TransactionViewModel:
         from_account_id: int,
         to_account_id: int,
         amount: float,
-        screenshot_path: str,
         created_by: int,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         from_account = self._account_repo.get_by_id(from_account_id)
@@ -127,6 +149,7 @@ class TransactionViewModel:
         to_account = self._account_repo.get_by_id(to_account_id)
         to_balance = (to_account.balance or 0.0) + amount
         self._account_repo.update_balance(to_account_id, to_balance)
+        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "transfer",
@@ -134,9 +157,10 @@ class TransactionViewModel:
             "to_account_id": to_account_id,
             "amount": amount,
             "commission_amount": commission,
-            "customer_fee": 0.0,
+            "customer_fee": customer_fee,
             "balance_change": -balance_change,
             "currency": "MMK",
+            "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
             "note": note,
             "created_by": created_by,
@@ -149,8 +173,10 @@ class TransactionViewModel:
         account_id: int,
         amount: float,
         currency: str,
-        screenshot_path: str,
         created_by: int,
+        screenshot_path: Optional[str] = None,
+        customer_fee: float = 0.0,
+        fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         rate = self._rate_repo.get_latest("MMK/THB")
@@ -168,16 +194,18 @@ class TransactionViewModel:
 
         new_balance = (account.balance or 0.0) + balance_change
         self._account_repo.update_balance(account_id, new_balance)
+        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "exchange",
             "account_id": account_id,
             "amount": amount,
             "commission_amount": commission,
-            "customer_fee": 0.0,
+            "customer_fee": customer_fee,
             "balance_change": balance_change,
             "currency": currency,
             "exchange_rate": exchange_rate,
+            "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
             "note": note,
             "created_by": created_by,

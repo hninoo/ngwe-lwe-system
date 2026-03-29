@@ -57,6 +57,7 @@ ACCENT_GREEN = "#a6e3a1"
 ACCENT_RED = "#f38ba8"
 ACCENT_YELLOW = "#f9e2af"
 ACCENT_MAUVE = "#cba6f7"
+ACCENT_TEAL = "#94e2d5"
 BORDER_COLOR = "#313244"
 BG_INPUT = "#313244"
 INPUT_BORDER = "#585b70"
@@ -119,6 +120,7 @@ class TransactionView(QMainWindow):
         self._selected_action: str = "deposit"
         self._screenshot_path: Optional[str] = None
         self._accounts_cache: list[dict] = []
+        self._all_accounts_cache: list[dict] = []
         self._services_cache: list[dict] = []
         self._init_ui()
         self._load_services()
@@ -236,13 +238,13 @@ class TransactionView(QMainWindow):
         layout.setSpacing(12)
 
         # Service dropdown
-        layout.addWidget(self._field_label("Service"))
+        layout.addWidget(self._field_label("Service", required=True))
         self._service_combo = QComboBox()
         self._service_combo.currentIndexChanged.connect(self._on_service_changed)
         layout.addWidget(self._service_combo)
 
         # Account dropdown
-        layout.addWidget(self._field_label("Account"))
+        layout.addWidget(self._field_label("Account", required=True))
         self._account_combo = QComboBox()
         self._account_combo.currentIndexChanged.connect(self._on_account_changed)
         layout.addWidget(self._account_combo)
@@ -253,13 +255,13 @@ class TransactionView(QMainWindow):
         layout.addWidget(self._balance_hint)
 
         # To Account (transfer only)
-        self._to_account_label = self._field_label("To Account")
+        self._to_account_label = self._field_label("To Account", required=True)
         layout.addWidget(self._to_account_label)
         self._to_account_combo = QComboBox()
         layout.addWidget(self._to_account_combo)
 
         # Customer Name + Phone row
-        self._customer_label = self._field_label("Customer Name / Phone")
+        self._customer_label = self._field_label("Customer Name / Phone", required=True)
         layout.addWidget(self._customer_label)
         cust_row = QHBoxLayout()
         self._customer_name = QLineEdit()
@@ -273,14 +275,14 @@ class TransactionView(QMainWindow):
         layout.addLayout(cust_row)
 
         # Currency (exchange only)
-        self._currency_label = self._field_label("Currency")
+        self._currency_label = self._field_label("Currency", required=True)
         layout.addWidget(self._currency_label)
         self._currency_combo = QComboBox()
         self._currency_combo.addItems(["MMK", "THB"])
         layout.addWidget(self._currency_combo)
 
         # Amount
-        layout.addWidget(self._field_label("Amount"))
+        layout.addWidget(self._field_label("Amount", required=True))
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
@@ -302,8 +304,21 @@ class TransactionView(QMainWindow):
         layout.addWidget(self._field_label("Customer Fee"))
         self._fee_input = QLineEdit()
         self._fee_input.setPlaceholderText("0")
-        self._fee_input.returnPressed.connect(lambda: self._note_input.setFocus())
+        self._fee_input.textChanged.connect(self._on_fee_changed)
+        self._fee_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
         layout.addWidget(self._fee_input)
+
+        # Fee rounding hint
+        self._fee_hint = QLabel("")
+        self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
+        self._fee_hint.setVisible(False)
+        layout.addWidget(self._fee_hint)
+
+        # Fee Account dropdown
+        layout.addWidget(self._field_label("Fee Account", required=True))
+        self._fee_account_combo = QComboBox()
+        self._fee_account_combo.addItem("— မရွေး —")
+        layout.addWidget(self._fee_account_combo)
 
         # Balance Change (read-only)
         layout.addWidget(self._field_label("Balance Change"))
@@ -360,8 +375,12 @@ class TransactionView(QMainWindow):
         self._update_form_visibility()
         return self._form_frame
 
-    def _field_label(self, text: str) -> QLabel:
-        label = QLabel(text)
+    def _field_label(self, text: str, required: bool = False) -> QLabel:
+        if required:
+            label = QLabel(f'{text} <span style="color: {ACCENT_RED};">*</span>')
+            label.setTextFormat(Qt.TextFormat.RichText)
+        else:
+            label = QLabel(text)
         label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; font-weight: bold;")
         return label
 
@@ -400,6 +419,23 @@ class TransactionView(QMainWindow):
         except Exception:
             pass
 
+    def _on_fee_changed(self) -> None:
+        try:
+            import math
+            text = self._fee_input.text().replace(",", "")
+            fee = float(text) if text else 0.0
+            if fee > 0:
+                rounded = math.ceil(fee / 50) * 50
+                if rounded != fee:
+                    self._fee_hint.setText(f"အကြမ်း fee: {fee:,.0f} → rounded: {rounded:,.0f}")
+                else:
+                    self._fee_hint.setText(f"Fee: {fee:,.0f}")
+                self._fee_hint.setVisible(True)
+            else:
+                self._fee_hint.setVisible(False)
+        except (ValueError, Exception):
+            self._fee_hint.setVisible(False)
+
     def _recalculate(self) -> None:
         account = self._get_selected_account()
         amount = self._parse_amount()
@@ -429,6 +465,22 @@ class TransactionView(QMainWindow):
         except ValueError:
             return 0.0
 
+    def _parse_fee(self) -> float:
+        try:
+            return float(self._fee_input.text().replace(",", ""))
+        except ValueError:
+            return 0.0
+
+    def _get_fee_account_id(self) -> Optional[int]:
+        idx = self._fee_account_combo.currentIndex()
+        if idx <= 0:
+            return None
+        acc_idx = idx - 1  # offset by "— မရွေး —"
+        if acc_idx < len(self._all_accounts_cache):
+            acc_id = self._all_accounts_cache[acc_idx].get("id")
+            return acc_id if acc_id != 0 else None  # 0 = Cash, no DB account
+        return None
+
     # ── Data loading ──
 
     def _load_services(self) -> None:
@@ -439,6 +491,20 @@ class TransactionView(QMainWindow):
                 self._service_combo.addItem(s.get("name", ""))
         except Exception:
             pass
+        self._load_fee_accounts()
+
+    FEE_CASH_ITEM = {"id": 0, "account_name": "Cash", "phone_number": ""}
+
+    def _load_fee_accounts(self) -> None:
+        try:
+            self._all_accounts_cache = [self.FEE_CASH_ITEM] + self._api.get_accounts()
+            self._fee_account_combo.clear()
+            self._fee_account_combo.addItem("— မရွေး —")
+            for a in self._all_accounts_cache:
+                label = f"{a.get('account_name', '')} | {a.get('phone_number', '')}" if a.get("phone_number") else a.get("account_name", "")
+                self._fee_account_combo.addItem(label)
+        except Exception:
+            self._all_accounts_cache = [self.FEE_CASH_ITEM]
 
     def _on_service_changed(self, index: int) -> None:
         try:
@@ -500,33 +566,43 @@ class TransactionView(QMainWindow):
         amount = self._parse_amount()
         account = self._get_selected_account()
         note = self._note_input.toPlainText().strip() or None
+        customer_fee = self._parse_fee()
+        fee_account_id = self._get_fee_account_id()
 
         if action == "deposit":
             self._api.create_deposit(
                 account_id=account["id"], amount=amount,
                 customer_name=self._customer_name.text().strip(),
                 customer_phone=self._customer_phone.text().strip(),
-                screenshot_path=self._screenshot_path, note=note,
+                screenshot_path=self._screenshot_path,
+                customer_fee=customer_fee, fee_account_id=fee_account_id,
+                note=note,
             )
         elif action == "withdraw":
             self._api.create_withdraw(
                 account_id=account["id"], amount=amount,
                 customer_name=self._customer_name.text().strip(),
                 customer_phone=self._customer_phone.text().strip(),
-                screenshot_path=self._screenshot_path, note=note,
+                screenshot_path=self._screenshot_path,
+                customer_fee=customer_fee, fee_account_id=fee_account_id,
+                note=note,
             )
         elif action == "transfer":
             to_idx = self._to_account_combo.currentIndex()
             to_acc = self._accounts_cache[to_idx]
             self._api.create_transfer(
                 from_account_id=account["id"], to_account_id=to_acc["id"],
-                amount=amount, screenshot_path=self._screenshot_path, note=note,
+                amount=amount, screenshot_path=self._screenshot_path,
+                customer_fee=customer_fee, fee_account_id=fee_account_id,
+                note=note,
             )
         elif action == "exchange":
             self._api.create_exchange(
                 account_id=account["id"], amount=amount,
                 currency=self._currency_combo.currentText(),
-                screenshot_path=self._screenshot_path, note=note,
+                screenshot_path=self._screenshot_path,
+                customer_fee=customer_fee, fee_account_id=fee_account_id,
+                note=note,
             )
 
         self._show_status("Transaction saved successfully!", error=False)
@@ -538,8 +614,6 @@ class TransactionView(QMainWindow):
             return "Account ရွေးပါ"
         if self._parse_amount() <= 0:
             return "Amount ထည့်ပါ"
-        if not self._screenshot_path:
-            return "Screenshot မပါဘဲ Save လို့မရပါ"
 
         if self._selected_action in ("deposit", "withdraw"):
             if not self._customer_name.text().strip():
@@ -579,6 +653,8 @@ class TransactionView(QMainWindow):
         self._customer_name.clear()
         self._customer_phone.clear()
         self._fee_input.clear()
+        self._fee_hint.setVisible(False)
+        self._fee_account_combo.setCurrentIndex(0)
         self._note_input.clear()
         self._commission_display.setText("0")
         self._balance_change_display.setText("0")
@@ -598,10 +674,10 @@ class TransactionView(QMainWindow):
     TXN_HEADERS = [
         "Date Time", "Type", "Account Name", "Account Number",
         "Customer Name", "Customer Number",
-        "Amount", "Commission", "Fee", "Screenshot",
+        "Amount", "Commission", "Fee", "Fee Account", "Screenshot",
     ]
-    #                  DateTime Type AccName AccNum CustName CustNum Amt  Comm Fee SS
-    TXN_COL_WIDTHS = [180,     100, 0,     140,   0,      140,    140, 90,  90, 90]
+    #                  DateTime Type AccName AccNum CustName CustNum Amt  Comm Fee FeeAcc SS
+    TXN_COL_WIDTHS = [180,     100, 0,     140,   0,      140,    140, 90,  90, 120,   90]
     TXN_STRETCH_COLS = {2, 4}  # Account Name, Customer Name
 
     def _build_txn_table(self) -> QTableWidget:
@@ -648,15 +724,18 @@ class TransactionView(QMainWindow):
         acc_name, acc_phone = self._split_account(txn)
         cust_name, cust_phone = self._split_customer(txn)
 
+        fee_acc_name = self._format_fee_account(txn)
+
         items = [
             str(created), txn_type,
             acc_name, acc_phone, cust_name, cust_phone,
             f"{float(txn.get('amount', 0)):,.0f}",
             f"{float(txn.get('commission_amount', 0)):,.0f}",
             f"{float(txn.get('customer_fee', 0)):,.0f}",
+            fee_acc_name,
         ]
-        left_cols = {2, 3, 4, 5}  # Account Name/Number, Customer Name/Number
-        right_cols = {6, 7, 8}   # Amount, Commission, Fee
+        left_cols = {2, 3, 4, 5, 9}  # names/numbers + fee account
+        right_cols = {6, 7, 8}       # Amount, Commission, Fee
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
             if col in left_cols:
@@ -677,11 +756,10 @@ class TransactionView(QMainWindow):
                 f"border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}"
                 f"QPushButton:hover {{ background: {BORDER_COLOR}; }}"
             )
-            self._txn_table.setCellWidget(row, 9, btn)
+            self._txn_table.setCellWidget(row, 10, btn)
         else:
-            item = QTableWidgetItem("—")
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._txn_table.setItem(row, 9, item)
+            item = QTableWidgetItem("")
+            self._txn_table.setItem(row, 10, item)
 
     def _split_account(self, txn: dict) -> tuple[str, str]:
         cached = self._find_cached_account(txn.get("account_id"))
@@ -698,7 +776,20 @@ class TransactionView(QMainWindow):
         for acc in self._accounts_cache:
             if acc.get("id") == account_id:
                 return acc
+        if hasattr(self, "_all_accounts_cache"):
+            for acc in self._all_accounts_cache:
+                if acc.get("id") == account_id:
+                    return acc
         return None
+
+    def _format_fee_account(self, txn: dict) -> str:
+        fee_id = txn.get("fee_account_id")
+        if not fee_id:
+            return "—"
+        cached = self._find_cached_account(fee_id)
+        if cached:
+            return cached.get("account_name", str(fee_id))
+        return str(fee_id)
 
     # ── Account balance hint ──
 

@@ -69,6 +69,7 @@ CREATE TABLE transactions (
     balance_change DECIMAL(18, 2) NOT NULL DEFAULT 0.00,
     currency VARCHAR(3) NOT NULL DEFAULT 'MMK',
     exchange_rate DECIMAL(18, 4),
+    fee_account_id INT,
     screenshot_path VARCHAR(500),
     note TEXT,
     created_by INT NOT NULL,
@@ -76,6 +77,8 @@ CREATE TABLE transactions (
     FOREIGN KEY (account_id) REFERENCES accounts(id)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (to_account_id) REFERENCES accounts(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (fee_account_id) REFERENCES accounts(id)
         ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(id)
         ON UPDATE CASCADE ON DELETE RESTRICT,

@@ -23,7 +23,9 @@ class DepositRequest(BaseModel):
     amount: float
     customer_name: str
     customer_phone: str
-    screenshot_path: str
+    screenshot_path: Optional[str] = None
+    customer_fee: float = 0.0
+    fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
@@ -32,7 +34,9 @@ class WithdrawRequest(BaseModel):
     amount: float
     customer_name: str
     customer_phone: str
-    screenshot_path: str
+    screenshot_path: Optional[str] = None
+    customer_fee: float = 0.0
+    fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
@@ -40,7 +44,9 @@ class TransferRequest(BaseModel):
     from_account_id: int
     to_account_id: int
     amount: float
-    screenshot_path: str
+    screenshot_path: Optional[str] = None
+    customer_fee: float = 0.0
+    fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
@@ -48,7 +54,9 @@ class ExchangeRequest(BaseModel):
     account_id: int
     amount: float
     currency: str
-    screenshot_path: str
+    screenshot_path: Optional[str] = None
+    customer_fee: float = 0.0
+    fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
@@ -75,6 +83,8 @@ async def create_deposit(
         customer_phone=body.customer_phone,
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
+        customer_fee=body.customer_fee,
+        fee_account_id=body.fee_account_id,
         note=body.note,
     )
     await _broadcast_balances()
@@ -93,6 +103,8 @@ async def create_withdraw(
         customer_phone=body.customer_phone,
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
+        customer_fee=body.customer_fee,
+        fee_account_id=body.fee_account_id,
         note=body.note,
     )
     await _broadcast_balances()
@@ -110,6 +122,8 @@ async def create_transfer(
         amount=body.amount,
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
+        customer_fee=body.customer_fee,
+        fee_account_id=body.fee_account_id,
         note=body.note,
     )
     await _broadcast_balances()
@@ -127,6 +141,8 @@ async def create_exchange(
         currency=body.currency,
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
+        customer_fee=body.customer_fee,
+        fee_account_id=body.fee_account_id,
         note=body.note,
     )
     await _broadcast_balances()

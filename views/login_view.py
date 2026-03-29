@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QApplication,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -125,10 +126,15 @@ class LoginView(QMainWindow):
             self._show_error("Username နှင့် Password ထည့်ပါ")
             return
 
+        self._error_label.setVisible(False)
+        self._show_error("Logging in...")
+        self._error_label.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 13px;")
+        QApplication.processEvents()
+
         try:
             self._api.login(username, password)
         except Exception:
-            self._show_error("Login မအောင်မြင်ပါ — အချက်အလက် ပြန်စစ်ပါ")
+            self._show_error("Login မအောင်မြင်ပါ — Server ချိတ်ဆက်မှု စစ်ပါ")
             return
 
         self._error_label.setVisible(False)
@@ -153,13 +159,13 @@ class LoginView(QMainWindow):
             try:
                 from views.dashboard_view import DashboardView
                 return DashboardView(self._api)
-            except ImportError:
+            except Exception:
                 return self._placeholder_window("Owner Dashboard")
         else:
             try:
                 from views.transaction_view import TransactionView
                 return TransactionView(self._api)
-            except ImportError:
+            except Exception:
                 return self._placeholder_window("Transaction Window")
 
     def _placeholder_window(self, title: str) -> QMainWindow:
