@@ -1,7 +1,10 @@
+from datetime import datetime, timezone, timedelta
+
+MMT = timezone(timedelta(hours=6, minutes=30))  # Myanmar Time (Yangon)
 from typing import Optional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QKeyEvent
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -14,12 +17,32 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+
+class TabTextEdit(QTextEdit):
+    """QTextEdit where Enter moves to next widget; Ctrl+Enter inserts newline."""
+
+    def __init__(self, on_enter=None) -> None:
+        super().__init__()
+        self._on_enter = on_enter
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                super().keyPressEvent(event)
+            elif self._on_enter:
+                self._on_enter()
+            else:
+                self.focusNextChild()
+        else:
+            super().keyPressEvent(event)
 
 from services.api_client import ApiClient
 
@@ -241,9 +264,11 @@ class TransactionView(QMainWindow):
         cust_row = QHBoxLayout()
         self._customer_name = QLineEdit()
         self._customer_name.setPlaceholderText("Customer Name")
+        self._customer_name.returnPressed.connect(lambda: self._customer_phone.setFocus())
         cust_row.addWidget(self._customer_name)
         self._customer_phone = QLineEdit()
         self._customer_phone.setPlaceholderText("Phone Number")
+        self._customer_phone.returnPressed.connect(lambda: self._amount_input.setFocus())
         cust_row.addWidget(self._customer_phone)
         layout.addLayout(cust_row)
 
@@ -259,6 +284,7 @@ class TransactionView(QMainWindow):
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
+        self._amount_input.returnPressed.connect(lambda: self._fee_input.setFocus())
         layout.addWidget(self._amount_input)
 
         # Commission (read-only)
@@ -276,6 +302,7 @@ class TransactionView(QMainWindow):
         layout.addWidget(self._field_label("Customer Fee"))
         self._fee_input = QLineEdit()
         self._fee_input.setPlaceholderText("0")
+        self._fee_input.returnPressed.connect(lambda: self._note_input.setFocus())
         layout.addWidget(self._fee_input)
 
         # Balance Change (read-only)
@@ -291,9 +318,9 @@ class TransactionView(QMainWindow):
 
         # Note
         layout.addWidget(self._field_label("Note"))
-        self._note_input = QTextEdit()
+        self._note_input = TabTextEdit(on_enter=lambda: self._screenshot_btn.setFocus())
         self._note_input.setFixedHeight(60)
-        self._note_input.setPlaceholderText("Optional note...")
+        self._note_input.setPlaceholderText("Optional note... (Ctrl+Enter for new line)")
         layout.addWidget(self._note_input)
 
         # Screenshot
@@ -305,7 +332,7 @@ class TransactionView(QMainWindow):
             f"border: 1px solid {ACCENT_BLUE}; border-radius: 6px; padding: 8px 16px; font-size: 13px; }}"
             f"QPushButton:hover {{ background-color: {BG_CARD}; }}"
         )
-        self._screenshot_btn.clicked.connect(self._on_select_screenshot)
+        self._screenshot_btn.clicked.connect(self._on_select_screenshot_and_focus)
         ss_row.addWidget(self._screenshot_btn)
         self._screenshot_label = QLabel("No file selected")
         self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
@@ -451,6 +478,10 @@ class TransactionView(QMainWindow):
         except Exception:
             pass
 
+    def _on_select_screenshot_and_focus(self) -> None:
+        self._on_select_screenshot()
+        self._save_btn.setFocus()
+
     # ── Save ──
 
     def _on_save(self) -> None:
@@ -563,23 +594,37 @@ class TransactionView(QMainWindow):
 
     # ── My Transactions table ──
 
+    TXN_ROW_HEIGHT = 30
+    TXN_HEADERS = [
+        "Date Time", "Type", "Account Name", "Account Number",
+        "Customer Name", "Customer Number",
+        "Amount", "Commission", "Fee", "Screenshot",
+    ]
+    #                  DateTime Type AccName AccNum CustName CustNum Amt  Comm Fee SS
+    TXN_COL_WIDTHS = [180,     100, 0,     140,   0,      140,    140, 90,  90, 90]
+    TXN_STRETCH_COLS = {2, 4}  # Account Name, Customer Name
+
     def _build_txn_table(self) -> QTableWidget:
-        headers = [
-            "Time", "Type", "Account", "Amount",
-            "Commission", "Fee", "Balance Change", "Screenshot",
-        ]
-        self._txn_table = QTableWidget(0, len(headers))
-        self._txn_table.setHorizontalHeaderLabels(headers)
+        self._txn_table = QTableWidget(0, len(self.TXN_HEADERS))
+        self._txn_table.setHorizontalHeaderLabels(self.TXN_HEADERS)
         self._txn_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._txn_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._txn_table.setAlternatingRowColors(True)
         self._txn_table.verticalHeader().setVisible(False)
         self._txn_table.setMinimumHeight(250)
+        self._txn_table.setWordWrap(False)
+        self._txn_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._txn_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         header = self._txn_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        for i in range(len(headers) - 1):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(False)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        for i, w in enumerate(self.TXN_COL_WIDTHS):
+            if i in self.TXN_STRETCH_COLS:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            else:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                self._txn_table.setColumnWidth(i, w)
 
         return self._txn_table
 
@@ -587,41 +632,73 @@ class TransactionView(QMainWindow):
         self._txn_table.setRowCount(len(transactions))
         for row, txn in enumerate(transactions):
             self._set_txn_row(row, txn)
+            self._txn_table.setRowHeight(row, self.TXN_ROW_HEIGHT)
 
     def _set_txn_row(self, row: int, txn: dict) -> None:
         created = txn.get("created_at", "")
-        if isinstance(created, str) and len(created) > 16:
-            created = created[11:16]
+        try:
+            dt = datetime.fromisoformat(str(created)).astimezone(MMT)
+            created = dt.strftime("%d-%m-%Y %I:%M:%S %p")
+        except (ValueError, TypeError):
+            pass
 
         txn_type = txn.get("transaction_type", "")
         color = TYPE_COLORS.get(txn_type, TEXT_PRIMARY)
 
+        acc_name, acc_phone = self._split_account(txn)
+        cust_name, cust_phone = self._split_customer(txn)
+
         items = [
-            str(created),
-            txn_type,
-            str(txn.get("account_id", "")),
+            str(created), txn_type,
+            acc_name, acc_phone, cust_name, cust_phone,
             f"{float(txn.get('amount', 0)):,.0f}",
             f"{float(txn.get('commission_amount', 0)):,.0f}",
             f"{float(txn.get('customer_fee', 0)):,.0f}",
-            f"{float(txn.get('balance_change', 0)):,.0f}",
         ]
+        left_cols = {2, 3, 4, 5}  # Account Name/Number, Customer Name/Number
+        right_cols = {6, 7, 8}   # Amount, Commission, Fee
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if col in left_cols:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            elif col in right_cols:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+            item.setToolTip(text)
             if col == 1:
                 from PyQt6.QtGui import QColor
                 item.setForeground(QColor(color))
             self._txn_table.setItem(row, col, item)
 
         path = txn.get("screenshot_path", "")
-        btn = QPushButton("View" if path else "-")
-        btn.setEnabled(bool(path))
-        btn.setStyleSheet(
-            f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; "
-            f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}"
-            f"QPushButton:hover {{ background: {BORDER_COLOR}; }}"
-        )
-        self._txn_table.setCellWidget(row, 7, btn)
+        if path:
+            btn = QPushButton("View")
+            btn.setStyleSheet(
+                f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; "
+                f"border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}"
+                f"QPushButton:hover {{ background: {BORDER_COLOR}; }}"
+            )
+            self._txn_table.setCellWidget(row, 9, btn)
+        else:
+            item = QTableWidgetItem("—")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._txn_table.setItem(row, 9, item)
+
+    def _split_account(self, txn: dict) -> tuple[str, str]:
+        cached = self._find_cached_account(txn.get("account_id"))
+        if cached:
+            return cached.get("account_name", ""), cached.get("phone_number", "")
+        return str(txn.get("account_id", "")), ""
+
+    def _split_customer(self, txn: dict) -> tuple[str, str]:
+        if txn.get("transaction_type") in ("deposit", "withdraw"):
+            return txn.get("customer_name", "") or "—", txn.get("customer_phone", "") or "—"
+        return "—", "—"
+
+    def _find_cached_account(self, account_id) -> Optional[dict]:
+        for acc in self._accounts_cache:
+            if acc.get("id") == account_id:
+                return acc
+        return None
 
     # ── Account balance hint ──
 

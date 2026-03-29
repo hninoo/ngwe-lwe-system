@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
+
+MMT = timezone(timedelta(hours=6, minutes=30))  # Myanmar Time (Yangon)
 from typing import Optional
 
 from models.account import Account
@@ -36,7 +38,7 @@ class DashboardViewModel:
         return self._transaction_repo.get_recent(limit)
 
     def get_today_summary(self) -> DaySummary:
-        today = date.today()
+        today = datetime.now(MMT).date()
         start = datetime.combine(today, datetime.min.time())
         end = datetime.combine(today, datetime.max.time())
         transactions = self._transaction_repo.get_by_date_range(start, end)

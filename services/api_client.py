@@ -155,3 +155,41 @@ class ApiClient:
 
     def get_dashboard_accounts(self) -> list[dict]:
         return self._get("/dashboard/accounts")
+
+    # ── Users ──
+
+    def get_users(self) -> list[dict]:
+        return self._get("/users/")
+
+    def create_user(self, username: str, password: str, full_name: str) -> dict:
+        return self._post("/users/", {
+            "username": username,
+            "password": password,
+            "full_name": full_name,
+        })
+
+    def toggle_user_active(self, user_id: int, is_active: bool) -> dict:
+        return self._patch(f"/users/{user_id}/active", {"is_active": is_active})
+
+    def change_password(self, old_password: str, new_password: str) -> dict:
+        return self._post("/users/change-password", {
+            "old_password": old_password,
+            "new_password": new_password,
+        })
+
+    # ── Exchange Rates ──
+
+    def get_exchange_rate(self, pair: str = "MMK/THB") -> dict:
+        return self._get("/exchange-rates/latest", params={"pair": pair})
+
+    def update_exchange_rate(self, buy_rate: float, sell_rate: float, pair: str = "MMK/THB") -> dict:
+        return self._post("/exchange-rates/", {
+            "currency_pair": pair,
+            "buy_rate": buy_rate,
+            "sell_rate": sell_rate,
+        })
+
+    # ── Reports ──
+
+    def get_daily_report(self, date: str) -> dict:
+        return self._get("/reports/daily", params={"date": date})
