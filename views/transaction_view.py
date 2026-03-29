@@ -756,6 +756,7 @@ class TransactionView(QMainWindow):
                 f"border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}"
                 f"QPushButton:hover {{ background: {BORDER_COLOR}; }}"
             )
+            btn.clicked.connect(lambda _, p=path: self._show_screenshot(p))
             self._txn_table.setCellWidget(row, 10, btn)
         else:
             item = QTableWidgetItem("")
@@ -790,6 +791,44 @@ class TransactionView(QMainWindow):
         if cached:
             return cached.get("account_name", str(fee_id))
         return str(fee_id)
+
+    # ── Screenshot viewer ──
+
+    def _show_screenshot(self, path: str) -> None:
+        try:
+            from PyQt6.QtGui import QPixmap
+            from PyQt6.QtWidgets import QDialog, QLabel, QVBoxLayout, QScrollArea
+
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                self._show_status(f"ဖိုင်ဖွင့်လို့မရပါ: {path}", error=True)
+                return
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Screenshot")
+            dlg.setMinimumSize(600, 400)
+            dlg.setStyleSheet(f"background-color: {BG_DARK};")
+
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setStyleSheet("border: none;")
+
+            img_label = QLabel()
+            scaled = pixmap.scaledToWidth(
+                min(pixmap.width(), 800),
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            img_label.setPixmap(scaled)
+            img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            scroll.setWidget(img_label)
+
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(scroll)
+
+            dlg.exec()
+        except Exception as e:
+            self._show_status(f"Screenshot error: {e}", error=True)
 
     # ── Account balance hint ──
 
