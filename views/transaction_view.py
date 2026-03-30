@@ -379,10 +379,11 @@ class TransactionFormPage(QWidget):
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
-        self._amount_input.returnPressed.connect(lambda: self._fee_input.setFocus())
+        self._amount_input.returnPressed.connect(lambda: self._additional_fee_input.setFocus())
         lo.addWidget(self._amount_input)
 
-        lo.addWidget(field_label("Commission"))
+        self._commission_label = field_label("Commission")
+        lo.addWidget(self._commission_label)
         self._commission_display = QLineEdit()
         self._commission_display.setReadOnly(True)
         self._commission_display.setText("0")
@@ -390,12 +391,28 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_MAUVE}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._commission_display)
 
-        lo.addWidget(field_label("Customer Fee"))
-        self._fee_input = QLineEdit()
-        self._fee_input.setPlaceholderText("0")
-        self._fee_input.textChanged.connect(self._on_fee_changed)
-        self._fee_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
-        lo.addWidget(self._fee_input)
+        lo.addWidget(field_label("Customer Fee (from tier)"))
+        self._fee_display = QLineEdit()
+        self._fee_display.setReadOnly(True)
+        self._fee_display.setText("0")
+        self._fee_display.setStyleSheet(
+            f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_TEAL}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
+        lo.addWidget(self._fee_display)
+
+        lo.addWidget(field_label("Additional Fee"))
+        self._additional_fee_input = QLineEdit()
+        self._additional_fee_input.setPlaceholderText("0")
+        self._additional_fee_input.textChanged.connect(self._on_additional_fee_changed)
+        self._additional_fee_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
+        lo.addWidget(self._additional_fee_input)
+
+        lo.addWidget(field_label("Total Customer Charge"))
+        self._total_charge_display = QLineEdit()
+        self._total_charge_display.setReadOnly(True)
+        self._total_charge_display.setText("0")
+        self._total_charge_display.setStyleSheet(
+            f"QLineEdit {{ background-color: {BG_DARK}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: bold; }}")
+        lo.addWidget(self._total_charge_display)
 
         self._fee_hint = QLabel("")
         self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
@@ -475,47 +492,94 @@ class TransactionFormPage(QWidget):
 
     def _on_account_changed(self, index: int) -> None:
         try:
+            account = self._get_selected_account()
+            is_bank = account and account.get("service_type") == "BANK"
+            self._commission_label.setVisible(not is_bank)
+            self._commission_display.setVisible(not is_bank)
             self._recalculate()
             self._update_balance_hint()
         except Exception:
             pass
 
-    def _on_fee_changed(self) -> None:
+    def _on_additional_fee_changed(self) -> None:
         try:
-            import math
-            text = self._fee_input.text().replace(",", "")
-            fee = float(text) if text else 0.0
-            if fee > 0:
-                rounded = math.ceil(fee / 50) * 50
-                self._fee_hint.setText(
-                    f"အကြမ်း fee: {fee:,.0f} → rounded: {rounded:,.0f}" if rounded != fee else f"Fee: {fee:,.0f}")
-                self._fee_hint.setVisible(True)
-            else:
-                self._fee_hint.setVisible(False)
+            self._recalculate()
         except Exception:
-            self._fee_hint.setVisible(False)
+            pass
 
     def _recalculate(self) -> None:
         account = self._get_selected_account()
         amount = self._parse_amount()
+        additional = self._parse_additional_fee()
+
         if account is None or amount <= 0:
             self._commission_display.setText("0")
             self._balance_change_display.setText("0")
+            self._fee_display.setText("0")
+            self._total_charge_display.setText("0")
+            self._fee_hint.setVisible(False)
             return
-        commission = self._calc_commission(account, amount)
-        balance_change = self._calc_balance_change(account, amount, commission)
+
+        tier = self._lookup_tier(account, amount)
+        is_deposit = self._selected_action == "deposit"
+
+        if tier is None:
+            self._commission_display.setText("0")
+            self._fee_display.setText("0")
+            total = additional
+            self._total_charge_display.setText(f"{total:,.0f}")
+            self._balance_change_display.setText(f"{amount:,.0f}")
+            self._fee_hint.setText("Tier မသတ်မှတ်ရသေး — manual ဖြည့်ပါ")
+            self._fee_hint.setStyleSheet(f"color: {ACCENT_YELLOW}; font-size: 11px; font-style: italic; padding-left: 2px;")
+            self._fee_hint.setVisible(True)
+            return
+
+        if is_deposit:
+            commission = tier.get("comm_send", 0)       # deposit: agent earns comm_send
+        elif self._selected_action == "withdraw":
+            commission = tier.get("comm_receive", 0)    # withdraw: agent earns comm_receive
+        else:
+            commission = tier.get("comm_send", 0)       # transfer/exchange: comm_send
+        fee_amount = tier.get("fee_amount", 0)
+        balance_change = round(amount - commission, 2)
+        total = fee_amount + additional
+
         self._commission_display.setText(f"{commission:,.0f}")
+        self._fee_display.setText(f"{fee_amount:,.0f}")
+        self._total_charge_display.setText(f"{total:,.0f}")
         self._balance_change_display.setText(f"{balance_change:,.0f}")
 
+        service_cost = fee_amount - commission
+        self._fee_hint.setText(
+            f"Customer ပေးရမည်: {fee_amount:,.0f} + {additional:,.0f} = {total:,.0f} | "
+            f"Agent ရ: {commission:,.0f} | Service ကို: {service_cost:,.0f}")
+        self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
+        self._fee_hint.setVisible(True)
+
+    def _lookup_tier(self, account: dict, amount: float) -> Optional[dict]:
+        service_type = account.get("service_type", "KPAY")
+        try:
+            tier = self._api.lookup_tier(
+                service_type, account.get("account_type", "personal"), amount,
+            )
+            if tier.get("fee_amount", 0) == 0 and tier.get("comm_send", 0) == 0 and tier.get("comm_receive", 0) == 0:
+                return None
+            return tier
+        except Exception:
+            return None
+
     def _calc_commission(self, account: dict, amount: float) -> float:
-        if account.get("account_type") == "agent":
-            return round(amount * float(account.get("commission_rate", 0)), 2)
-        return 0.0
+        tier = self._lookup_tier(account, amount)
+        if tier is None:
+            return 0.0
+        if self._selected_action == "deposit":
+            return float(tier.get("comm_send", 0))  # deposit: agent earns comm_send
+        if self._selected_action == "withdraw":
+            return float(tier.get("comm_receive", 0))  # withdraw: agent earns comm_receive
+        return float(tier.get("comm_send", 0))  # transfer/exchange: comm_send
 
     def _calc_balance_change(self, account: dict, amount: float, commission: float) -> float:
-        if account.get("account_type") == "agent":
-            return round(amount - commission, 2)
-        return amount
+        return round(amount - commission, 2)
 
     def _parse_amount(self) -> float:
         try:
@@ -523,11 +587,18 @@ class TransactionFormPage(QWidget):
         except ValueError:
             return 0.0
 
-    def _parse_fee(self) -> float:
+    def _parse_additional_fee(self) -> float:
         try:
-            return float(self._fee_input.text().replace(",", ""))
+            return float(self._additional_fee_input.text().replace(",", ""))
         except ValueError:
             return 0.0
+
+    def _parse_total_fee(self) -> float:
+        try:
+            base = float(self._fee_display.text().replace(",", ""))
+        except ValueError:
+            base = 0.0
+        return base + self._parse_additional_fee()
 
     def _get_fee_account_id(self) -> Optional[int]:
         idx = self._fee_account_combo.currentIndex()
@@ -643,25 +714,26 @@ class TransactionFormPage(QWidget):
         amount = self._parse_amount()
         account = self._get_selected_account()
         note = self._note_input.toPlainText().strip() or None
-        fee = self._parse_fee()
+        fee = self._parse_total_fee()
+        additional = self._parse_additional_fee()
         fee_acc = self._get_fee_account_id()
 
         if action == "deposit":
             self._api.create_deposit(account_id=account["id"], amount=amount,
                 customer_name=self._customer_name.text().strip(), customer_phone=self._customer_phone.text().strip(),
-                screenshot_path=self._screenshot_path, customer_fee=fee, fee_account_id=fee_acc, note=note)
+                screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "withdraw":
             self._api.create_withdraw(account_id=account["id"], amount=amount,
                 customer_name=self._customer_name.text().strip(), customer_phone=self._customer_phone.text().strip(),
-                screenshot_path=self._screenshot_path, customer_fee=fee, fee_account_id=fee_acc, note=note)
+                screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "transfer":
             to_acc = self._accounts_cache[self._to_account_combo.currentIndex()]
             self._api.create_transfer(from_account_id=account["id"], to_account_id=to_acc["id"],
-                amount=amount, screenshot_path=self._screenshot_path, customer_fee=fee, fee_account_id=fee_acc, note=note)
+                amount=amount, screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "exchange":
             self._api.create_exchange(account_id=account["id"], amount=amount,
                 currency=self._currency_combo.currentText(), screenshot_path=self._screenshot_path,
-                customer_fee=fee, fee_account_id=fee_acc, note=note)
+                customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         self._show_status("Transaction saved successfully!", error=False)
         self._clear_form()
         self._load_my_transactions()
@@ -694,7 +766,9 @@ class TransactionFormPage(QWidget):
         self._amount_input.clear()
         self._customer_name.clear()
         self._customer_phone.clear()
-        self._fee_input.clear()
+        self._fee_display.setText("0")
+        self._additional_fee_input.clear()
+        self._total_charge_display.setText("0")
         self._fee_hint.setVisible(False)
         self._fee_account_combo.setCurrentIndex(0)
         self._note_input.clear()
@@ -760,6 +834,8 @@ class TransactionFormPage(QWidget):
         ]
         left = {2, 3, 4, 5, 9}
         right = {6, 7, 8}
+        additional = float(txn.get("additional_fee_amount", 0))
+        base_fee = float(txn.get("customer_fee", 0)) - additional
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
             if col in left:
@@ -768,7 +844,10 @@ class TransactionFormPage(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
             else:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setToolTip(text)
+            if col == 8:
+                item.setToolTip(f"Base: {base_fee:,.0f} + Extra: {additional:,.0f}")
+            else:
+                item.setToolTip(text)
             if col == 1:
                 item.setForeground(QColor(TYPE_COLORS.get(tt, TEXT_PRIMARY)))
             self._txn_table.setItem(row, col, item)

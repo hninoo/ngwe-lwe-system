@@ -14,6 +14,7 @@ class Transaction:
     amount: Optional[float] = None
     commission_amount: Optional[float] = None
     customer_fee: Optional[float] = None
+    additional_fee_amount: Optional[float] = None
     balance_change: Optional[float] = None
     currency: Optional[str] = None
     exchange_rate: Optional[float] = None

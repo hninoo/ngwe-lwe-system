@@ -86,8 +86,23 @@ View ↔ ViewModel → Repository → MySQL
 
 | Type | Balance Calculation |
 |---|---|
-| Personal | amount တိတိ နုတ်/တင် |
-| Agent | amount - commission (auto) |
+| Personal | amount - commission (from commission_tiers) |
+| Agent | amount - commission (from commission_tiers) |
+
+## Commission Tiers (commission_tiers table)
+
+All 3 service types (KPAY, WAVE, BANK) use `commission_tiers` table.
+
+| Field | Purpose |
+|---|---|
+| `fee_amount` | Customer charge (ကောက်ခံမည့်) |
+| `comm_send` | Agent earns on **Deposit** (customer sends in) |
+| `comm_receive` | Agent earns on **Withdraw** (customer takes out) |
+
+- Tier lookup: `service_type` + `account_type` + `amount_from <= amount <= amount_to`
+- BANK tiers: owner manually sets via Settings
+- Tier not found → fee=0, commission=0
+- `account.commission_rate` and `service.default_customer_fee` are **deprecated**
 
 ---
 

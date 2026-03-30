@@ -23,6 +23,7 @@ class TransactionRepository(BaseRepository):
             amount=float(row["amount"]),
             commission_amount=float(row["commission_amount"]),
             customer_fee=float(row["customer_fee"]),
+            additional_fee_amount=float(row.get("additional_fee_amount", 0)),
             balance_change=float(row["balance_change"]),
             currency=row["currency"],
             exchange_rate=float(row["exchange_rate"]) if row.get("exchange_rate") else None,

@@ -3,6 +3,7 @@ from repositories.service_repository import ServiceRepository
 from repositories.account_repository import AccountRepository
 from repositories.transaction_repository import TransactionRepository
 from repositories.exchange_rate_repository import ExchangeRateRepository
+from repositories.commission_tier_repository import CommissionTierRepository
 
 __all__ = [
     "UserRepository",
@@ -10,4 +11,5 @@ __all__ = [
     "AccountRepository",
     "TransactionRepository",
     "ExchangeRateRepository",
+    "CommissionTierRepository",
 ]

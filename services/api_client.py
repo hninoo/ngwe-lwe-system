@@ -86,6 +86,7 @@ class ApiClient:
         customer_phone: str,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
@@ -96,6 +97,7 @@ class ApiClient:
             "customer_phone": customer_phone,
             "screenshot_path": screenshot_path,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
         })
@@ -108,6 +110,7 @@ class ApiClient:
         customer_phone: str,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
@@ -118,6 +121,7 @@ class ApiClient:
             "customer_phone": customer_phone,
             "screenshot_path": screenshot_path,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
         })
@@ -129,6 +133,7 @@ class ApiClient:
         amount: float,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
@@ -138,6 +143,7 @@ class ApiClient:
             "amount": amount,
             "screenshot_path": screenshot_path,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
         })
@@ -149,6 +155,7 @@ class ApiClient:
         currency: str,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
@@ -158,6 +165,7 @@ class ApiClient:
             "currency": currency,
             "screenshot_path": screenshot_path,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
         })
@@ -210,3 +218,34 @@ class ApiClient:
 
     def get_daily_report(self, date: str) -> dict:
         return self._get("/reports/daily", params={"date": date})
+
+    # ── Commission Tiers ──
+
+    def get_commission_tiers(self, service_type: str, account_type: str) -> list[dict]:
+        return self._get("/commission-tiers/", params={
+            "service_type": service_type, "account_type": account_type,
+        })
+
+    def lookup_tier(self, service_type: str, account_type: str, amount: float) -> dict:
+        return self._get("/commission-tiers/lookup", params={
+            "service_type": service_type, "account_type": account_type, "amount": amount,
+        })
+
+    def create_commission_tier(self, data: dict) -> dict:
+        return self._post("/commission-tiers/", data)
+
+    def update_commission_tier(self, tier_id: int, data: dict) -> dict:
+        resp = requests.put(
+            f"{BASE_URL}/commission-tiers/{tier_id}",
+            headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def delete_commission_tier(self, tier_id: int) -> dict:
+        resp = requests.delete(
+            f"{BASE_URL}/commission-tiers/{tier_id}",
+            headers=self._headers(), timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()

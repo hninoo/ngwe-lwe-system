@@ -506,7 +506,7 @@ class AccountsPage(QWidget):
         layout.addWidget(section_label("Accounts Management"))
         self._table = make_table([
             "ID", "Service", "Name", "Phone", "Type",
-            "Balance", "Commission %", "Active", "Action",
+            "Service Type", "Balance", "Active", "Action",
         ], 400)
         layout.addWidget(self._table)
         layout.addStretch()
@@ -531,8 +531,8 @@ class AccountsPage(QWidget):
                 acc.get("account_name", ""),
                 acc.get("phone_number", ""),
                 acc.get("account_type", ""),
+                acc.get("service_type", "KPAY"),
                 f"{float(acc.get('balance', 0)):,.0f}",
-                f"{float(acc.get('commission_rate', 0)):.2%}",
                 "Active" if acc.get("is_active") else "Inactive",
             ]
             for col, text in enumerate(items):
@@ -541,7 +541,7 @@ class AccountsPage(QWidget):
                 if col == 4:
                     c = ACCENT_TEAL if text == "agent" else TEXT_MUTED
                     item.setForeground(QColor(c))
-                if col == 5:
+                if col == 6:
                     v = float(acc.get("balance", 0))
                     item.setForeground(QColor(ACCENT_GREEN if v >= 0 else ACCENT_RED))
                 if col == 7:
@@ -854,6 +854,71 @@ class SettingsPage(QWidget):
         pw_lo.addWidget(self._pw_status)
 
         layout.addWidget(pw_card)
+
+        # Commission Tier Management
+        layout.addSpacing(10)
+        layout.addWidget(section_label("Commission Tiers"))
+        tier_card = card_frame()
+        tier_lo = QVBoxLayout(tier_card)
+        tier_lo.setContentsMargins(20, 16, 20, 16)
+        tier_lo.setSpacing(10)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Service:"))
+        self._tier_service = QComboBox()
+        self._tier_service.addItems(["KPAY", "WAVE", "BANK"])
+        filter_row.addWidget(self._tier_service)
+        filter_row.addWidget(QLabel("Account:"))
+        self._tier_acc_type = QComboBox()
+        self._tier_acc_type.addItems(["agent", "personal"])
+        filter_row.addWidget(self._tier_acc_type)
+        load_tier_btn = accent_btn("Load")
+        load_tier_btn.clicked.connect(self._load_tiers)
+        filter_row.addWidget(load_tier_btn)
+        filter_row.addStretch()
+        tier_lo.addLayout(filter_row)
+
+        self._tier_table = make_table(["ID", "From", "To", "Fee", "Send Comm", "Recv Comm", "Action"], 250)
+        tier_lo.addWidget(self._tier_table)
+
+        # Add new tier row
+        add_row1 = QHBoxLayout()
+        add_row1.addWidget(QLabel("From:"))
+        self._new_from = QLineEdit()
+        self._new_from.setPlaceholderText("0")
+        self._new_from.setFixedWidth(90)
+        add_row1.addWidget(self._new_from)
+        add_row1.addWidget(QLabel("To:"))
+        self._new_to = QLineEdit()
+        self._new_to.setPlaceholderText("0")
+        self._new_to.setFixedWidth(90)
+        add_row1.addWidget(self._new_to)
+        add_row1.addWidget(QLabel("Fee:"))
+        self._new_fee = QLineEdit()
+        self._new_fee.setPlaceholderText("0")
+        self._new_fee.setFixedWidth(80)
+        add_row1.addWidget(self._new_fee)
+        add_row1.addWidget(QLabel("Send:"))
+        self._new_send = QLineEdit()
+        self._new_send.setPlaceholderText("0")
+        self._new_send.setFixedWidth(80)
+        add_row1.addWidget(self._new_send)
+        add_row1.addWidget(QLabel("Recv:"))
+        self._new_recv = QLineEdit()
+        self._new_recv.setPlaceholderText("0")
+        self._new_recv.setFixedWidth(80)
+        add_row1.addWidget(self._new_recv)
+        add_tier_btn = accent_btn("+ Add Tier", ACCENT_GREEN)
+        add_tier_btn.clicked.connect(self._on_add_tier)
+        add_row1.addWidget(add_tier_btn)
+        add_row1.addStretch()
+        tier_lo.addLayout(add_row1)
+
+        self._tier_status = QLabel("")
+        self._tier_status.setVisible(False)
+        tier_lo.addWidget(self._tier_status)
+
+        layout.addWidget(tier_card)
         layout.addStretch()
 
         outer = QVBoxLayout(self)
@@ -870,6 +935,7 @@ class SettingsPage(QWidget):
             self._sell_input.setText(str(sell) if sell else "")
         except Exception:
             pass
+        self._load_tiers()
 
     def _on_save_rate(self) -> None:
         try:
@@ -911,6 +977,69 @@ class SettingsPage(QWidget):
             self._pw_status.setText(f"Error: {e}")
             self._pw_status.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
             self._pw_status.setVisible(True)
+
+    # ── Commission Tiers ──
+
+    def _load_tiers(self) -> None:
+        try:
+            st = self._tier_service.currentText()
+            at = self._tier_acc_type.currentText()
+            tiers = self._api.get_commission_tiers(st, at)
+            self._tier_table.setRowCount(len(tiers))
+            for row, t in enumerate(tiers):
+                items = [
+                    str(t.get("id", "")),
+                    f"{float(t.get('amount_from', 0)):,.0f}",
+                    f"{float(t.get('amount_to', 0)):,.0f}",
+                    f"{float(t.get('fee_amount', 0)):,.0f}",
+                    f"{float(t.get('comm_send', 0)):,.0f}",
+                    f"{float(t.get('comm_receive', 0)):,.0f}",
+                ]
+                for col, text in enumerate(items):
+                    item = QTableWidgetItem(text)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self._tier_table.setItem(row, col, item)
+                del_btn = QPushButton("Delete")
+                del_btn.setStyleSheet(
+                    f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_RED}; "
+                    f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}")
+                del_btn.clicked.connect(lambda _, tid=t["id"]: self._on_delete_tier(tid))
+                self._tier_table.setCellWidget(row, 6, del_btn)
+        except Exception:
+            pass
+
+    def _on_add_tier(self) -> None:
+        try:
+            data = {
+                "service_type": self._tier_service.currentText(),
+                "account_type": self._tier_acc_type.currentText(),
+                "amount_from": float(self._new_from.text()),
+                "amount_to": float(self._new_to.text()),
+                "fee_amount": float(self._new_fee.text()),
+                "comm_send": float(self._new_send.text()),
+                "comm_receive": float(self._new_recv.text()),
+            }
+            self._api.create_commission_tier(data)
+            self._new_from.clear()
+            self._new_to.clear()
+            self._new_fee.clear()
+            self._new_send.clear()
+            self._new_recv.clear()
+            self._tier_status.setText("Tier added!")
+            self._tier_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
+            self._tier_status.setVisible(True)
+            self._load_tiers()
+        except Exception as e:
+            self._tier_status.setText(f"Error: {e}")
+            self._tier_status.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+            self._tier_status.setVisible(True)
+
+    def _on_delete_tier(self, tier_id: int) -> None:
+        try:
+            self._api.delete_commission_tier(tier_id)
+            self._load_tiers()
+        except Exception:
+            pass
 
 
 # ════════════════════════════════════════════

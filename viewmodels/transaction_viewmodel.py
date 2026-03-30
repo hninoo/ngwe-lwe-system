@@ -7,6 +7,7 @@ from repositories.account_repository import AccountRepository
 from repositories.transaction_repository import TransactionRepository
 from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_repository import ServiceRepository
+from repositories.commission_tier_repository import CommissionTierRepository
 
 
 class TransactionViewModel:
@@ -17,27 +18,28 @@ class TransactionViewModel:
         account_repo: Optional[AccountRepository] = None,
         exchange_rate_repo: Optional[ExchangeRateRepository] = None,
         service_repo: Optional[ServiceRepository] = None,
+        commission_tier_repo: Optional[CommissionTierRepository] = None,
     ) -> None:
         self._txn_repo = transaction_repo or TransactionRepository()
         self._account_repo = account_repo or AccountRepository()
         self._rate_repo = exchange_rate_repo or ExchangeRateRepository()
         self._service_repo = service_repo or ServiceRepository()
+        self._tier_repo = commission_tier_repo or CommissionTierRepository()
 
-    def _calc_commission(self, account: Account, amount: float) -> float:
-        if account.account_type == "agent":
-            return round(amount * (account.commission_rate or 0.0), 2)
-        return 0.0
+    def _get_tier(self, account: Account, amount: float):
+        service_type = account.service_type or "KPAY"
+        return self._tier_repo.get_tier_for_amount(
+            service_type, account.account_type or "personal", amount,
+        )
+
+    def _calc_commission(self, account: Account, amount: float, comm_type: str = "send") -> float:
+        tier = self._get_tier(account, amount)
+        if tier is None:
+            return 0.0
+        return tier.comm_send if comm_type == "send" else tier.comm_receive
 
     def _calc_balance_change(self, account: Account, amount: float, commission: float) -> float:
-        if account.account_type == "agent":
-            return round(amount - commission, 2)
-        return amount
-
-    def _get_customer_fee(self, account: Account) -> float:
-        service = self._service_repo.get_by_id(account.service_id)
-        if service is None:
-            return 0.0
-        return service.default_customer_fee or 0.0
+        return round(amount - commission, 2)
 
     @staticmethod
     def round_fee(amount: float) -> int:
@@ -61,11 +63,12 @@ class TransactionViewModel:
         created_by: int,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
-        commission = self._calc_commission(account, amount)
+        commission = self._calc_commission(account, amount, "send")  # deposit: agent earns comm_send
         balance_change = self._calc_balance_change(account, amount, commission)
 
         new_balance = (account.balance or 0.0) + balance_change
@@ -80,6 +83,7 @@ class TransactionViewModel:
             "amount": amount,
             "commission_amount": commission,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "balance_change": balance_change,
             "currency": "MMK",
             "fee_account_id": fee_account_id,
@@ -99,11 +103,12 @@ class TransactionViewModel:
         created_by: int,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
-        commission = self._calc_commission(account, amount)
+        commission = self._calc_commission(account, amount, "receive")  # withdraw: agent earns comm_receive
         balance_change = self._calc_balance_change(account, amount, commission)
 
         new_balance = (account.balance or 0.0) - balance_change
@@ -118,6 +123,7 @@ class TransactionViewModel:
             "amount": amount,
             "commission_amount": commission,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "balance_change": -balance_change,
             "currency": "MMK",
             "fee_account_id": fee_account_id,
@@ -136,11 +142,12 @@ class TransactionViewModel:
         created_by: int,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
         from_account = self._account_repo.get_by_id(from_account_id)
-        commission = self._calc_commission(from_account, amount)
+        commission = self._calc_commission(from_account, amount, "send")
         balance_change = self._calc_balance_change(from_account, amount, commission)
 
         from_balance = (from_account.balance or 0.0) - balance_change
@@ -158,6 +165,7 @@ class TransactionViewModel:
             "amount": amount,
             "commission_amount": commission,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "balance_change": -balance_change,
             "currency": "MMK",
             "fee_account_id": fee_account_id,
@@ -176,6 +184,7 @@ class TransactionViewModel:
         created_by: int,
         screenshot_path: Optional[str] = None,
         customer_fee: float = 0.0,
+        additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
@@ -189,7 +198,7 @@ class TransactionViewModel:
             exchange_rate = rate.sell_rate
 
         account = self._account_repo.get_by_id(account_id)
-        commission = self._calc_commission(account, amount)
+        commission = self._calc_commission(account, amount, "send")
         balance_change = self._calc_balance_change(account, amount, commission)
 
         new_balance = (account.balance or 0.0) + balance_change
@@ -202,6 +211,7 @@ class TransactionViewModel:
             "amount": amount,
             "commission_amount": commission,
             "customer_fee": customer_fee,
+            "additional_fee_amount": additional_fee_amount,
             "balance_change": balance_change,
             "currency": currency,
             "exchange_rate": exchange_rate,

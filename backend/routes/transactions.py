@@ -25,6 +25,7 @@ class DepositRequest(BaseModel):
     customer_phone: str
     screenshot_path: Optional[str] = None
     customer_fee: float = 0.0
+    additional_fee_amount: float = 0.0
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -36,6 +37,7 @@ class WithdrawRequest(BaseModel):
     customer_phone: str
     screenshot_path: Optional[str] = None
     customer_fee: float = 0.0
+    additional_fee_amount: float = 0.0
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -46,6 +48,7 @@ class TransferRequest(BaseModel):
     amount: float
     screenshot_path: Optional[str] = None
     customer_fee: float = 0.0
+    additional_fee_amount: float = 0.0
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -56,6 +59,7 @@ class ExchangeRequest(BaseModel):
     currency: str
     screenshot_path: Optional[str] = None
     customer_fee: float = 0.0
+    additional_fee_amount: float = 0.0
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -84,6 +88,7 @@ async def create_deposit(
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
         customer_fee=body.customer_fee,
+        additional_fee_amount=body.additional_fee_amount,
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
@@ -104,6 +109,7 @@ async def create_withdraw(
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
         customer_fee=body.customer_fee,
+        additional_fee_amount=body.additional_fee_amount,
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
@@ -123,6 +129,7 @@ async def create_transfer(
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
         customer_fee=body.customer_fee,
+        additional_fee_amount=body.additional_fee_amount,
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
@@ -142,6 +149,7 @@ async def create_exchange(
         screenshot_path=body.screenshot_path,
         created_by=current_user["user_id"],
         customer_fee=body.customer_fee,
+        additional_fee_amount=body.additional_fee_amount,
         fee_account_id=body.fee_account_id,
         note=body.note,
     )

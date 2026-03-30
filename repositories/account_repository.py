@@ -17,6 +17,7 @@ class AccountRepository(BaseRepository):
             service_id=row["service_id"],
             account_name=row["account_name"],
             account_type=row["account_type"],
+            service_type=row.get("service_type", "KPAY"),
             phone_number=row["phone_number"],
             balance=float(row["balance"]),
             commission_rate=float(row["commission_rate"]),
