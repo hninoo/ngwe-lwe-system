@@ -6,7 +6,7 @@ import time
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from models.user import User
 
@@ -52,3 +52,12 @@ def get_current_user(authorization: str = Header(...)) -> dict:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization.removeprefix("Bearer ")
     return decode_token(token)
+
+
+def require_roles(*roles: str):
+    """Dependency factory that restricts access to specific roles."""
+    def _check(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user["role"] not in roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return current_user
+    return Depends(_check)

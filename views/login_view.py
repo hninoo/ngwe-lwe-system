@@ -156,17 +156,30 @@ class LoginView(QMainWindow):
 
     def _create_role_window(self, role: str | None) -> QMainWindow:
         if role == "owner":
-            try:
-                from views.dashboard_view import DashboardView
-                return DashboardView(self._api)
-            except Exception:
-                return self._placeholder_window("Owner Dashboard")
-        else:
-            try:
-                from views.transaction_view import TransactionView
-                return TransactionView(self._api)
-            except Exception:
-                return self._placeholder_window("Transaction Window")
+            from views.dashboard_view import DashboardView
+            return DashboardView(self._api)
+
+        if role == "cashier":
+            from views.cashier_view import CashierView
+            return CashierView(self._api)
+
+        # Employee: check for pending float before opening transaction view
+        from views.transaction_view import TransactionView
+        main_window = TransactionView(self._api)
+        self._check_pending_float(main_window)
+        return main_window
+
+    def _check_pending_float(self, parent: QMainWindow) -> None:
+        """If the employee has a PENDING float, show the receive dialog after window opens."""
+        try:
+            pending = self._api.get_my_pending_float()
+            if pending is None:
+                return
+            from views.receive_float_dialog import ReceiveFloatDialog
+            dlg = ReceiveFloatDialog(self._api, pending, parent)
+            dlg.exec()
+        except Exception:
+            pass  # no pending float or network error — proceed silently
 
     def _placeholder_window(self, title: str) -> QMainWindow:
         window = QMainWindow()

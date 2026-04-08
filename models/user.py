@@ -8,6 +8,7 @@ class User:
     id: Optional[int] = None
     username: Optional[str] = None
     full_name: Optional[str] = None
-    role: Optional[str] = None  # 'owner' | 'employee'
+    role: Optional[str] = None  # 'owner' | 'employee' | 'cashier'
     is_active: Optional[bool] = None
     created_at: Optional[datetime] = None
+    pin_hash: Optional[str] = None

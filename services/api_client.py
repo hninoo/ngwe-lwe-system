@@ -186,11 +186,18 @@ class ApiClient:
     def get_users(self) -> list[dict]:
         return self._get("/users/")
 
-    def create_user(self, username: str, password: str, full_name: str) -> dict:
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        full_name: str,
+        role: str = "employee",
+    ) -> dict:
         return self._post("/users/", {
             "username": username,
             "password": password,
             "full_name": full_name,
+            "role": role,
         })
 
     def toggle_user_active(self, user_id: int, is_active: bool) -> dict:
@@ -201,6 +208,9 @@ class ApiClient:
             "old_password": old_password,
             "new_password": new_password,
         })
+
+    def set_user_pin(self, user_id: int, pin: str) -> dict:
+        return self._post(f"/users/{user_id}/pin", {"pin": pin})
 
     # ── Exchange Rates ──
 
@@ -258,3 +268,72 @@ class ApiClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    # ── Cashier ──
+
+    def get_vault(self) -> dict:
+        """Get current vault balance (cashier only)."""
+        return self._get("/cashier/vault")
+
+    def record_vault_entry(
+        self,
+        entry_type: str,
+        denominations: dict[str, int],
+        note: Optional[str] = None,
+    ) -> dict:
+        """Record a vault_in or adjustment entry."""
+        return self._post("/cashier/vault/entry", {
+            "entry_type": entry_type,
+            "denominations": denominations,
+            "note": note,
+        })
+
+    def get_vault_logs(self) -> list[dict]:
+        """Get recent vault denomination logs."""
+        return self._get("/cashier/vault/logs")
+
+    def get_floats(self) -> list[dict]:
+        """Get float assignments (cashier sees all, employee sees own)."""
+        return self._get("/cashier/floats")
+
+    def issue_float(
+        self,
+        employee_id: int,
+        denominations: dict[str, int],
+        note: Optional[str] = None,
+    ) -> dict:
+        """Issue a float to an employee (cashier only)."""
+        return self._post("/cashier/floats", {
+            "employee_id": employee_id,
+            "denominations": denominations,
+            "note": note,
+        })
+
+    def get_my_pending_float(self) -> Optional[dict]:
+        """Get the current employee's pending float. Returns None if not found."""
+        try:
+            return self._get("/cashier/floats/my-pending")
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return None
+            raise
+
+    def get_float(self, float_id: int) -> dict:
+        """Get a specific float by ID."""
+        return self._get(f"/cashier/floats/{float_id}")
+
+    def receive_float(self, float_id: int, pin: str) -> dict:
+        """Employee confirms receipt of float with PIN."""
+        return self._post(f"/cashier/floats/{float_id}/receive", {"pin": pin})
+
+    def close_float(
+        self,
+        float_id: int,
+        closing_denominations: dict[str, int],
+        note: Optional[str] = None,
+    ) -> dict:
+        """Close a float with denomination return."""
+        return self._post(f"/cashier/floats/{float_id}/close", {
+            "closing_denominations": closing_denominations,
+            "note": note,
+        })

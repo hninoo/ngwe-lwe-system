@@ -1,14 +1,24 @@
 -- Ngwe Lwe System — SQLite Schema
 
 -- ============================================================
+-- 0. schema_version (must be first)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+    description TEXT
+);
+
+-- ============================================================
 -- 1. users
 -- ============================================================
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    pin_hash      TEXT,
     full_name     TEXT NOT NULL,
-    role          TEXT NOT NULL DEFAULT 'employee' CHECK(role IN ('owner','employee')),
+    role          TEXT NOT NULL DEFAULT 'employee' CHECK(role IN ('owner','employee','cashier')),
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -168,8 +178,61 @@ CREATE INDEX IF NOT EXISTS idx_log_user    ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_log_created ON activity_logs(created_at);
 
 -- ============================================================
+-- 9. cash_float_assignments
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cash_float_assignments (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id  INTEGER NOT NULL,
+    issued_by    INTEGER NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACTIVE','CLOSED')),
+    total_amount REAL NOT NULL DEFAULT 0.00,
+    received_at  TEXT,
+    closed_at    TEXT,
+    closing_total REAL,
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (employee_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (issued_by)   REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_float_employee ON cash_float_assignments(employee_id, status);
+
+-- ============================================================
+-- 10. cash_denomination_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cash_denomination_logs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_type   TEXT NOT NULL CHECK(entry_type IN ('vault_in','vault_out','float_returned','adjustment')),
+    denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+    quantity     INTEGER NOT NULL,
+    float_id     INTEGER,
+    created_by   INTEGER NOT NULL,
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (float_id)   REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_denom_log_created ON cash_denomination_logs(created_at);
+
+-- ============================================================
+-- 11. cash_float_denominations
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cash_float_denominations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    float_id     INTEGER NOT NULL,
+    denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+    quantity     INTEGER NOT NULL,
+    FOREIGN KEY (float_id) REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(float_id);
+
+-- ============================================================
 -- SEED DATA
 -- ============================================================
+
+-- schema_version seed (fresh install = already at version 2)
+INSERT OR IGNORE INTO schema_version (version, description) VALUES
+(1, 'Add cashier role and pin_hash'),
+(2, 'Create cash management tables');
 
 -- Users  (password: admin123 — bcrypt, cost 12)
 INSERT OR IGNORE INTO users (username, password_hash, full_name, role) VALUES

@@ -1,0 +1,1065 @@
+from typing import Optional
+
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpinBox,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from services.api_client import ApiClient
+
+# ── Colors ──
+BG_DARK = "#1e1e2e"
+BG_SIDEBAR = "#181825"
+BG_CARD = "#2a2a3e"
+BG_CONTENT = "#1e1e2e"
+BG_INPUT = "#313244"
+TEXT_PRIMARY = "#cdd6f4"
+TEXT_SECONDARY = "#a6adc8"
+TEXT_MUTED = "#6c7086"
+ACCENT_BLUE = "#89b4fa"
+ACCENT_GREEN = "#a6e3a1"
+ACCENT_RED = "#f38ba8"
+ACCENT_YELLOW = "#f9e2af"
+BORDER_COLOR = "#313244"
+INPUT_BORDER = "#585b70"
+
+DENOMINATIONS = [50, 100, 200, 500, 1000, 5000, 10000]
+SIDEBAR_WIDTH = 200
+REFRESH_INTERVAL_MS = 30_000
+
+STYLESHEET = f"""
+    QMainWindow {{ background-color: {BG_DARK}; }}
+    QWidget {{ color: {TEXT_PRIMARY}; }}
+    QScrollArea {{ border: none; background-color: {BG_CONTENT}; }}
+    QScrollBar:vertical {{
+        background: {BG_DARK}; width: 8px; border: none;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {BORDER_COLOR}; border-radius: 4px; min-height: 30px;
+    }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QTableWidget {{
+        background-color: {BG_CARD};
+        border: 1px solid {BORDER_COLOR};
+        border-radius: 8px;
+        gridline-color: {BORDER_COLOR};
+        font-size: 12px;
+    }}
+    QTableWidget::item {{ padding: 6px; }}
+    QHeaderView::section {{
+        background-color: {BG_SIDEBAR};
+        color: {TEXT_SECONDARY};
+        border: none; padding: 8px;
+        font-weight: bold; font-size: 12px;
+    }}
+    QLineEdit, QComboBox, QSpinBox {{
+        background-color: {BG_INPUT}; color: {TEXT_PRIMARY};
+        border: 1px solid {INPUT_BORDER}; border-radius: 6px;
+        padding: 8px 12px; font-size: 13px;
+    }}
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+        border: 1px solid {ACCENT_BLUE};
+    }}
+    QComboBox::drop-down {{ border: none; }}
+    QComboBox QAbstractItemView {{
+        background-color: {BG_INPUT}; color: {TEXT_PRIMARY};
+        selection-background-color: {BG_CARD};
+    }}
+    QSpinBox::up-button, QSpinBox::down-button {{
+        background-color: {BG_INPUT}; border: none; width: 16px;
+    }}
+"""
+
+
+# ── Shared helpers ──
+
+def _section_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+    label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+    return label
+
+
+def _accent_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background-color: {color}; color: {BG_DARK}; "
+        f"border: none; border-radius: 6px; padding: 8px 18px; "
+        f"font-size: 13px; font-weight: bold; }}"
+        f"QPushButton:hover {{ opacity: 0.85; }}"
+        f"QPushButton:disabled {{ background-color: #585b70; color: #6c7086; }}"
+    )
+    return btn
+
+
+def _card_frame() -> QFrame:
+    f = QFrame()
+    f.setStyleSheet(
+        f"QFrame {{ background-color: {BG_CARD}; border-radius: 10px; "
+        f"border: 1px solid {BORDER_COLOR}; }}"
+    )
+    return f
+
+
+def _scrollable_page() -> tuple[QScrollArea, QVBoxLayout]:
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    container = QWidget()
+    container.setStyleSheet(f"background-color: {BG_CONTENT};")
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(24, 20, 24, 24)
+    layout.setSpacing(16)
+    scroll.setWidget(container)
+    return scroll, layout
+
+
+def _make_table(headers: list[str], min_h: int = 200) -> QTableWidget:
+    table = QTableWidget(0, len(headers))
+    table.setHorizontalHeaderLabels(headers)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    table.setAlternatingRowColors(True)
+    table.verticalHeader().setVisible(False)
+    table.setMinimumHeight(min_h)
+    hdr = table.horizontalHeader()
+    hdr.setStretchLastSection(True)
+    for i in range(len(headers) - 1):
+        hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+    return table
+
+
+def _cell(text: str, align=Qt.AlignmentFlag.AlignLeft) -> QTableWidgetItem:
+    item = QTableWidgetItem(str(text))
+    item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+    return item
+
+
+# ════════════════════════════════════════════
+# VaultEntryDialog
+# ════════════════════════════════════════════
+class VaultEntryDialog(QDialog):
+    """Dialog for recording vault_in or adjustment entries."""
+
+    def __init__(self, api: ApiClient, entry_type: str = "vault_in", parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._entry_type = entry_type
+        self._spinboxes: dict[int, QSpinBox] = {}
+        self._total_label: Optional[QLabel] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        type_label = "Add Cash (Vault In)" if self._entry_type == "vault_in" else "Adjustment"
+        self.setWindowTitle(type_label)
+        self.setFixedWidth(440)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {BG_DARK}; }}
+            QWidget {{ color: {TEXT_PRIMARY}; background-color: {BG_DARK}; }}
+            QLabel {{ background-color: transparent; }}
+            QLineEdit, QSpinBox {{
+                background-color: {BG_INPUT}; color: {TEXT_PRIMARY};
+                border: 1px solid {INPUT_BORDER}; border-radius: 6px;
+                padding: 6px 10px; font-size: 13px;
+            }}
+            QSpinBox::up-button, QSpinBox::down-button {{
+                background-color: {BG_INPUT}; border: none; width: 16px;
+            }}
+            QPushButton {{
+                background-color: {ACCENT_BLUE}; color: {BG_DARK};
+                border: none; border-radius: 6px; padding: 8px 20px;
+                font-size: 13px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #74c7ec; }}
+        """)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title_lbl = QLabel(type_label)
+        title_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {ACCENT_BLUE}; background: transparent;")
+        layout.addWidget(title_lbl)
+
+        # Denomination grid
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        grid.addWidget(QLabel("Denomination"), 0, 0)
+        grid.addWidget(QLabel("Quantity"), 0, 1)
+        grid.addWidget(QLabel("Value"), 0, 2)
+
+        for i, denom in enumerate(DENOMINATIONS):
+            row = i + 1
+            denom_lbl = QLabel(f"{denom:,} MMK")
+            denom_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+
+            spin = QSpinBox()
+            spin.setRange(0, 9999)
+            spin.setValue(0)
+            spin.setFixedWidth(90)
+            self._spinboxes[denom] = spin
+
+            val_lbl = QLabel("0")
+            val_lbl.setStyleSheet(f"color: {ACCENT_YELLOW}; background: transparent;")
+            val_lbl.setFixedWidth(100)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+            spin.valueChanged.connect(
+                lambda v, d=denom, lbl=val_lbl: (
+                    lbl.setText(f"{d * v:,}"),
+                    self._update_total(),
+                )
+            )
+
+            grid.addWidget(denom_lbl, row, 0)
+            grid.addWidget(spin, row, 1)
+            grid.addWidget(val_lbl, row, 2)
+
+        layout.addLayout(grid)
+
+        # Total
+        total_row = QHBoxLayout()
+        total_title = QLabel("Total:")
+        total_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        total_title.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
+        self._total_label = QLabel("0 MMK")
+        self._total_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self._total_label.setStyleSheet(f"color: {ACCENT_GREEN}; background: transparent;")
+        total_row.addWidget(total_title)
+        total_row.addStretch()
+        total_row.addWidget(self._total_label)
+        layout.addLayout(total_row)
+
+        # Note
+        layout.addWidget(QLabel("Note (optional):"))
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText("e.g. Morning cash load")
+        layout.addWidget(self._note_input)
+
+        # Error
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px; background: transparent;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(
+            f"QPushButton {{ background-color: #313244; color: {TEXT_PRIMARY}; "
+            f"border: none; border-radius: 6px; padding: 8px 20px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: #45475a; }}"
+        )
+        cancel_btn.clicked.connect(self.reject)
+
+        self._submit_btn = QPushButton("Record Entry")
+        self._submit_btn.clicked.connect(self._on_submit)
+
+        btn_row.addWidget(cancel_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self._submit_btn)
+        layout.addLayout(btn_row)
+
+    def _update_total(self) -> None:
+        total = sum(d * self._spinboxes[d].value() for d in DENOMINATIONS)
+        if self._total_label:
+            self._total_label.setText(f"{total:,} MMK")
+
+    def _on_submit(self) -> None:
+        denoms = {str(d): self._spinboxes[d].value() for d in DENOMINATIONS}
+        total = sum(int(k) * v for k, v in denoms.items())
+        if total == 0:
+            self._error_label.setText("Total must be greater than zero")
+            self._error_label.setVisible(True)
+            return
+        note = self._note_input.text().strip() or None
+        try:
+            self._api.record_vault_entry(self._entry_type, denoms, note)
+            self.accept()
+        except Exception as e:
+            self._error_label.setText(f"Error: {e}")
+            self._error_label.setVisible(True)
+
+
+# ════════════════════════════════════════════
+# FloatDetailDialog
+# ════════════════════════════════════════════
+class FloatDetailDialog(QDialog):
+    """Shows denomination breakdown of a float."""
+
+    def __init__(self, float_data: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._float_data = float_data
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        float_id = self._float_data.get("id", "?")
+        employee = self._float_data.get("employee_name", "?")
+        self.setWindowTitle(f"Float #{float_id} — {employee}")
+        self.setFixedWidth(460)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {BG_DARK}; }}
+            QWidget {{ color: {TEXT_PRIMARY}; background-color: {BG_DARK}; }}
+            QLabel {{ background-color: transparent; }}
+            QTableWidget {{
+                background-color: {BG_CARD}; border: 1px solid {BORDER_COLOR};
+                border-radius: 6px; gridline-color: {BORDER_COLOR}; font-size: 12px;
+            }}
+            QTableWidget::item {{ padding: 6px; background-color: transparent; }}
+            QHeaderView::section {{
+                background-color: {BG_DARK}; color: {TEXT_SECONDARY};
+                border: none; padding: 6px; font-weight: bold;
+            }}
+            QPushButton {{
+                background-color: {ACCENT_BLUE}; color: {BG_DARK};
+                border: none; border-radius: 6px; padding: 8px 20px;
+                font-size: 13px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: #74c7ec; }}
+        """)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        # Header info
+        status = self._float_data.get("status", "?")
+        status_color = {
+            "PENDING": ACCENT_YELLOW,
+            "ACTIVE": ACCENT_GREEN,
+            "CLOSED": TEXT_MUTED,
+        }.get(status, TEXT_PRIMARY)
+
+        header_lbl = QLabel(
+            f"Float #{float_id}  —  Employee: {employee}  "
+            f"  Status: <span style='color:{status_color}'>{status}</span>"
+        )
+        header_lbl.setTextFormat(Qt.TextFormat.RichText)
+        header_lbl.setStyleSheet(f"font-size: 13px; background: transparent;")
+        layout.addWidget(header_lbl)
+
+        total = self._float_data.get("total_amount", 0)
+        issued_by = self._float_data.get("issued_by_name", "?")
+        meta_lbl = QLabel(
+            f"Issued by: {issued_by}    |    Total: {int(total):,} MMK"
+        )
+        meta_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent;")
+        layout.addWidget(meta_lbl)
+
+        # Denomination table
+        denoms = self._float_data.get("denominations", [])
+        active_denoms = [d for d in denoms if d.get("quantity", 0) > 0]
+
+        table = QTableWidget(len(active_denoms), 3)
+        table.setHorizontalHeaderLabels(["Denomination", "Quantity", "Value"])
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        table.verticalHeader().setVisible(False)
+        table.setMaximumHeight(min(240, 40 + len(active_denoms) * 32))
+        hdr = table.horizontalHeader()
+        hdr.setStretchLastSection(True)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+
+        for row_idx, d in enumerate(active_denoms):
+            denom_val = d.get("denomination", 0)
+            qty = d.get("quantity", 0)
+            value = denom_val * qty
+            d_item = _cell(f"{denom_val:,} MMK", Qt.AlignmentFlag.AlignCenter)
+            q_item = _cell(str(qty), Qt.AlignmentFlag.AlignCenter)
+            v_item = _cell(f"{value:,}", Qt.AlignmentFlag.AlignRight)
+            table.setItem(row_idx, 0, d_item)
+            table.setItem(row_idx, 1, q_item)
+            table.setItem(row_idx, 2, v_item)
+
+        layout.addWidget(table)
+
+        # Closing info (if closed)
+        if status == "CLOSED":
+            closing_total = self._float_data.get("closing_total", 0)
+            closed_at = self._float_data.get("closed_at", "?")
+            close_lbl = QLabel(
+                f"Closing total: {int(closing_total or 0):,} MMK    |    Closed: {closed_at}"
+            )
+            close_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent;")
+            layout.addWidget(close_lbl)
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+
+# ════════════════════════════════════════════
+# Page 0: Vault
+# ════════════════════════════════════════════
+class VaultPage(QWidget):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._denom_cards: dict[int, QLabel] = {}
+        self._total_card_value: Optional[QLabel] = None
+        self._log_table: Optional[QTableWidget] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+
+        # Title row
+        title_row = QHBoxLayout()
+        title_row.addWidget(_section_label("Vault Overview"))
+        title_row.addStretch()
+        refresh_btn = _accent_btn("Refresh", ACCENT_BLUE)
+        refresh_btn.clicked.connect(self.load_data)
+        entry_btn = _accent_btn("Record Vault Entry", ACCENT_GREEN)
+        entry_btn.clicked.connect(self._open_vault_entry)
+        title_row.addWidget(refresh_btn)
+        title_row.addWidget(entry_btn)
+        layout.addLayout(title_row)
+
+        # Denomination cards grid
+        cards_frame = _card_frame()
+        cards_layout = QVBoxLayout(cards_frame)
+        cards_layout.setContentsMargins(16, 16, 16, 16)
+        cards_layout.setSpacing(10)
+
+        sub_lbl = QLabel("Denomination Balances")
+        sub_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        sub_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        cards_layout.addWidget(sub_lbl)
+
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        for col, denom in enumerate(DENOMINATIONS):
+            card = QFrame()
+            card.setStyleSheet(
+                f"QFrame {{ background-color: {BG_DARK}; border-radius: 8px; "
+                f"border: 1px solid {BORDER_COLOR}; }}"
+            )
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 10, 12, 10)
+            card_layout.setSpacing(4)
+
+            denom_lbl = QLabel(f"{denom:,}")
+            denom_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+            denom_lbl.setStyleSheet(f"color: {ACCENT_BLUE}; background: transparent; border: none;")
+            denom_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            count_lbl = QLabel("0 pcs")
+            count_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; background: transparent; border: none;")
+            count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._denom_cards[denom] = count_lbl
+
+            val_lbl = QLabel("0 MMK")
+            val_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; background: transparent; border: none;")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            card_layout.addWidget(denom_lbl)
+            card_layout.addWidget(count_lbl)
+            card_layout.addWidget(val_lbl)
+
+            # Store value label by denomination too
+            card.setProperty("val_lbl", val_lbl)
+            grid.addWidget(card, 0, col)
+
+        self._denom_grid_cards: list[tuple[int, QLabel, QLabel]] = []
+        for col, denom in enumerate(DENOMINATIONS):
+            card_widget = grid.itemAtPosition(0, col).widget()
+            if card_widget:
+                val_lbl = card_widget.property("val_lbl")
+                self._denom_grid_cards.append((denom, self._denom_cards[denom], val_lbl))
+
+        cards_layout.addLayout(grid)
+
+        # Total
+        total_row = QHBoxLayout()
+        total_title = QLabel("Total Vault Value:")
+        total_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        total_title.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
+        self._total_card_value = QLabel("0 MMK")
+        self._total_card_value.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._total_card_value.setStyleSheet(f"color: {ACCENT_GREEN}; background: transparent;")
+        total_row.addWidget(total_title)
+        total_row.addStretch()
+        total_row.addWidget(self._total_card_value)
+        cards_layout.addLayout(total_row)
+        layout.addWidget(cards_frame)
+
+        # Denomination log table
+        layout.addWidget(_section_label("Recent Vault Entries"))
+        self._log_table = _make_table(
+            ["Time", "Type", "Denomination", "Qty", "Value", "Note", "By"]
+        )
+        layout.addWidget(self._log_table)
+        layout.addStretch()
+
+    def _open_vault_entry(self) -> None:
+        dlg = VaultEntryDialog(self._api, entry_type="vault_in", parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def load_data(self) -> None:
+        try:
+            vault = self._api.get_vault()
+            balance = vault.get("denominations", {})
+            total = vault.get("total", 0)
+
+            for denom, count_lbl, val_lbl in self._denom_grid_cards:
+                qty = balance.get(str(denom), 0)
+                count_lbl.setText(f"{qty} pcs")
+                val_lbl.setText(f"{denom * qty:,} MMK")
+
+            if self._total_card_value:
+                self._total_card_value.setText(f"{int(total):,} MMK")
+
+            # Load logs
+            logs = self._api.get_vault_logs()
+            if self._log_table:
+                self._log_table.setRowCount(0)
+                for log in logs:
+                    row = self._log_table.rowCount()
+                    self._log_table.insertRow(row)
+                    denom = log.get("denomination", 0)
+                    qty = log.get("quantity", 0)
+                    type_color = {
+                        "vault_in": ACCENT_GREEN,
+                        "vault_out": ACCENT_RED,
+                        "float_returned": ACCENT_BLUE,
+                        "adjustment": ACCENT_YELLOW,
+                    }.get(log.get("entry_type", ""), TEXT_PRIMARY)
+
+                    time_item = _cell(str(log.get("created_at", ""))[:19])
+                    type_item = _cell(log.get("entry_type", ""))
+                    type_item.setForeground(
+                        __import__("PyQt6.QtGui", fromlist=["QColor"]).QColor(type_color)
+                    )
+                    self._log_table.setItem(row, 0, time_item)
+                    self._log_table.setItem(row, 1, type_item)
+                    self._log_table.setItem(row, 2, _cell(f"{denom:,}", Qt.AlignmentFlag.AlignRight))
+                    self._log_table.setItem(row, 3, _cell(str(qty), Qt.AlignmentFlag.AlignRight))
+                    self._log_table.setItem(row, 4, _cell(f"{denom * qty:,}", Qt.AlignmentFlag.AlignRight))
+                    self._log_table.setItem(row, 5, _cell(log.get("note", "") or ""))
+                    self._log_table.setItem(row, 6, _cell(str(log.get("created_by", ""))))
+        except Exception:
+            pass
+
+
+# ════════════════════════════════════════════
+# Page 1: Issue Float
+# ════════════════════════════════════════════
+class IssueFloatPage(QWidget):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._spinboxes: dict[int, QSpinBox] = {}
+        self._val_labels: dict[int, QLabel] = {}
+        self._total_label: Optional[QLabel] = None
+        self._employee_combo: Optional[QComboBox] = None
+        self._employees: list[dict] = []
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+
+        layout.addWidget(_section_label("Issue Float to Employee"))
+
+        # Employee selector
+        emp_row = QHBoxLayout()
+        emp_row.addWidget(QLabel("Employee:"))
+        self._employee_combo = QComboBox()
+        self._employee_combo.setFixedWidth(280)
+        emp_row.addWidget(self._employee_combo)
+        emp_row.addStretch()
+        layout.addLayout(emp_row)
+
+        # Denomination grid in a card
+        card = _card_frame()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+        card_layout.setSpacing(8)
+
+        card_layout.addWidget(QLabel("Denomination Breakdown:"))
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        header_denom = QLabel("Denomination")
+        header_denom.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: bold;")
+        header_qty = QLabel("Quantity")
+        header_qty.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: bold;")
+        header_val = QLabel("Value")
+        header_val.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: bold; text-align: right;")
+        grid.addWidget(header_denom, 0, 0)
+        grid.addWidget(header_qty, 0, 1)
+        grid.addWidget(header_val, 0, 2)
+
+        for i, denom in enumerate(DENOMINATIONS):
+            row = i + 1
+            d_lbl = QLabel(f"{denom:,} MMK")
+            d_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
+
+            spin = QSpinBox()
+            spin.setRange(0, 9999)
+            spin.setValue(0)
+            spin.setFixedWidth(100)
+            self._spinboxes[denom] = spin
+
+            val_lbl = QLabel("0")
+            val_lbl.setStyleSheet(f"color: {ACCENT_YELLOW}; background: transparent;")
+            val_lbl.setFixedWidth(120)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self._val_labels[denom] = val_lbl
+
+            spin.valueChanged.connect(
+                lambda v, d=denom: self._on_spin_changed(d, v)
+            )
+
+            grid.addWidget(d_lbl, row, 0)
+            grid.addWidget(spin, row, 1)
+            grid.addWidget(val_lbl, row, 2)
+
+        card_layout.addLayout(grid)
+
+        # Total
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR}; background: {BORDER_COLOR};")
+        card_layout.addWidget(sep)
+
+        total_row = QHBoxLayout()
+        total_lbl = QLabel("Total Float Amount:")
+        total_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        total_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
+        self._total_label = QLabel("0 MMK")
+        self._total_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self._total_label.setStyleSheet(f"color: {ACCENT_GREEN}; background: transparent;")
+        total_row.addWidget(total_lbl)
+        total_row.addStretch()
+        total_row.addWidget(self._total_label)
+        card_layout.addLayout(total_row)
+
+        layout.addWidget(card)
+
+        # Note
+        note_row = QHBoxLayout()
+        note_row.addWidget(QLabel("Note (optional):"))
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText("e.g. Morning shift float")
+        note_row.addWidget(self._note_input)
+        layout.addLayout(note_row)
+
+        # Error/status
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px; background: transparent;")
+        self._status_label.setVisible(False)
+        layout.addWidget(self._status_label)
+
+        # Issue button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self._issue_btn = _accent_btn("Issue Float", ACCENT_GREEN)
+        self._issue_btn.clicked.connect(self._on_issue)
+        btn_row.addWidget(self._issue_btn)
+        layout.addLayout(btn_row)
+
+        layout.addStretch()
+
+    def _on_spin_changed(self, denom: int, value: int) -> None:
+        self._val_labels[denom].setText(f"{denom * value:,}")
+        total = sum(d * self._spinboxes[d].value() for d in DENOMINATIONS)
+        if self._total_label:
+            self._total_label.setText(f"{total:,} MMK")
+
+    def load_data(self) -> None:
+        try:
+            users = self._api.get_users()
+            self._employees = [u for u in users if u.get("role") == "employee" and u.get("is_active")]
+            if self._employee_combo:
+                self._employee_combo.clear()
+                for u in self._employees:
+                    self._employee_combo.addItem(u.get("full_name", u.get("username", "")), u.get("id"))
+        except Exception:
+            pass
+
+    def _on_issue(self) -> None:
+        if not self._employee_combo or self._employee_combo.count() == 0:
+            self._show_status("No employee selected", is_error=True)
+            return
+
+        employee_id = self._employee_combo.currentData()
+        if employee_id is None:
+            self._show_status("Please select an employee", is_error=True)
+            return
+
+        denoms = {str(d): self._spinboxes[d].value() for d in DENOMINATIONS}
+        total = sum(int(k) * v for k, v in denoms.items())
+        if total == 0:
+            self._show_status("Float total must be greater than zero", is_error=True)
+            return
+
+        note = self._note_input.text().strip() or None
+        self._issue_btn.setEnabled(False)
+        self._issue_btn.setText("Issuing...")
+        self._status_label.setVisible(False)
+
+        try:
+            self._api.issue_float(employee_id, denoms, note)
+            self._show_status(f"Float issued successfully! Total: {total:,} MMK", is_error=False)
+            # Reset spinboxes
+            for spin in self._spinboxes.values():
+                spin.setValue(0)
+            self._note_input.clear()
+        except Exception as e:
+            self._show_status(f"Error: {e}", is_error=True)
+        finally:
+            self._issue_btn.setEnabled(True)
+            self._issue_btn.setText("Issue Float")
+
+    def _show_status(self, message: str, is_error: bool = True) -> None:
+        color = ACCENT_RED if is_error else ACCENT_GREEN
+        self._status_label.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
+        self._status_label.setText(message)
+        self._status_label.setVisible(True)
+
+
+# ════════════════════════════════════════════
+# Page 2: Shifts / Float Assignments
+# ════════════════════════════════════════════
+class ShiftsPage(QWidget):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._table: Optional[QTableWidget] = None
+        self._floats_data: list[dict] = []
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(_section_label("Float Assignments"))
+        title_row.addStretch()
+        refresh_btn = _accent_btn("Refresh", ACCENT_BLUE)
+        refresh_btn.clicked.connect(self.load_data)
+        title_row.addWidget(refresh_btn)
+        layout.addLayout(title_row)
+
+        self._table = _make_table(
+            ["ID", "Employee", "Status", "Amount", "Issued By", "Issued At", "Received At", "Closed At", "Action"],
+            min_h=300,
+        )
+        layout.addWidget(self._table)
+        layout.addStretch()
+
+    def load_data(self) -> None:
+        try:
+            self._floats_data = self._api.get_floats()
+            if self._table is None:
+                return
+            self._table.setRowCount(0)
+            for f in self._floats_data:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+
+                status = f.get("status", "")
+                status_color = {
+                    "PENDING": ACCENT_YELLOW,
+                    "ACTIVE": ACCENT_GREEN,
+                    "CLOSED": TEXT_MUTED,
+                }.get(status, TEXT_PRIMARY)
+
+                total = f.get("total_amount", 0)
+
+                self._table.setItem(row, 0, _cell(str(f.get("id", "")), Qt.AlignmentFlag.AlignCenter))
+                self._table.setItem(row, 1, _cell(f.get("employee_name", "")))
+
+                status_item = _cell(status, Qt.AlignmentFlag.AlignCenter)
+                status_item.setForeground(
+                    __import__("PyQt6.QtGui", fromlist=["QColor"]).QColor(status_color)
+                )
+                self._table.setItem(row, 2, status_item)
+                self._table.setItem(row, 3, _cell(f"{int(total):,}", Qt.AlignmentFlag.AlignRight))
+                self._table.setItem(row, 4, _cell(f.get("issued_by_name", "")))
+                self._table.setItem(row, 5, _cell(str(f.get("created_at", ""))[:16]))
+                self._table.setItem(row, 6, _cell(str(f.get("received_at", "") or "")[:16]))
+                self._table.setItem(row, 7, _cell(str(f.get("closed_at", "") or "")[:16]))
+
+                # Action button in last column
+                view_btn = QPushButton("View")
+                view_btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {ACCENT_BLUE}; color: {BG_DARK}; "
+                    f"border: none; border-radius: 4px; padding: 4px 12px; font-size: 11px; }}"
+                    f"QPushButton:hover {{ background-color: #74c7ec; }}"
+                )
+                view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                float_data = f
+                view_btn.clicked.connect(lambda _, fd=float_data: self._show_float_detail(fd))
+                self._table.setCellWidget(row, 8, view_btn)
+        except Exception:
+            pass
+
+    def _show_float_detail(self, float_data: dict) -> None:
+        dlg = FloatDetailDialog(float_data, parent=self)
+        dlg.exec()
+
+
+# ════════════════════════════════════════════
+# Page 3: Transactions (read-only)
+# ════════════════════════════════════════════
+class TransactionsReadOnlyPage(QWidget):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._table: Optional[QTableWidget] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(_section_label("Recent Transactions"))
+        title_row.addStretch()
+        refresh_btn = _accent_btn("Refresh", ACCENT_BLUE)
+        refresh_btn.clicked.connect(self.load_data)
+        title_row.addWidget(refresh_btn)
+        layout.addLayout(title_row)
+
+        self._table = _make_table(
+            ["Time", "Type", "Account", "Customer", "Amount", "Fee", "By"],
+            min_h=300,
+        )
+        layout.addWidget(self._table)
+        layout.addStretch()
+
+    def load_data(self) -> None:
+        try:
+            txns = self._api.get_recent_transactions(limit=50)
+            if self._table is None:
+                return
+            self._table.setRowCount(0)
+            type_colors = {
+                "deposit": ACCENT_GREEN,
+                "withdraw": ACCENT_RED,
+                "transfer": ACCENT_BLUE,
+                "exchange": ACCENT_YELLOW,
+            }
+            for t in txns:
+                row = self._table.rowCount()
+                self._table.insertRow(row)
+                txn_type = t.get("transaction_type", "")
+                color = type_colors.get(txn_type, TEXT_PRIMARY)
+                amount = t.get("amount", 0)
+                fee = t.get("customer_fee", 0)
+
+                self._table.setItem(row, 0, _cell(str(t.get("created_at", ""))[:16]))
+                type_item = _cell(txn_type.upper(), Qt.AlignmentFlag.AlignCenter)
+                type_item.setForeground(
+                    __import__("PyQt6.QtGui", fromlist=["QColor"]).QColor(color)
+                )
+                self._table.setItem(row, 1, type_item)
+                self._table.setItem(row, 2, _cell(str(t.get("account_id", ""))))
+                self._table.setItem(row, 3, _cell(t.get("customer_name", "") or ""))
+                self._table.setItem(row, 4, _cell(f"{amount:,.0f}", Qt.AlignmentFlag.AlignRight))
+                self._table.setItem(row, 5, _cell(f"{fee:,.0f}", Qt.AlignmentFlag.AlignRight))
+                self._table.setItem(row, 6, _cell(str(t.get("created_by", ""))))
+        except Exception:
+            pass
+
+
+# ════════════════════════════════════════════
+# CashierView — Main Window
+# ════════════════════════════════════════════
+class CashierView(QMainWindow):
+
+    MENU_ITEMS = [
+        ("Vault", 0),
+        ("Issue Float", 1),
+        ("Shifts", 2),
+        ("Transactions", 3),
+    ]
+
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._current_page = 0
+        self._menu_btns: list[QPushButton] = []
+        self._pages: list[QWidget] = []
+        self._init_ui()
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self._auto_refresh)
+        self._refresh_timer.start(REFRESH_INTERVAL_MS)
+        self._load_current_page()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle("ငွေလွှဲ System — Cashier")
+        self.setMinimumSize(1100, 700)
+        self.setStyleSheet(STYLESHEET)
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Sidebar
+        sidebar = self._build_sidebar()
+        root.addWidget(sidebar)
+
+        # Content stack
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet(f"background-color: {BG_CONTENT};")
+        root.addWidget(self._stack, 1)
+
+        # Create pages
+        self._vault_page = VaultPage(self._api)
+        self._issue_page = IssueFloatPage(self._api)
+        self._shifts_page = ShiftsPage(self._api)
+        self._txns_page = TransactionsReadOnlyPage(self._api)
+
+        self._pages = [
+            self._vault_page,
+            self._issue_page,
+            self._shifts_page,
+            self._txns_page,
+        ]
+
+        for page in self._pages:
+            self._stack.addWidget(page)
+
+    def _build_sidebar(self) -> QWidget:
+        sidebar = QWidget()
+        sidebar.setFixedWidth(SIDEBAR_WIDTH)
+        sidebar.setStyleSheet(f"background-color: {BG_SIDEBAR};")
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # App title
+        title_widget = QWidget()
+        title_widget.setFixedHeight(60)
+        title_widget.setStyleSheet(f"background-color: {BG_SIDEBAR};")
+        title_layout = QVBoxLayout(title_widget)
+        title_layout.setContentsMargins(16, 0, 16, 0)
+        title_lbl = QLabel("Cashier")
+        title_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {ACCENT_BLUE}; background: transparent;")
+        title_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        title_layout.addWidget(title_lbl)
+        layout.addWidget(title_widget)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"background-color: {BORDER_COLOR}; border: none; max-height: 1px;")
+        layout.addWidget(sep)
+
+        # Menu buttons
+        for label, page_idx in self.MENU_ITEMS:
+            btn = QPushButton(label)
+            btn.setFixedHeight(46)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(self._menu_btn_style(False))
+            btn.clicked.connect(lambda _, idx=page_idx: self._switch_page(idx))
+            layout.addWidget(btn)
+            self._menu_btns.append(btn)
+
+        layout.addStretch()
+
+        # Logout button
+        logout_btn = QPushButton("Logout")
+        logout_btn.setFixedHeight(46)
+        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        logout_btn.setStyleSheet(
+            f"QPushButton {{ background-color: transparent; color: {ACCENT_RED}; "
+            f"border: none; text-align: left; padding: 0 16px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: rgba(243,139,168,0.1); }}"
+        )
+        logout_btn.clicked.connect(self._on_logout)
+        layout.addWidget(logout_btn)
+        layout.setContentsMargins(0, 0, 0, 8)
+
+        return sidebar
+
+    def _menu_btn_style(self, active: bool) -> str:
+        if active:
+            return (
+                f"QPushButton {{ background-color: rgba(137,180,250,0.15); "
+                f"color: {ACCENT_BLUE}; border: none; border-left: 3px solid {ACCENT_BLUE}; "
+                f"text-align: left; padding: 0 16px; font-size: 13px; font-weight: bold; }}"
+            )
+        return (
+            f"QPushButton {{ background-color: transparent; color: {TEXT_SECONDARY}; "
+            f"border: none; border-left: 3px solid transparent; "
+            f"text-align: left; padding: 0 16px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: rgba(137,180,250,0.08); color: {TEXT_PRIMARY}; }}"
+        )
+
+    def _switch_page(self, page_idx: int) -> None:
+        self._current_page = page_idx
+        self._stack.setCurrentIndex(page_idx)
+        for i, btn in enumerate(self._menu_btns):
+            btn.setStyleSheet(self._menu_btn_style(i == page_idx))
+        self._load_current_page()
+
+    def _load_current_page(self) -> None:
+        page = self._pages[self._current_page]
+        if hasattr(page, "load_data"):
+            try:
+                page.load_data()
+            except Exception:
+                pass
+
+    def _auto_refresh(self) -> None:
+        self._load_current_page()
+
+    def _on_logout(self) -> None:
+        try:
+            self._api.logout()
+        except Exception:
+            pass
+        self._refresh_timer.stop()
+        from views.login_view import LoginView
+        self._login_view = LoginView(self._api)
+        self._login_view.show()
+        self.close()
+
+    def closeEvent(self, event) -> None:
+        self._refresh_timer.stop()
+        super().closeEvent(event)

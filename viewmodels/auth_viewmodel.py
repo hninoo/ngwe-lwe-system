@@ -24,6 +24,10 @@ class AuthViewModel:
     def is_owner(self) -> bool:
         return self._current_user is not None and self._current_user.role == "owner"
 
+    @property
+    def is_cashier(self) -> bool:
+        return self._current_user is not None and self._current_user.role == "cashier"
+
     def login(self, username: str, password: str) -> bool:
         stored_hash = self._user_repo.get_password_hash(username)
         if stored_hash is None:

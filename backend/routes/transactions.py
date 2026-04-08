@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from backend.auth import get_current_user
 from backend.websocket_manager import ConnectionManager
+from repositories.cash_float_repository import CashFloatRepository
 from viewmodels.account_viewmodel import AccountViewModel
 from viewmodels.transaction_viewmodel import TransactionViewModel
 
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 _txn_vm = TransactionViewModel()
 _account_vm = AccountViewModel()
+_float_repo = CashFloatRepository()
 
 # Set from main.py at startup
 ws_manager: Optional[ConnectionManager] = None
@@ -80,6 +82,8 @@ async def create_deposit(
     body: DepositRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    if current_user["role"] == "cashier":
+        raise HTTPException(403, "Cashiers cannot record transactions")
     txn = _txn_vm.create_deposit(
         account_id=body.account_id,
         amount=body.amount,
@@ -101,6 +105,12 @@ async def create_withdraw(
     body: WithdrawRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    if current_user["role"] == "cashier":
+        raise HTTPException(403, "Cashiers cannot record transactions")
+    if current_user["role"] == "employee":
+        active = _float_repo.get_active_float_for_employee(current_user["user_id"])
+        if active is None:
+            raise HTTPException(403, "No active float. Receive your float from the cashier first.")
     txn = _txn_vm.create_withdraw(
         account_id=body.account_id,
         amount=body.amount,
@@ -122,6 +132,8 @@ async def create_transfer(
     body: TransferRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    if current_user["role"] == "cashier":
+        raise HTTPException(403, "Cashiers cannot record transactions")
     txn = _txn_vm.create_transfer(
         from_account_id=body.from_account_id,
         to_account_id=body.to_account_id,
@@ -142,6 +154,8 @@ async def create_exchange(
     body: ExchangeRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    if current_user["role"] == "cashier":
+        raise HTTPException(403, "Cashiers cannot record transactions")
     txn = _txn_vm.create_exchange(
         account_id=body.account_id,
         amount=body.amount,

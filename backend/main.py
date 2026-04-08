@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.database import init_db
 from backend.websocket_manager import ConnectionManager
 from backend.routes import auth, accounts, services, transactions, dashboard, users, exchange_rates, reports, commission_tiers
+from backend.routes import cashier
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app.include_router(users.router)
 app.include_router(exchange_rates.router)
 app.include_router(reports.router)
 app.include_router(commission_tiers.router)
+app.include_router(cashier.router)
 
 
 @app.websocket("/ws")
