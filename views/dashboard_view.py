@@ -793,7 +793,7 @@ class SettingsPage(QWidget):
         scroll, layout = scrollable_page()
 
         # Exchange rate section
-        layout.addWidget(section_label("Exchange Rate (MMK/THB)"))
+        layout.addWidget(section_label("Exchange Rate  (base: THB / quote: MMK)"))
         rate_card = card_frame()
         rate_lo = QVBoxLayout(rate_card)
         rate_lo.setContentsMargins(20, 16, 20, 16)
@@ -803,14 +803,30 @@ class SettingsPage(QWidget):
         self._current_rate_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
         rate_lo.addWidget(self._current_rate_label)
 
+        self._rate_hint_label = QLabel("")
+        self._rate_hint_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-style: italic;")
+        rate_lo.addWidget(self._rate_hint_label)
+
+        row0 = QHBoxLayout()
+        row0.addWidget(QLabel("Base Amount  (THB):"))
+        self._base_amount_input = QLineEdit()
+        self._base_amount_input.setPlaceholderText("1")
+        self._base_amount_input.setFixedWidth(80)
+        self._base_amount_input.textChanged.connect(self._on_rate_input_changed)
+        row0.addWidget(self._base_amount_input)
+        row0.addStretch()
+        rate_lo.addLayout(row0)
+
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Buy Rate:"))
+        row1.addWidget(QLabel("Buy Rate  (MMK per base THB):"))
         self._buy_input = QLineEdit()
-        self._buy_input.setPlaceholderText("0.0000")
+        self._buy_input.setPlaceholderText("128.2100")
+        self._buy_input.textChanged.connect(self._on_rate_input_changed)
         row1.addWidget(self._buy_input)
-        row1.addWidget(QLabel("Sell Rate:"))
+        row1.addWidget(QLabel("Sell Rate  (MMK per base THB):"))
         self._sell_input = QLineEdit()
-        self._sell_input.setPlaceholderText("0.0000")
+        self._sell_input.setPlaceholderText("128.2100")
+        self._sell_input.textChanged.connect(self._on_rate_input_changed)
         row1.addWidget(self._sell_input)
         rate_lo.addLayout(row1)
 
@@ -863,10 +879,11 @@ class SettingsPage(QWidget):
         tier_lo.setContentsMargins(20, 16, 20, 16)
         tier_lo.setSpacing(10)
 
+        # ── Filter row ──
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel("Service:"))
         self._tier_service = QComboBox()
-        self._tier_service.addItems(["KPAY", "WAVE", "BANK"])
+        self._tier_service.addItems(["WAVE_WST", "WAVE_ACCOUNT", "WAVE_PAP_TO_PAY", "KPAY_WST", "KPAY_PAP_TO_PAY", "KPAY_QR"])
         filter_row.addWidget(self._tier_service)
         filter_row.addWidget(QLabel("Account:"))
         self._tier_acc_type = QComboBox()
@@ -878,41 +895,111 @@ class SettingsPage(QWidget):
         filter_row.addStretch()
         tier_lo.addLayout(filter_row)
 
-        self._tier_table = make_table(["ID", "From", "To", "Fee", "Send Comm", "Recv Comm", "Action"], 250)
+        # ── Tier table — all commission_tiers fields ──
+        _TIER_COLS = [
+            "ID", "Acct Type", "From", "To",
+            "Fee Type", "Fee Dep", "Fee With",
+            "Comm Type", "Comm Dep", "Comm With",
+            "Add Type", "Add Dep", "Add With",
+            "Del",
+        ]
+        self._tier_table = QTableWidget(0, len(_TIER_COLS))
+        self._tier_table.setHorizontalHeaderLabels(_TIER_COLS)
+        self._tier_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._tier_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._tier_table.setAlternatingRowColors(True)
+        self._tier_table.verticalHeader().setVisible(False)
+        self._tier_table.setMinimumHeight(250)
+        self._tier_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        _tier_hdr = self._tier_table.horizontalHeader()
+        _tier_hdr.setStretchLastSection(False)
+        for _i in range(len(_TIER_COLS)):
+            _tier_hdr.setSectionResizeMode(_i, QHeaderView.ResizeMode.ResizeToContents)
         tier_lo.addWidget(self._tier_table)
 
-        # Add new tier row
-        add_row1 = QHBoxLayout()
-        add_row1.addWidget(QLabel("From:"))
+        # ── Add form — row 1: basic fields ──
+        _lbl = lambda t: QLabel(t)  # noqa: E731
+        add_r1 = QHBoxLayout()
+        add_r1.addWidget(_lbl("Acct Type:"))
+        self._new_acc_type = QComboBox()
+        self._new_acc_type.addItems(["agent", "personal"])
+        self._new_acc_type.setFixedWidth(95)
+        add_r1.addWidget(self._new_acc_type)
+        add_r1.addWidget(_lbl("From:"))
         self._new_from = QLineEdit()
         self._new_from.setPlaceholderText("0")
-        self._new_from.setFixedWidth(90)
-        add_row1.addWidget(self._new_from)
-        add_row1.addWidget(QLabel("To:"))
+        self._new_from.setFixedWidth(85)
+        add_r1.addWidget(self._new_from)
+        add_r1.addWidget(_lbl("To:"))
         self._new_to = QLineEdit()
         self._new_to.setPlaceholderText("0")
-        self._new_to.setFixedWidth(90)
-        add_row1.addWidget(self._new_to)
-        add_row1.addWidget(QLabel("Fee:"))
+        self._new_to.setFixedWidth(85)
+        add_r1.addWidget(self._new_to)
+        add_r1.addStretch()
+        tier_lo.addLayout(add_r1)
+
+        # ── Add form — row 2: fee fields ──
+        add_r2 = QHBoxLayout()
+        add_r2.addWidget(_lbl("Fee Type:"))
+        self._new_fee_type = QComboBox()
+        self._new_fee_type.addItems(["FIXED", "PERCENTAGE"])
+        self._new_fee_type.setFixedWidth(115)
+        add_r2.addWidget(self._new_fee_type)
+        add_r2.addWidget(_lbl("Fee Dep:"))
         self._new_fee = QLineEdit()
         self._new_fee.setPlaceholderText("0")
-        self._new_fee.setFixedWidth(80)
-        add_row1.addWidget(self._new_fee)
-        add_row1.addWidget(QLabel("Send:"))
+        self._new_fee.setFixedWidth(85)
+        add_r2.addWidget(self._new_fee)
+        add_r2.addWidget(_lbl("Fee With:"))
+        self._new_fee_withdraw = QLineEdit()
+        self._new_fee_withdraw.setPlaceholderText("0")
+        self._new_fee_withdraw.setFixedWidth(85)
+        add_r2.addWidget(self._new_fee_withdraw)
+        add_r2.addStretch()
+        tier_lo.addLayout(add_r2)
+
+        # ── Add form — row 3: commission fields ──
+        add_r3 = QHBoxLayout()
+        add_r3.addWidget(_lbl("Comm Type:"))
+        self._new_comm_type = QComboBox()
+        self._new_comm_type.addItems(["FIXED", "PERCENTAGE"])
+        self._new_comm_type.setFixedWidth(115)
+        add_r3.addWidget(self._new_comm_type)
+        add_r3.addWidget(_lbl("Comm Dep:"))
         self._new_send = QLineEdit()
         self._new_send.setPlaceholderText("0")
-        self._new_send.setFixedWidth(80)
-        add_row1.addWidget(self._new_send)
-        add_row1.addWidget(QLabel("Recv:"))
+        self._new_send.setFixedWidth(85)
+        add_r3.addWidget(self._new_send)
+        add_r3.addWidget(_lbl("Comm With:"))
         self._new_recv = QLineEdit()
         self._new_recv.setPlaceholderText("0")
-        self._new_recv.setFixedWidth(80)
-        add_row1.addWidget(self._new_recv)
+        self._new_recv.setFixedWidth(85)
+        add_r3.addWidget(self._new_recv)
+        add_r3.addStretch()
+        tier_lo.addLayout(add_r3)
+
+        # ── Add form — row 4: additional fee fields + submit ──
+        add_r4 = QHBoxLayout()
+        add_r4.addWidget(_lbl("Add Type:"))
+        self._new_add_type = QComboBox()
+        self._new_add_type.addItems(["FIXED", "PERCENTAGE"])
+        self._new_add_type.setFixedWidth(115)
+        add_r4.addWidget(self._new_add_type)
+        add_r4.addWidget(_lbl("Add Dep:"))
+        self._new_add_dep = QLineEdit()
+        self._new_add_dep.setPlaceholderText("0")
+        self._new_add_dep.setFixedWidth(85)
+        add_r4.addWidget(self._new_add_dep)
+        add_r4.addWidget(_lbl("Add With:"))
+        self._new_add_with = QLineEdit()
+        self._new_add_with.setPlaceholderText("0")
+        self._new_add_with.setFixedWidth(85)
+        add_r4.addWidget(self._new_add_with)
         add_tier_btn = accent_btn("+ Add Tier", ACCENT_GREEN)
         add_tier_btn.clicked.connect(self._on_add_tier)
-        add_row1.addWidget(add_tier_btn)
-        add_row1.addStretch()
-        tier_lo.addLayout(add_row1)
+        add_r4.addWidget(add_tier_btn)
+        add_r4.addStretch()
+        tier_lo.addLayout(add_r4)
 
         self._tier_status = QLabel("")
         self._tier_status.setVisible(False)
@@ -928,20 +1015,45 @@ class SettingsPage(QWidget):
     def load_data(self) -> None:
         try:
             rate = self._api.get_exchange_rate()
-            buy = rate.get("buy_rate", 0)
-            sell = rate.get("sell_rate", 0)
-            self._current_rate_label.setText(f"Current: Buy {buy:.4f} / Sell {sell:.4f}")
-            self._buy_input.setText(str(buy) if buy else "")
-            self._sell_input.setText(str(sell) if sell else "")
+            base_amt = float(rate.get("base_amount") or 1)
+            buy = float(rate.get("buy_rate") or 0)
+            sell = float(rate.get("sell_rate") or 0)
+            self._current_rate_label.setText(
+                f"Current:  {base_amt:g} THB — Buy {buy:.4f} MMK  |  Sell {sell:.4f} MMK"
+            )
+            self._base_amount_input.setText(f"{base_amt:g}")
+            self._buy_input.setText(f"{buy:.4f}" if buy else "")
+            self._sell_input.setText(f"{sell:.4f}" if sell else "")
+            self._update_rate_hint(base_amt, sell)
         except Exception:
             pass
         self._load_tiers()
 
+    def _on_rate_input_changed(self) -> None:
+        try:
+            base_amt = float(self._base_amount_input.text() or 1)
+            sell = float(self._sell_input.text())
+            self._update_rate_hint(base_amt, sell)
+        except (ValueError, AttributeError):
+            pass
+
+    def _update_rate_hint(self, base_amount: float, sell_rate: float) -> None:
+        if sell_rate > 0 and base_amount > 0:
+            effective = sell_rate / base_amount          # MMK per 1 THB
+            thb = round(100_000 / effective, 2)
+            self._rate_hint_label.setText(
+                f"{base_amount:g} THB = {sell_rate:,.4f} MMK  |  "
+                f"100,000 MMK = {thb:,.2f} THB  |  1 THB = {effective:,.4f} MMK"
+            )
+        else:
+            self._rate_hint_label.setText("")
+
     def _on_save_rate(self) -> None:
         try:
+            base_amt = float(self._base_amount_input.text() or 1)
             buy = float(self._buy_input.text())
             sell = float(self._sell_input.text())
-            self._api.update_exchange_rate(buy, sell)
+            self._api.update_exchange_rate(buy, sell, base_amount=base_amt)
             self._rate_status.setText("Rate saved!")
             self._rate_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._rate_status.setVisible(True)
@@ -987,24 +1099,33 @@ class SettingsPage(QWidget):
             tiers = self._api.get_commission_tiers(st, at)
             self._tier_table.setRowCount(len(tiers))
             for row, t in enumerate(tiers):
+                af = t.get("amount_from")
+                at_ = t.get("amount_to")
                 items = [
                     str(t.get("id", "")),
-                    f"{float(t.get('amount_from', 0)):,.0f}",
-                    f"{float(t.get('amount_to', 0)):,.0f}",
-                    f"{float(t.get('fee_amount', 0)):,.0f}",
-                    f"{float(t.get('comm_send', 0)):,.0f}",
-                    f"{float(t.get('comm_receive', 0)):,.0f}",
+                    t.get("account_type") or "—",
+                    f"{float(af):,.0f}" if af is not None else "—",
+                    f"{float(at_):,.0f}" if at_ is not None else "—",
+                    t.get("fee_amount_type") or "FIXED",
+                    f"{float(t.get('fee_amount_deposit') or 0):,.4g}",
+                    f"{float(t.get('fee_amount_withdraw') or 0):,.4g}",
+                    t.get("comm_type") or "FIXED",
+                    f"{float(t.get('comm_deposit') or 0):,.4g}",
+                    f"{float(t.get('comm_withdraw') or 0):,.4g}",
+                    t.get("additional_fee_type") or "FIXED",
+                    f"{float(t.get('additional_fee_deposit_amount') or 0):,.4g}",
+                    f"{float(t.get('additional_fee_withdraw_amount') or 0):,.4g}",
                 ]
                 for col, text in enumerate(items):
                     item = QTableWidgetItem(text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     self._tier_table.setItem(row, col, item)
-                del_btn = QPushButton("Delete")
+                del_btn = QPushButton("Del")
                 del_btn.setStyleSheet(
                     f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_RED}; "
                     f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}")
                 del_btn.clicked.connect(lambda _, tid=t["id"]: self._on_delete_tier(tid))
-                self._tier_table.setCellWidget(row, 6, del_btn)
+                self._tier_table.setCellWidget(row, 13, del_btn)
         except Exception:
             pass
 
@@ -1012,19 +1133,23 @@ class SettingsPage(QWidget):
         try:
             data = {
                 "service_type": self._tier_service.currentText(),
-                "account_type": self._tier_acc_type.currentText(),
-                "amount_from": float(self._new_from.text()),
-                "amount_to": float(self._new_to.text()),
-                "fee_amount": float(self._new_fee.text()),
-                "comm_send": float(self._new_send.text()),
-                "comm_receive": float(self._new_recv.text()),
+                "account_type": self._new_acc_type.currentText(),
+                "amount_from": float(self._new_from.text()) if self._new_from.text() else None,
+                "amount_to": float(self._new_to.text()) if self._new_to.text() else None,
+                "fee_amount_type": self._new_fee_type.currentText(),
+                "fee_amount_deposit": float(self._new_fee.text() or 0),
+                "fee_amount_withdraw": float(self._new_fee_withdraw.text() or 0),
+                "comm_type": self._new_comm_type.currentText(),
+                "comm_deposit": float(self._new_send.text() or 0),
+                "comm_withdraw": float(self._new_recv.text() or 0),
+                "additional_fee_type": self._new_add_type.currentText(),
+                "additional_fee_deposit_amount": float(self._new_add_dep.text() or 0),
+                "additional_fee_withdraw_amount": float(self._new_add_with.text() or 0),
             }
             self._api.create_commission_tier(data)
-            self._new_from.clear()
-            self._new_to.clear()
-            self._new_fee.clear()
-            self._new_send.clear()
-            self._new_recv.clear()
+            for w in (self._new_from, self._new_to, self._new_fee, self._new_fee_withdraw,
+                      self._new_send, self._new_recv, self._new_add_dep, self._new_add_with):
+                w.clear()
             self._tier_status.setText("Tier added!")
             self._tier_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._tier_status.setVisible(True)

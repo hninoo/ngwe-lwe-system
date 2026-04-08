@@ -204,12 +204,21 @@ class ApiClient:
 
     # ── Exchange Rates ──
 
-    def get_exchange_rate(self, pair: str = "MMK/THB") -> dict:
-        return self._get("/exchange-rates/latest", params={"pair": pair})
+    def get_exchange_rate(self, base: str = "THB", quote: str = "MMK") -> dict:
+        return self._get("/exchange-rates/latest", params={"base": base, "quote": quote})
 
-    def update_exchange_rate(self, buy_rate: float, sell_rate: float, pair: str = "MMK/THB") -> dict:
+    def update_exchange_rate(
+        self,
+        buy_rate: float,
+        sell_rate: float,
+        base_amount: float = 1.0,
+        base: str = "THB",
+        quote: str = "MMK",
+    ) -> dict:
         return self._post("/exchange-rates/", {
-            "currency_pair": pair,
+            "base_currency": base,
+            "quote_currency": quote,
+            "base_amount": base_amount,
             "buy_rate": buy_rate,
             "sell_rate": sell_rate,
         })

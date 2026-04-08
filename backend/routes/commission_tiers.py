@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,17 +14,23 @@ _tier_repo = CommissionTierRepository()
 
 class TierRequest(BaseModel):
     service_type: str
-    account_type: str = "agent"
-    amount_from: float
-    amount_to: float
-    fee_amount: float = 0.0
-    comm_send: float = 0.0
-    comm_receive: float = 0.0
+    account_type: Optional[str] = None
+    amount_from: Optional[float] = None
+    amount_to: Optional[float] = None
+    fee_amount_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
+    fee_amount_deposit: float = 0.0
+    fee_amount_withdraw: float = 0.0
+    comm_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
+    comm_deposit: float = 0.0
+    comm_withdraw: float = 0.0
+    additional_fee_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
+    additional_fee_deposit_amount: float = 0.0
+    additional_fee_withdraw_amount: float = 0.0
 
 
 @router.get("/")
 def get_tiers(
-    service_type: str = "KPAY",
+    service_type: str = "KPAY_WST",
     account_type: str = "agent",
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
@@ -40,7 +47,10 @@ def lookup_tier(
 ) -> dict:
     tier = _tier_repo.get_tier_for_amount(service_type, account_type, amount)
     if tier is None:
-        return {"fee_amount": 0, "comm_send": 0, "comm_receive": 0}
+        return {
+            "fee_amount_deposit": 0, "fee_amount_withdraw": 0,
+            "comm_deposit": 0, "comm_withdraw": 0,
+        }
     return asdict(tier)
 
 
@@ -56,9 +66,15 @@ def create_tier(
         "account_type": body.account_type,
         "amount_from": body.amount_from,
         "amount_to": body.amount_to,
-        "fee_amount": body.fee_amount,
-        "comm_send": body.comm_send,
-        "comm_receive": body.comm_receive,
+        "fee_amount_type": body.fee_amount_type,
+        "fee_amount_deposit": body.fee_amount_deposit,
+        "fee_amount_withdraw": body.fee_amount_withdraw,
+        "comm_type": body.comm_type,
+        "comm_deposit": body.comm_deposit,
+        "comm_withdraw": body.comm_withdraw,
+        "additional_fee_type": body.additional_fee_type,
+        "additional_fee_deposit_amount": body.additional_fee_deposit_amount,
+        "additional_fee_withdraw_amount": body.additional_fee_withdraw_amount,
     })
     return {"message": "Tier created", "id": tier_id}
 
@@ -76,9 +92,15 @@ def update_tier(
         "account_type": body.account_type,
         "amount_from": body.amount_from,
         "amount_to": body.amount_to,
-        "fee_amount": body.fee_amount,
-        "comm_send": body.comm_send,
-        "comm_receive": body.comm_receive,
+        "fee_amount_type": body.fee_amount_type,
+        "fee_amount_deposit": body.fee_amount_deposit,
+        "fee_amount_withdraw": body.fee_amount_withdraw,
+        "comm_type": body.comm_type,
+        "comm_deposit": body.comm_deposit,
+        "comm_withdraw": body.comm_withdraw,
+        "additional_fee_type": body.additional_fee_type,
+        "additional_fee_deposit_amount": body.additional_fee_deposit_amount,
+        "additional_fee_withdraw_amount": body.additional_fee_withdraw_amount,
     })
     return {"message": "Tier updated"}
 

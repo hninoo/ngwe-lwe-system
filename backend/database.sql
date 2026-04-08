@@ -94,63 +94,86 @@ CREATE TABLE transactions (
 -- ============================================================
 CREATE TABLE commission_tiers (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    service_type ENUM('KPAY', 'WAVE', 'BANK') NOT NULL,
-    account_type ENUM('personal', 'agent') NOT NULL DEFAULT 'agent',
-    amount_from DECIMAL(18, 2) NOT NULL,
-    amount_to DECIMAL(18, 2) NOT NULL,
-    fee_amount DECIMAL(18, 2) NOT NULL DEFAULT 0.00,
-    comm_send DECIMAL(18, 2) NOT NULL DEFAULT 0.00,
-    comm_receive DECIMAL(18, 2) NOT NULL DEFAULT 0.00,
+    service_type VARCHAR(50) NOT NULL,
+    account_type ENUM('personal', 'agent') NULL DEFAULT NULL,
+    amount_from DECIMAL(18, 2) NULL,
+    amount_to DECIMAL(18, 2) NULL,
+    fee_amount_type ENUM('FIXED', 'PERCENTAGE') NOT NULL DEFAULT 'FIXED',
+    fee_amount_deposit DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
+    fee_amount_withdraw DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
+    comm_type ENUM('FIXED', 'PERCENTAGE') NOT NULL DEFAULT 'FIXED',
+    comm_deposit DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
+    comm_withdraw DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
+    additional_fee_type ENUM('FIXED', 'PERCENTAGE') NOT NULL DEFAULT 'FIXED',
+    additional_fee_deposit_amount DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
+    additional_fee_withdraw_amount DECIMAL(18, 4) NOT NULL DEFAULT 0.0000,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_tier_lookup (service_type, account_type, is_active)
+    INDEX idx_tier_lookup (service_type, is_active)
 ) ENGINE=InnoDB;
 
--- Seed: WAVE agent tiers
-INSERT INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount, comm_send, comm_receive) VALUES
-('WAVE','agent',1,10000,400,69,88),
-('WAVE','agent',10001,25000,700,123,172),
-('WAVE','agent',25001,50000,1000,147,245),
-('WAVE','agent',50001,100000,1500,196,392),
-('WAVE','agent',100001,150000,2000,294,490),
-('WAVE','agent',150001,200000,2500,392,588),
-('WAVE','agent',200001,300000,3000,490,686),
-('WAVE','agent',300001,400000,4000,653,915),
-('WAVE','agent',400001,500000,4500,735,1029),
-('WAVE','agent',500001,600000,5400,882,1235),
-('WAVE','agent',600001,700000,6000,980,1372),
-('WAVE','agent',700001,800000,6700,1094,1532),
-('WAVE','agent',800001,900000,7400,1209,1692),
-('WAVE','agent',900001,1000000,8000,1307,1829);
+-- Seed: WAVE_WST agent tiers
+INSERT INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
+('WAVE_WST','agent',1,10000,'FIXED',400,0,'FIXED',69,88,NULL,0,0),
+('WAVE_WST','agent',10001,25000,'FIXED',700,0,'FIXED',123,172,NULL,0,0),
+('WAVE_WST','agent',25001,50000,'FIXED',1000,0,'FIXED',147,245,NULL,0,0),
+('WAVE_WST','agent',50001,100000,'FIXED',1500,0,'FIXED',196,392,NULL,0,0),
+('WAVE_WST','agent',100001,150000,'FIXED',2000,0,'FIXED',294,490,NULL,0,0),
+('WAVE_WST','agent',150001,200000,'FIXED',2500,0,'FIXED',392,588,NULL,0,0),
+('WAVE_WST','agent',200001,300000,'FIXED',3000,0,'FIXED',490,686,NULL,0,0),
+('WAVE_WST','agent',300001,400000,'FIXED',4000,0,'FIXED',653,915,NULL,0,0),
+('WAVE_WST','agent',400001,500000,'FIXED',4500,0,'FIXED',735,1029,NULL,0,0),
+('WAVE_WST','agent',500001,600000,'FIXED',5400,0,'FIXED',882,1235,NULL,0,0),
+('WAVE_WST','agent',600001,700000,'FIXED',6000,0,'FIXED',980,1372,NULL,0,0),
+('WAVE_WST','agent',700001,800000,'FIXED',6700,0,'FIXED',1094,1532,NULL,0,0),
+('WAVE_WST','agent',800001,900000,'FIXED',7400,0,'FIXED',1209,1692,NULL,0,0),
+('WAVE_WST','agent',900001,1000000,'FIXED',8000,0,'FIXED',1307,1829,NULL,0,0);
 
--- Seed: KPAY agent tiers
-INSERT INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount, comm_send, comm_receive) VALUES
-('KPAY','agent',1,10000,400,80,80),
-('KPAY','agent',10001,25000,700,140,140),
-('KPAY','agent',25001,50000,1000,200,200),
-('KPAY','agent',50001,100000,1500,300,300),
-('KPAY','agent',100001,150000,2000,400,400),
-('KPAY','agent',150001,200000,2500,500,500),
-('KPAY','agent',200001,300000,3000,600,600),
-('KPAY','agent',300001,400000,4000,800,800),
-('KPAY','agent',400001,500000,4500,900,900),
-('KPAY','agent',500001,600000,5200,1040,1040),
-('KPAY','agent',600001,700000,5800,1160,1160),
-('KPAY','agent',700001,800000,6500,1300,1300),
-('KPAY','agent',800001,900000,7200,1440,1440),
-('KPAY','agent',900001,1000000,7800,1560,1560);
+-- Seed: WAVE_ACCOUNT tiers
+INSERT INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
+('WAVE_ACCOUNT',NULL,0,30000,'FIXED',300,0,'FIXED',300,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,30000,50000,'FIXED',500,0,'FIXED',500,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,50000,70000,'FIXED',700,0,'FIXED',700,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,70000,90000,'FIXED',1100,0,'FIXED',1100,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,90000,100000,'FIXED',1400,0,'FIXED',1400,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,100000,200000,'FIXED',1700,0,'FIXED',1700,0,NULL,0,0),
+('WAVE_ACCOUNT',NULL,NULL,NULL,'PERCENTAGE',0.03,0,'PERCENTAGE',0.03,0,NULL,0,0);
+
+-- Seed: KPAY_WST agent tiers
+INSERT INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
+('KPAY_WST','agent',1,10000,'FIXED',400,0,'FIXED',80,80,NULL,0,0),
+('KPAY_WST','agent',10001,25000,'FIXED',700,0,'FIXED',140,140,NULL,0,0),
+('KPAY_WST','agent',25001,50000,'FIXED',1000,0,'FIXED',200,200,NULL,0,0),
+('KPAY_WST','agent',50001,100000,'FIXED',1500,0,'FIXED',300,300,NULL,0,0),
+('KPAY_WST','agent',100001,150000,'FIXED',2000,0,'FIXED',400,400,NULL,0,0),
+('KPAY_WST','agent',150001,200000,'FIXED',2500,0,'FIXED',500,500,NULL,0,0),
+('KPAY_WST','agent',200001,300000,'FIXED',3000,0,'FIXED',600,600,NULL,0,0),
+('KPAY_WST','agent',300001,400000,'FIXED',4000,0,'FIXED',800,800,NULL,0,0),
+('KPAY_WST','agent',400001,500000,'FIXED',4500,0,'FIXED',900,900,NULL,0,0),
+('KPAY_WST','agent',500001,600000,'FIXED',5200,0,'FIXED',1040,1040,NULL,0,0),
+('KPAY_WST','agent',600001,700000,'FIXED',5800,0,'FIXED',1160,1160,NULL,0,0),
+('KPAY_WST','agent',700001,800000,'FIXED',6500,0,'FIXED',1300,1300,NULL,0,0),
+('KPAY_WST','agent',800001,900000,'FIXED',7200,0,'FIXED',1440,1440,NULL,0,0),
+('KPAY_WST','agent',900001,1000000,'FIXED',7800,0,'FIXED',1560,1560,NULL,0,0);
 
 -- ============================================================
 -- 6. exchange_rates - MMK ↔ THB rates
 -- ============================================================
+-- base_amount: reference quantity of base currency the rate is quoted against
+-- e.g. base=THB, quote=MMK, base_amount=1,   buy_rate=128.21  → 1 THB = 128.21 MMK
+--                            base_amount=100, buy_rate=12821   → 100 THB = 12,821 MMK
+-- MMK → THB : THB = MMK_amount * base_amount / sell_rate
+-- THB → MMK : MMK = THB_amount * buy_rate   / base_amount
 CREATE TABLE exchange_rates (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    currency_pair VARCHAR(7) NOT NULL DEFAULT 'MMK/THB',
+    base_currency VARCHAR(3) NOT NULL DEFAULT 'THB',
+    quote_currency VARCHAR(3) NOT NULL DEFAULT 'MMK',
+    base_amount DECIMAL(18, 2) NOT NULL DEFAULT 1.00,
     buy_rate DECIMAL(18, 4) NOT NULL,
     sell_rate DECIMAL(18, 4) NOT NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_rate_pair (currency_pair),
+    INDEX idx_rate_pair (base_currency, quote_currency),
     INDEX idx_rate_updated (updated_at)
 ) ENGINE=InnoDB;
 
@@ -238,8 +261,9 @@ INSERT INTO accounts (service_id, account_name, account_type, phone_number, serv
 (7, 'OK Dollar Agent', 'agent', '09-333-444-555', 'KPAY', 900000.00);
 
 -- Exchange rates
-INSERT INTO exchange_rates (currency_pair, buy_rate, sell_rate) VALUES
-('MMK/THB', 75.5000, 76.5000);
+-- 100,000 MMK = 780 THB  →  1 THB = 128.21 MMK  (base_amount=1)
+INSERT INTO exchange_rates (base_currency, quote_currency, base_amount, buy_rate, sell_rate) VALUES
+('THB', 'MMK', 1.00, 128.2100, 128.2100);
 
 -- Demo transactions (created by employee1, id=2)
 INSERT INTO transactions (transaction_type, account_id, customer_name, customer_phone, amount, commission_amount, customer_fee, balance_change, currency, created_by) VALUES

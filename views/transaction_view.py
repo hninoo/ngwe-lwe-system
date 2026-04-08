@@ -27,6 +27,14 @@ from PyQt6.QtWidgets import (
 
 from services.api_client import ApiClient
 
+
+def _map_tier_service_type(service_type: str, account_type: str) -> str:
+    if service_type == "WAVE":
+        return "WAVE_WST" if account_type == "agent" else "WAVE_ACCOUNT"
+    if service_type == "KPAY":
+        return "KPAY_WST"
+    return service_type
+
 MMT = timezone(timedelta(hours=6, minutes=30))
 
 # ── Colors ──
@@ -379,7 +387,7 @@ class TransactionFormPage(QWidget):
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
-        self._amount_input.returnPressed.connect(lambda: self._additional_fee_input.setFocus())
+        self._amount_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
         lo.addWidget(self._amount_input)
 
         self._commission_label = field_label("Commission")
@@ -399,14 +407,15 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_TEAL}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._fee_display)
 
-        lo.addWidget(field_label("Additional Fee"))
-        self._additional_fee_input = QLineEdit()
-        self._additional_fee_input.setPlaceholderText("0")
-        self._additional_fee_input.textChanged.connect(self._on_additional_fee_changed)
-        self._additional_fee_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
-        lo.addWidget(self._additional_fee_input)
+        lo.addWidget(field_label("Additional Fee (from tier)"))
+        self._additional_fee_display = QLineEdit()
+        self._additional_fee_display.setReadOnly(True)
+        self._additional_fee_display.setText("0")
+        self._additional_fee_display.setStyleSheet(
+            f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_YELLOW}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
+        lo.addWidget(self._additional_fee_display)
 
-        lo.addWidget(field_label("Total Customer Charge"))
+        lo.addWidget(field_label("Total Fee  (→ Fee Account)"))
         self._total_charge_display = QLineEdit()
         self._total_charge_display.setReadOnly(True)
         self._total_charge_display.setText("0")
@@ -501,68 +510,80 @@ class TransactionFormPage(QWidget):
         except Exception:
             pass
 
-    def _on_additional_fee_changed(self) -> None:
-        try:
-            self._recalculate()
-        except Exception:
-            pass
-
     def _recalculate(self) -> None:
         account = self._get_selected_account()
         amount = self._parse_amount()
-        additional = self._parse_additional_fee()
 
         if account is None or amount <= 0:
             self._commission_display.setText("0")
             self._balance_change_display.setText("0")
             self._fee_display.setText("0")
+            self._additional_fee_display.setText("0")
             self._total_charge_display.setText("0")
             self._fee_hint.setVisible(False)
             return
 
         tier = self._lookup_tier(account, amount)
-        is_deposit = self._selected_action == "deposit"
+        is_withdraw = self._selected_action == "withdraw"
 
         if tier is None:
             self._commission_display.setText("0")
             self._fee_display.setText("0")
-            total = additional
-            self._total_charge_display.setText(f"{total:,.0f}")
+            self._additional_fee_display.setText("0")
+            self._total_charge_display.setText("0")
             self._balance_change_display.setText(f"{amount:,.0f}")
             self._fee_hint.setText("Tier မသတ်မှတ်ရသေး — manual ဖြည့်ပါ")
             self._fee_hint.setStyleSheet(f"color: {ACCENT_YELLOW}; font-size: 11px; font-style: italic; padding-left: 2px;")
             self._fee_hint.setVisible(True)
             return
 
-        if is_deposit:
-            commission = tier.get("comm_send", 0)       # deposit: agent earns comm_send
-        elif self._selected_action == "withdraw":
-            commission = tier.get("comm_receive", 0)    # withdraw: agent earns comm_receive
+        fee_type = (tier.get("fee_amount_type") or "FIXED").upper()
+        comm_type_val = (tier.get("comm_type") or "FIXED").upper()
+        add_type = (tier.get("additional_fee_type") or "FIXED").upper()
+
+        if is_withdraw:
+            fee_raw = float(tier.get("fee_amount_withdraw") or 0)
+            comm_raw = float(tier.get("comm_withdraw") or 0)
+            add_raw = float(tier.get("additional_fee_withdraw_amount") or 0)
         else:
-            commission = tier.get("comm_send", 0)       # transfer/exchange: comm_send
-        fee_amount = tier.get("fee_amount", 0)
-        balance_change = round(amount - commission, 2)
-        total = fee_amount + additional
+            fee_raw = float(tier.get("fee_amount_deposit") or 0)
+            comm_raw = float(tier.get("comm_deposit") or 0)
+            add_raw = float(tier.get("additional_fee_deposit_amount") or 0)
+
+        fee_amount = round(amount * fee_raw, 2) if fee_type == "PERCENTAGE" else fee_raw
+        commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
+        additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
+
+        # balance_change = full amount (commission is agent profit, not deducted from balance)
+        balance_change = amount if not is_withdraw else -amount
+        total_fee = fee_amount + additional
+        customer_total = amount + total_fee
 
         self._commission_display.setText(f"{commission:,.0f}")
         self._fee_display.setText(f"{fee_amount:,.0f}")
-        self._total_charge_display.setText(f"{total:,.0f}")
+        self._additional_fee_display.setText(f"{additional:,.0f}")
+        self._total_charge_display.setText(f"{total_fee:,.0f}")
         self._balance_change_display.setText(f"{balance_change:,.0f}")
 
-        service_cost = fee_amount - commission
-        self._fee_hint.setText(
-            f"Customer ပေးရမည်: {fee_amount:,.0f} + {additional:,.0f} = {total:,.0f} | "
-            f"Agent ရ: {commission:,.0f} | Service ကို: {service_cost:,.0f}")
+        if is_withdraw:
+            self._fee_hint.setText(
+                f"Customer ထုတ်: {amount:,.0f}  |  Fee: {fee_amount:,.0f} + {additional:,.0f} = {total_fee:,.0f}  |  "
+                f"Customer ပေးရ (fee): {total_fee:,.0f}  |  Agent ကော်မရှင်: {commission:,.0f}")
+        else:
+            self._fee_hint.setText(
+                f"Customer ပေးရ: {amount:,.0f} + {total_fee:,.0f} (fee) = {customer_total:,.0f}  |  "
+                f"Fee Account သို့: {total_fee:,.0f}  |  Agent ကော်မရှင်: {commission:,.0f}")
         self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
         self._fee_hint.setVisible(True)
 
     def _lookup_tier(self, account: dict, amount: float) -> Optional[dict]:
         service_type = account.get("service_type", "KPAY")
+        account_type = account.get("account_type", "personal")
+        tier_service_type = _map_tier_service_type(service_type, account_type)
         try:
-            tier = self._api.lookup_tier(
-                service_type, account.get("account_type", "personal"), amount,
-            )
-            if tier.get("fee_amount", 0) == 0 and tier.get("comm_send", 0) == 0 and tier.get("comm_receive", 0) == 0:
+            tier = self._api.lookup_tier(tier_service_type, account_type, amount)
+            if (tier.get("fee_amount_deposit", 0) == 0 and tier.get("fee_amount_withdraw", 0) == 0
+                    and tier.get("comm_deposit", 0) == 0 and tier.get("comm_withdraw", 0) == 0):
                 return None
             return tier
         except Exception:
@@ -572,14 +593,18 @@ class TransactionFormPage(QWidget):
         tier = self._lookup_tier(account, amount)
         if tier is None:
             return 0.0
-        if self._selected_action == "deposit":
-            return float(tier.get("comm_send", 0))  # deposit: agent earns comm_send
+        comm_type_val = (tier.get("comm_type") or "FIXED").upper()
         if self._selected_action == "withdraw":
-            return float(tier.get("comm_receive", 0))  # withdraw: agent earns comm_receive
-        return float(tier.get("comm_send", 0))  # transfer/exchange: comm_send
+            raw = float(tier.get("comm_withdraw") or 0)
+        else:
+            raw = float(tier.get("comm_deposit") or 0)
+        if comm_type_val == "PERCENTAGE":
+            return round(amount * raw, 2)
+        return raw
 
-    def _calc_balance_change(self, account: dict, amount: float, commission: float) -> float:
-        return round(amount - commission, 2)
+    def _calc_balance_change(self, amount: float) -> float:
+        # commission is agent profit, not deducted from account balance
+        return round(amount, 2)
 
     def _parse_amount(self) -> float:
         try:
@@ -589,7 +614,7 @@ class TransactionFormPage(QWidget):
 
     def _parse_additional_fee(self) -> float:
         try:
-            return float(self._additional_fee_input.text().replace(",", ""))
+            return float(self._additional_fee_display.text().replace(",", ""))
         except ValueError:
             return 0.0
 
@@ -617,14 +642,13 @@ class TransactionFormPage(QWidget):
             return 0.0
 
     def _calc_projected(self, balance: float, amount: float) -> float:
-        account = self._get_selected_account()
-        if account is None or amount <= 0:
+        if amount <= 0:
             return balance
-        commission = self._calc_commission(account, amount)
-        change = self._calc_balance_change(account, amount, commission)
         if self._selected_action == "deposit":
-            return balance + change
-        return balance - change
+            return balance + amount
+        if self._selected_action == "withdraw":
+            return balance - amount
+        return balance
 
     def _update_balance_hint(self) -> None:
         account = self._get_selected_account()
@@ -767,7 +791,7 @@ class TransactionFormPage(QWidget):
         self._customer_name.clear()
         self._customer_phone.clear()
         self._fee_display.setText("0")
-        self._additional_fee_input.clear()
+        self._additional_fee_display.setText("0")
         self._total_charge_display.setText("0")
         self._fee_hint.setVisible(False)
         self._fee_account_combo.setCurrentIndex(0)

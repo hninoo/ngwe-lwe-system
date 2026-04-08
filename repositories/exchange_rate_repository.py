@@ -14,30 +14,25 @@ class ExchangeRateRepository(BaseRepository):
     def _row_to_model(self, row: dict) -> ExchangeRate:
         return ExchangeRate(
             id=row["id"],
-            currency_pair=row["currency_pair"],
+            base_currency=row["base_currency"],
+            quote_currency=row["quote_currency"],
+            base_amount=float(row["base_amount"]),
             buy_rate=float(row["buy_rate"]),
             sell_rate=float(row["sell_rate"]),
             updated_at=row["updated_at"],
         )
 
-    def get_latest(self, currency_pair: str = "MMK/THB") -> Optional[ExchangeRate]:
+    def get_latest(
+        self,
+        base_currency: str = "THB",
+        quote_currency: str = "MMK",
+    ) -> Optional[ExchangeRate]:
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM exchange_rates "
-                "WHERE currency_pair = %s "
+                "WHERE base_currency = %s AND quote_currency = %s "
                 "ORDER BY updated_at DESC LIMIT 1",
-                (currency_pair,),
+                (base_currency, quote_currency),
             )
             row = cursor.fetchone()
         return self._row_to_model(row) if row else None
-
-    def get_by_pair(self, currency_pair: str) -> list[ExchangeRate]:
-        with get_cursor() as cursor:
-            cursor.execute(
-                "SELECT * FROM exchange_rates "
-                "WHERE currency_pair = %s "
-                "ORDER BY updated_at DESC",
-                (currency_pair,),
-            )
-            rows = cursor.fetchall()
-        return [self._row_to_model(r) for r in rows]

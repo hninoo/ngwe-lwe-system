@@ -11,11 +11,14 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_NAME", "ngwe_lwe_db"),
     "charset": "utf8mb4",
     "collation": "utf8mb4_unicode_ci",
 }
+
+_db_password = os.getenv("DB_PASSWORD")
+if _db_password:
+    DB_CONFIG["password"] = _db_password
 
 _pool: pooling.MySQLConnectionPool | None = None
 

@@ -10,6 +10,15 @@ from repositories.service_repository import ServiceRepository
 from repositories.commission_tier_repository import CommissionTierRepository
 
 
+def _map_tier_service_type(service_type: str, account_type: str) -> str:
+    """Map account service_type + account_type to commission tier service_type."""
+    if service_type == "WAVE":
+        return "WAVE_WST" if account_type == "agent" else "WAVE_ACCOUNT"
+    if service_type == "KPAY":
+        return "KPAY_WST"
+    return service_type
+
+
 class TransactionViewModel:
 
     def __init__(
@@ -28,18 +37,18 @@ class TransactionViewModel:
 
     def _get_tier(self, account: Account, amount: float):
         service_type = account.service_type or "KPAY"
-        return self._tier_repo.get_tier_for_amount(
-            service_type, account.account_type or "personal", amount,
-        )
+        account_type = account.account_type or "personal"
+        tier_service_type = _map_tier_service_type(service_type, account_type)
+        return self._tier_repo.get_tier_for_amount(tier_service_type, account_type, amount)
 
     def _calc_commission(self, account: Account, amount: float, comm_type: str = "send") -> float:
         tier = self._get_tier(account, amount)
         if tier is None:
             return 0.0
-        return tier.comm_send if comm_type == "send" else tier.comm_receive
-
-    def _calc_balance_change(self, account: Account, amount: float, commission: float) -> float:
-        return round(amount - commission, 2)
+        raw = (tier.comm_deposit if comm_type == "send" else tier.comm_withdraw) or 0.0
+        if tier.comm_type == "PERCENTAGE":
+            return round(amount * raw, 2)
+        return raw
 
     @staticmethod
     def round_fee(amount: float) -> int:
@@ -67,11 +76,12 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
+        # customer pays: amount + customer_fee (total_fee)
+        # balance increases by full amount; total_fee goes to fee_account; comm = agent profit
         account = self._account_repo.get_by_id(account_id)
-        commission = self._calc_commission(account, amount, "send")  # deposit: agent earns comm_send
-        balance_change = self._calc_balance_change(account, amount, commission)
+        commission = self._calc_commission(account, amount, "send")
 
-        new_balance = (account.balance or 0.0) + balance_change
+        new_balance = (account.balance or 0.0) + amount
         self._account_repo.update_balance(account_id, new_balance)
         self._update_fee_account(fee_account_id, customer_fee)
 
@@ -84,7 +94,7 @@ class TransactionViewModel:
             "commission_amount": commission,
             "customer_fee": customer_fee,
             "additional_fee_amount": additional_fee_amount,
-            "balance_change": balance_change,
+            "balance_change": amount,
             "currency": "MMK",
             "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
@@ -107,11 +117,12 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
+        # customer receives: amount; customer pays: customer_fee (total_fee) on top
+        # balance decreases by full amount; total_fee goes to fee_account; comm = agent profit
         account = self._account_repo.get_by_id(account_id)
-        commission = self._calc_commission(account, amount, "receive")  # withdraw: agent earns comm_receive
-        balance_change = self._calc_balance_change(account, amount, commission)
+        commission = self._calc_commission(account, amount, "receive")
 
-        new_balance = (account.balance or 0.0) - balance_change
+        new_balance = (account.balance or 0.0) - amount
         self._account_repo.update_balance(account_id, new_balance)
         self._update_fee_account(fee_account_id, customer_fee)
 
@@ -124,7 +135,7 @@ class TransactionViewModel:
             "commission_amount": commission,
             "customer_fee": customer_fee,
             "additional_fee_amount": additional_fee_amount,
-            "balance_change": -balance_change,
+            "balance_change": -amount,
             "currency": "MMK",
             "fee_account_id": fee_account_id,
             "screenshot_path": screenshot_path,
@@ -188,14 +199,18 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
-        rate = self._rate_repo.get_latest("MMK/THB")
+        rate = self._rate_repo.get_latest("THB", "MMK")
         if rate is None:
-            raise ValueError("Exchange rate not set for MMK/THB")
+            raise ValueError("Exchange rate not set for THB/MMK")
 
+        # rates expressed as quote per base_amount of base currency
+        # MMK → THB: THB = MMK_amount * base_amount / sell_rate
+        # THB → MMK: MMK = THB_amount * buy_rate   / base_amount
+        base_amount = rate.base_amount or 1.0
         if currency == "MMK":
-            exchange_rate = rate.buy_rate
+            exchange_rate = rate.sell_rate / base_amount  # effective MMK per 1 THB
         else:
-            exchange_rate = rate.sell_rate
+            exchange_rate = rate.buy_rate / base_amount   # effective MMK per 1 THB
 
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount, "send")

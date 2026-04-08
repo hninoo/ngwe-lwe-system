@@ -16,11 +16,17 @@ class CommissionTierRepository(BaseRepository):
             id=row["id"],
             service_type=row["service_type"],
             account_type=row["account_type"],
-            amount_from=float(row["amount_from"]),
-            amount_to=float(row["amount_to"]),
-            fee_amount=float(row["fee_amount"]),
-            comm_send=float(row["comm_send"]),
-            comm_receive=float(row["comm_receive"]),
+            amount_from=float(row["amount_from"]) if row["amount_from"] is not None else None,
+            amount_to=float(row["amount_to"]) if row["amount_to"] is not None else None,
+            fee_amount_type=row["fee_amount_type"] or "FIXED",
+            fee_amount_deposit=float(row["fee_amount_deposit"]),
+            fee_amount_withdraw=float(row["fee_amount_withdraw"]),
+            comm_type=row["comm_type"] or "FIXED",
+            comm_deposit=float(row["comm_deposit"]),
+            comm_withdraw=float(row["comm_withdraw"]),
+            additional_fee_type=row["additional_fee_type"] or "FIXED",
+            additional_fee_deposit_amount=float(row["additional_fee_deposit_amount"]),
+            additional_fee_withdraw_amount=float(row["additional_fee_withdraw_amount"]),
             is_active=bool(row["is_active"]),
         )
 
@@ -33,7 +39,7 @@ class CommissionTierRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = %s AND account_type = %s "
+                "WHERE service_type = %s AND (account_type = %s OR account_type IS NULL) "
                 "AND is_active = TRUE "
                 "AND amount_from <= %s AND amount_to >= %s "
                 "LIMIT 1",
@@ -50,7 +56,7 @@ class CommissionTierRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = %s AND account_type = %s "
+                "WHERE service_type = %s AND (account_type = %s OR account_type IS NULL) "
                 "AND is_active = TRUE "
                 "ORDER BY amount_from ASC",
                 (service_type, account_type),
