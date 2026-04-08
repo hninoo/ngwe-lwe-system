@@ -30,7 +30,7 @@ class ExchangeRateRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM exchange_rates "
-                "WHERE base_currency = %s AND quote_currency = %s "
+                "WHERE base_currency = ? AND quote_currency = ? "
                 "ORDER BY updated_at DESC LIMIT 1",
                 (base_currency, quote_currency),
             )

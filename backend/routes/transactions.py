@@ -163,6 +163,6 @@ def get_recent(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     from viewmodels.dashboard_viewmodel import DashboardViewModel
-    dashboard_vm = DashboardViewModel()
-    txns = dashboard_vm.get_recent_transactions(limit)
+    limit = min(limit, 200)
+    txns = DashboardViewModel().get_recent_transactions(limit)
     return [asdict(t) for t in txns]

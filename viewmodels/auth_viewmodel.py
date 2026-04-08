@@ -1,5 +1,6 @@
-import hashlib
 from typing import Optional
+
+import bcrypt
 
 from models.user import User
 from repositories.user_repository import UserRepository
@@ -28,8 +29,7 @@ class AuthViewModel:
         if stored_hash is None:
             return False
 
-        input_hash = hashlib.sha256(password.encode()).hexdigest()
-        if input_hash != stored_hash:
+        if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
             return False
 
         user = self._user_repo.get_by_username(username)

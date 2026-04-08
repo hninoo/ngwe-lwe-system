@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime, date, timezone, timedelta
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 MMT = timezone(timedelta(hours=6, minutes=30))  # Myanmar Time (Yangon)
-from typing import Optional
 
 from models.account import Account
 from models.transaction import Transaction

@@ -33,8 +33,7 @@ def get_account(
     account_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    from repositories.account_repository import AccountRepository
-    account = AccountRepository().get_by_id(account_id)
+    account = _account_vm._account_repo.get_by_id(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     return asdict(account)

@@ -12,7 +12,9 @@ from models.user import User
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("APP_SECRET", "change_me")
+SECRET_KEY = os.getenv("APP_SECRET")
+if not SECRET_KEY:
+    raise RuntimeError("APP_SECRET environment variable is not set")
 TOKEN_EXPIRY_SECONDS = 86400  # 24 hours
 
 

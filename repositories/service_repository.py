@@ -23,7 +23,7 @@ class ServiceRepository(BaseRepository):
     def get_all_active(self) -> list[Service]:
         with get_cursor() as cursor:
             cursor.execute(
-                "SELECT * FROM services WHERE is_active = TRUE"
+                "SELECT * FROM services WHERE is_active = 1"
             )
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]

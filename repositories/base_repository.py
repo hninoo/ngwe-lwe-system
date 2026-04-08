@@ -19,7 +19,7 @@ class BaseRepository(ABC):
 
         with get_cursor() as cursor:
             cursor.execute(
-                f"SELECT * FROM {self.table} WHERE id = %s",
+                f"SELECT * FROM {self.table} WHERE id = ?",
                 (record_id,),
             )
             row = cursor.fetchone()
@@ -37,7 +37,7 @@ class BaseRepository(ABC):
         from backend.database import get_cursor
 
         columns = ", ".join(data.keys())
-        placeholders = ", ".join(["%s"] * len(data))
+        placeholders = ", ".join(["?"] * len(data))
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 f"INSERT INTO {self.table} ({columns}) VALUES ({placeholders})",
@@ -48,10 +48,10 @@ class BaseRepository(ABC):
     def update(self, record_id: int, data: dict) -> bool:
         from backend.database import get_cursor
 
-        set_clause = ", ".join(f"{k} = %s" for k in data.keys())
+        set_clause = ", ".join(f"{k} = ?" for k in data.keys())
         with get_cursor(commit=True) as cursor:
             cursor.execute(
-                f"UPDATE {self.table} SET {set_clause} WHERE id = %s",
+                f"UPDATE {self.table} SET {set_clause} WHERE id = ?",
                 (*data.values(), record_id),
             )
             return cursor.rowcount > 0
@@ -61,7 +61,7 @@ class BaseRepository(ABC):
 
         with get_cursor(commit=True) as cursor:
             cursor.execute(
-                f"DELETE FROM {self.table} WHERE id = %s",
+                f"DELETE FROM {self.table} WHERE id = ?",
                 (record_id,),
             )
             return cursor.rowcount > 0

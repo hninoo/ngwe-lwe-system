@@ -1,6 +1,6 @@
-import hashlib
 from dataclasses import asdict
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -42,7 +42,7 @@ def create_user(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    pw_hash = hashlib.sha256(body.password.encode()).hexdigest()
+    pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt(12)).decode()
     user_id = _user_repo.create({
         "username": body.username,
         "password_hash": pw_hash,
@@ -70,9 +70,8 @@ def change_password(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     stored = _user_repo.get_password_hash(current_user["username"])
-    old_hash = hashlib.sha256(body.old_password.encode()).hexdigest()
-    if stored != old_hash:
+    if stored is None or not bcrypt.checkpw(body.old_password.encode(), stored.encode()):
         raise HTTPException(status_code=400, detail="Old password incorrect")
-    new_hash = hashlib.sha256(body.new_password.encode()).hexdigest()
+    new_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt(12)).decode()
     _user_repo.update(current_user["user_id"], {"password_hash": new_hash})
     return {"message": "Password changed"}

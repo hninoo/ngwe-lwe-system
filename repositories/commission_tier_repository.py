@@ -39,9 +39,10 @@ class CommissionTierRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = %s AND (account_type = %s OR account_type IS NULL) "
-                "AND is_active = TRUE "
-                "AND amount_from <= %s AND amount_to >= %s "
+                "WHERE service_type = ? AND (account_type = ? OR account_type IS NULL) "
+                "AND is_active = 1 "
+                "AND (amount_from IS NULL OR amount_from <= ?) "
+                "AND (amount_to IS NULL OR amount_to >= ?) "
                 "LIMIT 1",
                 (service_type, account_type, amount, amount),
             )
@@ -56,8 +57,8 @@ class CommissionTierRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = %s AND (account_type = %s OR account_type IS NULL) "
-                "AND is_active = TRUE "
+                "WHERE service_type = ? AND (account_type = ? OR account_type IS NULL) "
+                "AND is_active = 1 "
                 "ORDER BY amount_from ASC",
                 (service_type, account_type),
             )

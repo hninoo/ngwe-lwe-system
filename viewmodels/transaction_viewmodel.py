@@ -54,6 +54,10 @@ class TransactionViewModel:
     def round_fee(amount: float) -> int:
         return math.ceil(amount / 50) * 50
 
+    def _calc_balance_change(self, account: Account, amount: float, commission: float) -> float:
+        # Commission is agent profit tracked separately; balance changes by full amount
+        return amount
+
     def _update_fee_account(self, fee_account_id: Optional[int], fee: float) -> None:
         if fee_account_id is None or fee <= 0:
             return

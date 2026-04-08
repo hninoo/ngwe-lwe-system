@@ -24,7 +24,7 @@ class UserRepository(BaseRepository):
     def get_by_username(self, username: str) -> Optional[User]:
         with get_cursor() as cursor:
             cursor.execute(
-                "SELECT * FROM users WHERE username = %s",
+                "SELECT * FROM users WHERE username = ?",
                 (username,),
             )
             row = cursor.fetchone()
@@ -33,7 +33,7 @@ class UserRepository(BaseRepository):
     def get_password_hash(self, username: str) -> Optional[str]:
         with get_cursor() as cursor:
             cursor.execute(
-                "SELECT password_hash FROM users WHERE username = %s",
+                "SELECT password_hash FROM users WHERE username = ?",
                 (username,),
             )
             row = cursor.fetchone()

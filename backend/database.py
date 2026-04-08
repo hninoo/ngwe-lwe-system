@@ -1,45 +1,27 @@
+import sqlite3
 import os
 from contextlib import contextmanager
+from pathlib import Path
 
-import mysql.connector
-from mysql.connector import pooling, Error
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", "3306")),
-    "user": os.getenv("DB_USER", "root"),
-    "database": os.getenv("DB_NAME", "ngwe_lwe_db"),
-    "charset": "utf8mb4",
-    "collation": "utf8mb4_unicode_ci",
-}
-
-_db_password = os.getenv("DB_PASSWORD")
-if _db_password:
-    DB_CONFIG["password"] = _db_password
-
-_pool: pooling.MySQLConnectionPool | None = None
+DB_PATH = Path(os.getenv("DB_PATH", "ngwe_lwe.db"))
 
 
-def get_pool() -> pooling.MySQLConnectionPool:
-    """Return the shared connection pool, creating it on first call."""
-    global _pool
-    if _pool is None:
-        _pool = pooling.MySQLConnectionPool(
-            pool_name="ngwe_lwe_pool",
-            pool_size=5,
-            pool_reset_session=True,
-            **DB_CONFIG,
-        )
-    return _pool
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    # Return rows as plain dicts so existing row["column"] access works unchanged
+    conn.row_factory = lambda cur, row: dict(zip([col[0] for col in cur.description], row))
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
 
 
 @contextmanager
 def get_connection():
-    """Yield a connection from the pool. Auto-returns on exit."""
-    conn = get_pool().get_connection()
+    conn = _connect()
     try:
         yield conn
     finally:
@@ -48,14 +30,13 @@ def get_connection():
 
 @contextmanager
 def get_cursor(commit: bool = False):
-    """Yield a dictionary cursor. Optionally commits on clean exit."""
     with get_connection() as conn:
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         try:
             yield cursor
             if commit:
                 conn.commit()
-        except Error:
+        except Exception:
             conn.rollback()
             raise
         finally:
@@ -63,7 +44,11 @@ def get_cursor(commit: bool = False):
 
 
 def init_db() -> None:
-    """Verify the database connection is reachable."""
-    with get_cursor() as cursor:
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
+    """Create schema on first run (only if tables do not exist yet)."""
+    with get_connection() as conn:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        if exists is None:
+            schema = (Path(__file__).parent / "database.sql").read_text(encoding="utf-8")
+            conn.executescript(schema)

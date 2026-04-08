@@ -40,7 +40,7 @@ class TransactionRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM transactions "
-                "WHERE created_at BETWEEN %s AND %s "
+                "WHERE created_at BETWEEN ? AND ? "
                 "ORDER BY created_at DESC",
                 (start, end),
             )
@@ -51,7 +51,7 @@ class TransactionRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM transactions "
-                "WHERE created_by = %s "
+                "WHERE created_by = ? "
                 "ORDER BY created_at DESC",
                 (user_id,),
             )
@@ -62,7 +62,7 @@ class TransactionRepository(BaseRepository):
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM transactions "
-                "ORDER BY created_at DESC LIMIT %s",
+                "ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             )
             rows = cursor.fetchall()
