@@ -19,7 +19,7 @@ app = FastAPI(title="Ngwe Lwe System", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://127.0.0.1"],
+    allow_origins=["*"],      # Desktop (PyQt6) clients — CORS not enforced by requests lib
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
