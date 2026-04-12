@@ -26,6 +26,8 @@ from PyQt6.QtWidgets import (
     QFormLayout, QMessageBox, QGroupBox,
 )
 
+from i18n import t
+
 
 # ─────────────────────────────────────────
 # Config helpers
@@ -68,11 +70,11 @@ class ConnectThread(QThread):
             if r.status_code == 200:
                 self.success.emit()
             else:
-                self.failure.emit(f"Server မှ {r.status_code} response ရသည်")
+                self.failure.emit(t("err_status_code", code=r.status_code))
         except requests.ConnectionError:
-            self.failure.emit("Server ကို ချိတ်ဆက်၍ မရပါ\nIP/Port မှန်ကန်မှု စစ်ပါ")
+            self.failure.emit(t("err_cannot_reach"))
         except requests.Timeout:
-            self.failure.emit("Connection timeout — Server ဖွင့်ထားပါသလား?")
+            self.failure.emit(t("err_timeout"))
         except Exception as e:
             self.failure.emit(str(e))
 
@@ -94,7 +96,7 @@ QPushButton    { border-radius:5px; padding:8px 20px; font-weight:bold; }
 class ServerConfigDialog(QDialog):
     def __init__(self, parent=None, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         super().__init__(parent)
-        self.setWindowTitle("ငွေလွှဲ System — Server ချိတ်ဆက်ရန်")
+        self.setWindowTitle(t("server_conn_title"))
         self.setMinimumWidth(420)
         self.setStyleSheet(STYLE)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -108,29 +110,29 @@ class ServerConfigDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
 
         # Title
-        title = QLabel("ငွေလွှဲ System")
+        title = QLabel(t("app_title"))
         title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("color:#89b4fa;")
         root.addWidget(title)
 
-        sub = QLabel("Server IP နှင့် Port ထည့်ပြီး Connect နှိပ်ပါ")
+        sub = QLabel(t("server_sub"))
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setStyleSheet("color:#a6adc8; font-size:12px;")
         root.addWidget(sub)
 
         # Config box
-        box = QGroupBox("Server Configuration")
+        box = QGroupBox(t("server_config_box"))
         form = QFormLayout(box)
         form.setSpacing(10)
 
         self._host_edit = QLineEdit(host)
         self._host_edit.setPlaceholderText("e.g. 192.168.1.162")
-        form.addRow("Server IP:", self._host_edit)
+        form.addRow(t("server_ip_label"), self._host_edit)
 
         self._port_edit = QLineEdit(str(port))
         self._port_edit.setPlaceholderText("e.g. 8000")
-        form.addRow("Port:", self._port_edit)
+        form.addRow(t("port_label"), self._port_edit)
 
         root.addWidget(box)
 
@@ -142,7 +144,7 @@ class ServerConfigDialog(QDialog):
         root.addWidget(self._status)
 
         # Connect button
-        self._btn = QPushButton("Connect")
+        self._btn = QPushButton(t("connect_btn"))
         self._btn.setStyleSheet("background:#89b4fa; color:#1e1e2e;")
         self._btn.clicked.connect(self._on_connect)
         self._port_edit.returnPressed.connect(self._on_connect)
@@ -159,17 +161,17 @@ class ServerConfigDialog(QDialog):
         port_str = self._port_edit.text().strip()
 
         if not host:
-            self._set_status("Server IP ထည့်ပါ", "#f38ba8")
+            self._set_status(t("ip_required"), "#f38ba8")
             return
         try:
             port = int(port_str)
             assert 1 <= port <= 65535
         except Exception:
-            self._set_status("Port မှန်ကန်သော နံပါတ် ထည့်ပါ (1-65535)", "#f38ba8")
+            self._set_status(t("port_invalid"), "#f38ba8")
             return
 
         base_url, _ = make_urls(host, port)
-        self._set_status(f"Connecting to {base_url} ...", "#f9e2af")
+        self._set_status(t("connecting_to", url=base_url), "#f9e2af")
         self._btn.setEnabled(False)
         QApplication.processEvents()
 
@@ -182,7 +184,7 @@ class ServerConfigDialog(QDialog):
         self._result_host = host
         self._result_port = port
         save_config(host, port)
-        self._set_status("Connected!", "#a6e3a1")
+        self._set_status(t("connected_msg"), "#a6e3a1")
         self.accept()
 
     def _on_failure(self, msg: str):
@@ -228,7 +230,7 @@ def main():
         if not ok:
             dlg = ServerConfigDialog(host=host, port=port)
             dlg._set_status(
-                f"Saved server ({host}:{port}) ကို ချိတ်ဆက်မရပါ\nIP/Port ပြင်ဆင်ပါ",
+                t("saved_server_fail", host=host, port=port),
                 "#f9e2af",
             )
             if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -259,37 +261,24 @@ def main():
 
 
 def _patch_login_change_server(login, app, host: str, port: int):
-    """Add a small 'Change Server' link below the login form."""
+    """Wire the built-in server footer in LoginView."""
     import services.api_client as _ac
 
-    central = login.centralWidget()
-    layout = central.layout()
-
-    btn = QPushButton("⚙  Change Server")
-    btn.setStyleSheet(
-        "background:transparent; color:#585b70; font-size:11px; "
-        "border:none; padding:4px;"
-    )
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-    server_label = QLabel(f"Server: {host}:{port}")
-    server_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    server_label.setStyleSheet("color:#45475a; font-size:11px;")
-    layout.addWidget(server_label)
+    login._server_label.setText(t("server_label", host=host, port=port))
 
     def on_change():
+        nonlocal host, port
         dlg = ServerConfigDialog(login, host=host, port=port)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            new_host = dlg.result_host()
-            new_port = dlg.result_port()
-            base_url, ws_url = make_urls(new_host, new_port)
+            host = dlg.result_host()
+            port = dlg.result_port()
+            base_url, ws_url = make_urls(host, port)
             os.environ["API_BASE_URL"] = base_url
             os.environ["WS_URL"]       = ws_url
             _ac.BASE_URL = base_url
-            server_label.setText(f"Server: {new_host}:{new_port}")
+            login._server_label.setText(t("server_label", host=host, port=port))
 
-    btn.clicked.connect(on_change)
+    login._change_server_btn.clicked.connect(on_change)
 
 
 if __name__ == "__main__":

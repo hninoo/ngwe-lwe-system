@@ -105,6 +105,14 @@ def _migrate_002(conn):
     """)
 
 
+def _migrate_003(conn):
+    """Add cash approval fields to transactions."""
+    conn.executescript("""
+        ALTER TABLE transactions ADD COLUMN cash_approved_by INTEGER REFERENCES users(id);
+        ALTER TABLE transactions ADD COLUMN cash_approved_at TEXT;
+    """)
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -115,6 +123,7 @@ def _run_migrations(conn):
     for version, desc, fn in [
         (1, "Add cashier role and pin_hash", _migrate_001),
         (2, "Create cash management tables", _migrate_002),
+        (3, "Add cash approval fields to transactions", _migrate_003),
     ]:
         if version not in applied:
             fn(conn)

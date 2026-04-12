@@ -32,6 +32,8 @@ class TransactionRepository(BaseRepository):
             note=row.get("note"),
             created_by=row["created_by"],
             created_at=row["created_at"],
+            cash_approved_by=row.get("cash_approved_by"),
+            cash_approved_at=row.get("cash_approved_at"),
         )
 
     def get_by_date_range(
@@ -67,3 +69,27 @@ class TransactionRepository(BaseRepository):
             )
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]
+
+    def get_by_date(self, date_str: str) -> list[Transaction]:
+        """Return all transactions for a given date (YYYY-MM-DD)."""
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM transactions "
+                "WHERE date(created_at) = ? "
+                "ORDER BY created_at DESC",
+                (date_str,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    def approve(self, txn_id: int, approved_by: int) -> Optional[Transaction]:
+        """Mark a transaction as cash-approved."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "UPDATE transactions SET cash_approved_by=?, cash_approved_at=datetime('now') "
+                "WHERE id=?",
+                (approved_by, txn_id),
+            )
+            cursor.execute("SELECT * FROM transactions WHERE id=?", (txn_id,))
+            row = cursor.fetchone()
+        return self._row_to_model(row) if row else None

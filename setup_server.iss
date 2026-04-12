@@ -3,7 +3,7 @@
 ; ============================================================
 
 #define AppName    "Ngwe Lwe Server"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppExe     "NgweLweServer.exe"
 #define AppId      "A2B4C6D8-1E3F-5A7B-9C2D-4E8F0B2C6D0A"
 

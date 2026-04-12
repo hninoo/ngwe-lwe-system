@@ -23,3 +23,5 @@ class Transaction:
     note: Optional[str] = None
     created_by: Optional[int] = None
     created_at: Optional[datetime] = None
+    cash_approved_by: Optional[int] = None
+    cash_approved_at: Optional[str] = None

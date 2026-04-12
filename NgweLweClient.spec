@@ -6,6 +6,8 @@ binaries = []
 hiddenimports = [
     'anyio._backends._asyncio', 'anyio._backends._trio',
     'bcrypt', 'passlib', 'multipart',
+    # i18n
+    'i18n', 'i18n.i18n',
     # services + views
     'services', 'services.api_client',
     'views', 'views.login_view', 'views.dashboard_view',

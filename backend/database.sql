@@ -234,11 +234,12 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (1, 'Add cashier role and pin_hash'),
 (2, 'Create cash management tables');
 
--- Users  (password: admin123 — bcrypt, cost 12)
+-- Users  (bcrypt, cost 12)
+-- owner: admin123 / employee: employee123 / cashier: cashier123
 INSERT OR IGNORE INTO users (username, password_hash, full_name, role) VALUES
-('owner',     '$2b$12$VttoZ/owwiQaf0WcW0lf0ujKgdjuN4hesATsSjhI/h7c0IsOFkSSe', 'Hnin Oo Wai Lwin', 'owner'),
-('employee1', '$2b$12$VttoZ/owwiQaf0WcW0lf0ujKgdjuN4hesATsSjhI/h7c0IsOFkSSe', 'Aung Aung',        'employee'),
-('employee2', '$2b$12$VttoZ/owwiQaf0WcW0lf0ujKgdjuN4hesATsSjhI/h7c0IsOFkSSe', 'Mya Mya',          'employee');
+('owner',    '$2b$12$Ip2fxV/CbjrmQC5Slhhuge9p0Lomxo/qFo1N0jAe3dqalhQrJX/zO', 'Owner Name',    'owner'),
+('employee', '$2b$12$YMQbtr6qdvg.wS3t5S6/iOqgEweIOnaKqlKeXBbqWzdE48YO1CIJu', 'Employee Name', 'employee'),
+('cashier',  '$2b$12$xVqJyqiLc4Buur1RbX84meWNqNmW9G/fkatHEA3MxrhjKkEemo48a', 'Cashier Name',  'cashier');
 
 -- Services
 INSERT OR IGNORE INTO services (name, service_type, default_customer_fee) VALUES
@@ -328,7 +329,7 @@ INSERT OR IGNORE INTO commission_tiers (service_type, account_type, amount_from,
 
 -- Activity logs
 INSERT OR IGNORE INTO activity_logs (user_id, action, entity_type, entity_id, details) VALUES
-(1, 'login',  'user', 1, 'Owner logged in'),
-(2, 'login',  'user', 2, 'Employee logged in'),
-(3, 'login',  'user', 3, 'Employee logged in'),
+(1, 'login',  'user', 1, 'owner logged in'),
+(2, 'login',  'user', 2, 'employee logged in'),
+(3, 'login',  'user', 3, 'cashier logged in'),
 (1, 'update', 'exchange_rate', 1, 'Updated MMK/THB rate');

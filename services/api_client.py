@@ -173,6 +173,16 @@ class ApiClient:
     def get_recent_transactions(self, limit: int = 20) -> list[dict]:
         return self._get("/transactions/recent", params={"limit": limit})
 
+    def get_transactions_by_date(self, date: str) -> list[dict]:
+        """Return all transactions for a given date (YYYY-MM-DD)."""
+        return self._get("/transactions/by-date", params={"date": date})
+
+    def approve_transaction(self, txn_id: int, denominations: dict, note: str | None = None) -> dict:
+        return self._post(f"/cashier/transactions/{txn_id}/approve", {
+            "denominations": denominations,
+            "note": note,
+        })
+
     # ── Dashboard ──
 
     def get_dashboard_summary(self) -> dict:

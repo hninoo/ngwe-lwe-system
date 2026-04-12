@@ -34,6 +34,8 @@ from PyQt6.QtWidgets import (
     QFormLayout, QMessageBox
 )
 
+from i18n import t
+
 
 # ─────────────────────────────────────────
 # Helpers
@@ -138,7 +140,7 @@ class ServerManagerWindow(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("NgweLwe — Server Manager")
+        self.setWindowTitle(t("server_mgr_title"))
         self.setMinimumWidth(500)
         self.setStyleSheet("""
             QWidget { background-color: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI'; font-size: 13px; }
@@ -155,46 +157,43 @@ class ServerManagerWindow(QWidget):
         root.setContentsMargins(16, 16, 16, 16)
 
         # ── Title ──
-        title = QLabel("ငွေလွှဲ System — Server Manager")
+        title = QLabel(t("server_mgr_title"))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet("color: #89b4fa;")
         root.addWidget(title)
 
         # ── LAN IP hint ──
         local_ip = get_local_ip()
-        ip_hint = QLabel(f"ဒီ machine ရဲ့ LAN IP:  {local_ip}")
+        ip_hint = QLabel(t("lan_ip_hint", ip=local_ip))
         ip_hint.setStyleSheet("color: #f9e2af; font-size: 12px;")
         root.addWidget(ip_hint)
 
         # ── Config group ──
-        cfg_box = QGroupBox("Server Configuration (Admin)")
+        cfg_box = QGroupBox(t("server_config_admin"))
         form = QFormLayout(cfg_box)
         form.setSpacing(8)
 
         self._host_edit = QLineEdit(self._config.get("host", "0.0.0.0"))
         self._host_edit.setPlaceholderText("e.g. 0.0.0.0  or  192.168.1.100")
-        form.addRow("Host:", self._host_edit)
+        form.addRow(t("host_label"), self._host_edit)
 
         self._port_edit = QLineEdit(str(self._config.get("port", 8000)))
         self._port_edit.setPlaceholderText("e.g. 8000")
-        form.addRow("Port:", self._port_edit)
+        form.addRow(t("port_label"), self._port_edit)
 
         # tip
-        tip = QLabel(
-            "0.0.0.0  →  LAN မှာ client တွေ ချိတ်ဆက်လို့ရမည်\n"
-            "127.0.0.1  →  ဒီ machine တစ်ခုတည်းသာ access ရမည်"
-        )
+        tip = QLabel(t("server_tip"))
         tip.setStyleSheet("color: #6c7086; font-size: 11px;")
         form.addRow("", tip)
         root.addWidget(cfg_box)
 
         # ── Buttons ──
         btn_row = QHBoxLayout()
-        self._start_btn = QPushButton("▶  Start Server")
+        self._start_btn = QPushButton(t("start_server"))
         self._start_btn.setStyleSheet("background-color: #a6e3a1; color: #1e1e2e;")
         self._start_btn.clicked.connect(self._start_server)
 
-        self._stop_btn = QPushButton("■  Stop Server")
+        self._stop_btn = QPushButton(t("stop_server"))
         self._stop_btn.setStyleSheet("background-color: #f38ba8; color: #1e1e2e;")
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._stop_server)
@@ -204,12 +203,12 @@ class ServerManagerWindow(QWidget):
         root.addLayout(btn_row)
 
         # ── Status ──
-        self._status_label = QLabel("● Stopped")
+        self._status_label = QLabel(t("status_stopped"))
         self._status_label.setStyleSheet("color: #f38ba8; font-weight: bold;")
         root.addWidget(self._status_label)
 
         # ── Log ──
-        log_box = QGroupBox("Server Log")
+        log_box = QGroupBox(t("server_log"))
         log_layout = QVBoxLayout(log_box)
         self._log = QTextEdit()
         self._log.setReadOnly(True)
@@ -224,13 +223,13 @@ class ServerManagerWindow(QWidget):
         port_str = self._port_edit.text().strip()
 
         if not host:
-            QMessageBox.warning(self, "Error", "Host ထည့်ပါ")
+            QMessageBox.warning(self, t("validation_error"), t("host_required"))
             return
         try:
             port = int(port_str)
             assert 1 <= port <= 65535
         except Exception:
-            QMessageBox.warning(self, "Error", "Port မှန်ကန်အောင် ထည့်ပါ (1-65535)")
+            QMessageBox.warning(self, t("validation_error"), t("port_required"))
             return
 
         # Save config
@@ -243,14 +242,14 @@ class ServerManagerWindow(QWidget):
 
         local_ip = get_local_ip()
         display_host = local_ip if host == "0.0.0.0" else host
-        self._append_log(f"Server starting on {host}:{port}")
-        self._append_log(f"Client တွေကို ဒီ URL ပေး:  http://{display_host}:{port}")
+        self._append_log(t("starting_server", host=host, port=port))
+        self._append_log(t("share_url", url=f"http://{display_host}:{port}"))
 
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._host_edit.setEnabled(False)
         self._port_edit.setEnabled(False)
-        self._status_label.setText("● Running")
+        self._status_label.setText(t("status_running"))
         self._status_label.setStyleSheet("color: #a6e3a1; font-weight: bold;")
 
     def _stop_server(self):
@@ -259,12 +258,12 @@ class ServerManagerWindow(QWidget):
             self._thread.wait(3000)
             self._thread = None
 
-        self._append_log("Server stopped.")
+        self._append_log(t("server_stopped"))
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
         self._host_edit.setEnabled(True)
         self._port_edit.setEnabled(True)
-        self._status_label.setText("● Stopped")
+        self._status_label.setText(t("status_stopped"))
         self._status_label.setStyleSheet("color: #f38ba8; font-weight: bold;")
 
     def _append_log(self, msg: str):
@@ -275,7 +274,7 @@ class ServerManagerWindow(QWidget):
         for line in tb.splitlines():
             self._append_log(line)
         self._stop_server()
-        QMessageBox.critical(self, "Server Error", tb)
+        QMessageBox.critical(self, t("server_error_title"), tb)
 
     def closeEvent(self, event):
         if self._thread:

@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from services.api_client import ApiClient
+from i18n import t, on_change
 
 # ── Colors ──
 BG_DARK = "#1e1e2e"
@@ -61,14 +62,17 @@ TYPE_COLORS = {
     "exchange": ACCENT_YELLOW,
 }
 
-MENU_ITEMS = [
-    ("Dashboard", "dashboard", 0),
-    ("Transactions", "transactions", 1),
-    ("Accounts", "accounts", 2),
-    ("Reports", "reports", 3),
-    ("Employees", "employees", 4),
-    ("Settings", "settings", 5),
-]
+def _build_menu_items():
+    return [
+        (t("nav_dashboard"), "dashboard", 0),
+        (t("nav_transactions"), "transactions", 1),
+        (t("nav_accounts"), "accounts", 2),
+        (t("nav_reports"), "reports", 3),
+        (t("nav_users"), "users", 4),
+        (t("nav_settings"), "settings", 5),
+    ]
+
+MENU_ITEMS = _build_menu_items()
 
 STYLESHEET = f"""
     QMainWindow {{ background-color: {BG_DARK}; }}
@@ -217,17 +221,20 @@ class DashboardPage(QWidget):
 
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
-        layout.addWidget(section_label("Today's Summary"))
+        self._summary_label = section_label(t("todays_summary"))
+        layout.addWidget(self._summary_label)
         layout.addWidget(self._build_stats_row())
-        layout.addWidget(section_label("Account Balances"))
+        self._balances_label = section_label(t("account_balances"))
+        layout.addWidget(self._balances_label)
         self._grid_container = QWidget()
         self._grid = QGridLayout(self._grid_container)
         self._grid.setSpacing(12)
         layout.addWidget(self._grid_container)
-        layout.addWidget(section_label("Recent Transactions"))
+        self._recent_txn_label = section_label(t("recent_transactions"))
+        layout.addWidget(self._recent_txn_label)
         self._txn_table = make_table([
-            "Time", "Employee", "Type", "Service", "Account",
-            "Amount", "Commission", "Fee", "Screenshot",
+            t("col_time"), t("col_employee"), t("col_type"), t("col_service"), t("col_account"),
+            t("col_amount"), t("col_commission"), t("col_fee"), t("col_screenshot"),
         ])
         layout.addWidget(self._txn_table)
         layout.addStretch()
@@ -242,11 +249,11 @@ class DashboardPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         cards = [
-            ("deposit", "ယနေ့အသွင်း", ACCENT_GREEN),
-            ("withdraw", "ယနေ့အထုတ်", ACCENT_RED),
-            ("transfer", "ဘဏ်ချင်းငွေလဲ", ACCENT_BLUE),
-            ("exchange", "ကျပ်→ဘတ်", ACCENT_YELLOW),
-            ("fees", "Fee+Commission", ACCENT_MAUVE),
+            ("deposit", t("todays_deposits"), ACCENT_GREEN),
+            ("withdraw", t("todays_withdrawals"), ACCENT_RED),
+            ("transfer", t("transfers"), ACCENT_BLUE),
+            ("exchange", t("exchange"), ACCENT_YELLOW),
+            ("fees", t("fees_commission"), ACCENT_MAUVE),
         ]
         for key, label, color in cards:
             layout.addWidget(self._stat_card(key, label, color))
@@ -262,9 +269,9 @@ class DashboardPage(QWidget):
         card.setFixedHeight(90)
         lo = QVBoxLayout(card)
         lo.setContentsMargins(14, 12, 14, 12)
-        t = QLabel(label)
-        t.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        lo.addWidget(t)
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        lo.addWidget(lbl)
         v = QLabel("0")
         v.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         v.setStyleSheet(f"color: {color};")
@@ -351,7 +358,7 @@ class DashboardPage(QWidget):
                     item.setForeground(QColor(TYPE_COLORS.get(tt, TEXT_PRIMARY)))
                 self._txn_table.setItem(row, col, item)
             path = txn.get("screenshot_path", "")
-            btn = QPushButton("View" if path else "-")
+            btn = QPushButton(t("view") if path else "-")
             btn.setEnabled(bool(path))
             btn.setStyleSheet(
                 f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; "
@@ -376,14 +383,15 @@ class TransactionsPage(QWidget):
 
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
-        layout.addWidget(section_label("Transaction History"))
+        self._title_label = section_label(t("transactions_title"))
+        layout.addWidget(self._title_label)
         layout.addWidget(self._build_filters())
         self._table = make_table([
-            "Time", "Employee", "Type", "Service", "Account",
-            "Amount", "Commission", "Fee", "Screenshot",
+            t("col_time"), t("col_employee"), t("col_type"), t("col_service"), t("col_account"),
+            t("col_amount"), t("col_commission"), t("col_fee"), t("col_screenshot"),
         ], 400)
         layout.addWidget(self._table)
-        self._load_more_btn = accent_btn("Load More")
+        self._load_more_btn = accent_btn(t("load_more"))
         self._load_more_btn.clicked.connect(self._on_load_more)
         layout.addWidget(self._load_more_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addStretch()
@@ -401,22 +409,22 @@ class TransactionsPage(QWidget):
         lo.setContentsMargins(14, 10, 14, 10)
         lo.setSpacing(12)
 
-        lo.addWidget(QLabel("From:"))
+        lo.addWidget(QLabel(t("filter_from")))
         self._date_from = QDateEdit(QDate.currentDate().addDays(-7))
         self._date_from.setCalendarPopup(True)
         lo.addWidget(self._date_from)
 
-        lo.addWidget(QLabel("To:"))
+        lo.addWidget(QLabel(t("filter_to")))
         self._date_to = QDateEdit(QDate.currentDate())
         self._date_to.setCalendarPopup(True)
         lo.addWidget(self._date_to)
 
-        lo.addWidget(QLabel("Type:"))
+        lo.addWidget(QLabel(t("filter_type")))
         self._type_filter = QComboBox()
-        self._type_filter.addItems(["All", "deposit", "withdraw", "transfer", "exchange"])
+        self._type_filter.addItems([t("all"), "deposit", "withdraw", "transfer", "exchange"])
         lo.addWidget(self._type_filter)
 
-        search_btn = accent_btn("Search")
+        search_btn = accent_btn(t("search"))
         search_btn.clicked.connect(self._on_search)
         lo.addWidget(search_btn)
         lo.addStretch()
@@ -453,13 +461,13 @@ class TransactionsPage(QWidget):
         t_type = self._type_filter.currentText()
 
         result = []
-        for t in txns:
-            created = str(t.get("created_at", ""))[:10]
+        for tx in txns:
+            created = str(tx.get("created_at", ""))[:10]
             if created < d_from or created > d_to:
                 continue
-            if t_type != "All" and t.get("transaction_type") != t_type:
+            if t_type != t("all") and tx.get("transaction_type") != t_type:
                 continue
-            result.append(t)
+            result.append(tx)
         return result
 
     def _show_page(self, txns: list[dict]) -> None:
@@ -483,7 +491,7 @@ class TransactionsPage(QWidget):
                     item.setForeground(QColor(TYPE_COLORS.get(tt, TEXT_PRIMARY)))
                 self._table.setItem(row, col, item)
             path = txn.get("screenshot_path", "")
-            btn = QPushButton("View" if path else "-")
+            btn = QPushButton(t("view") if path else "-")
             btn.setEnabled(bool(path))
             btn.setStyleSheet(
                 f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; "
@@ -503,10 +511,11 @@ class AccountsPage(QWidget):
 
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
-        layout.addWidget(section_label("Accounts Management"))
+        self._title_label = section_label(t("accounts_title"))
+        layout.addWidget(self._title_label)
         self._table = make_table([
-            "ID", "Service", "Name", "Phone", "Type",
-            "Service Type", "Balance", "Active", "Action",
+            t("col_id"), t("col_service"), t("col_name"), t("col_phone"), t("col_type"),
+            t("col_service_type"), t("col_balance"), t("col_active"), t("col_action"),
         ], 400)
         layout.addWidget(self._table)
         layout.addStretch()
@@ -533,7 +542,7 @@ class AccountsPage(QWidget):
                 acc.get("account_type", ""),
                 acc.get("service_type", "KPAY"),
                 f"{float(acc.get('balance', 0)):,.0f}",
-                "Active" if acc.get("is_active") else "Inactive",
+                t("status_active") if acc.get("is_active") else t("status_inactive"),
             ]
             for col, text in enumerate(items):
                 item = QTableWidgetItem(text)
@@ -549,7 +558,7 @@ class AccountsPage(QWidget):
                     item.setForeground(QColor(c))
                 self._table.setItem(row, col, item)
 
-            toggle_text = "Deactivate" if acc.get("is_active") else "Activate"
+            toggle_text = t("btn_deactivate") if acc.get("is_active") else t("btn_activate")
             toggle_btn = QPushButton(toggle_text)
             toggle_btn.setStyleSheet(
                 f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_YELLOW}; "
@@ -569,14 +578,15 @@ class ReportsPage(QWidget):
 
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
-        layout.addWidget(section_label("Daily Report"))
+        self._title_label = section_label(t("reports_title"))
+        layout.addWidget(self._title_label)
 
         picker_row = QHBoxLayout()
-        picker_row.addWidget(QLabel("Date:"))
+        picker_row.addWidget(QLabel(t("date_label")))
         self._date_picker = QDateEdit(QDate.currentDate())
         self._date_picker.setCalendarPopup(True)
         picker_row.addWidget(self._date_picker)
-        load_btn = accent_btn("Load Report")
+        load_btn = accent_btn(t("load_report"))
         load_btn.clicked.connect(self._on_load)
         picker_row.addWidget(load_btn)
         picker_row.addStretch()
@@ -613,13 +623,13 @@ class ReportsPage(QWidget):
         self._report_labels.clear()
 
         items = [
-            ("Total Deposit", s.get("total_deposit", 0), ACCENT_GREEN),
-            ("Total Withdraw", s.get("total_withdraw", 0), ACCENT_RED),
-            ("Total Transfer", s.get("total_transfer", 0), ACCENT_BLUE),
-            ("Total Exchange", s.get("total_exchange", 0), ACCENT_YELLOW),
-            ("Total Commission", s.get("total_commission", 0), ACCENT_MAUVE),
-            ("Total Customer Fees", s.get("total_customer_fees", 0), ACCENT_TEAL),
-            ("Transaction Count", s.get("transaction_count", 0), ACCENT_BLUE),
+            (t("total_deposit"), s.get("total_deposit", 0), ACCENT_GREEN),
+            (t("total_withdraw"), s.get("total_withdraw", 0), ACCENT_RED),
+            (t("total_transfer"), s.get("total_transfer", 0), ACCENT_BLUE),
+            (t("total_exchange"), s.get("total_exchange", 0), ACCENT_YELLOW),
+            (t("total_commission"), s.get("total_commission", 0), ACCENT_MAUVE),
+            (t("total_customer_fees"), s.get("total_customer_fees", 0), ACCENT_TEAL),
+            (t("txn_count"), s.get("transaction_count", 0), ACCENT_BLUE),
         ]
         for i, (label, value, color) in enumerate(items):
             r, c = divmod(i, 3)
@@ -631,9 +641,9 @@ class ReportsPage(QWidget):
             )
             lo = QVBoxLayout(card)
             lo.setContentsMargins(14, 12, 14, 12)
-            t = QLabel(label)
-            t.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-            lo.addWidget(t)
+            lbl = QLabel(label)
+            lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+            lo.addWidget(lbl)
             v = QLabel(f"{value:,.0f}" if isinstance(value, (int, float)) else str(value))
             v.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
             v.setStyleSheet(f"color: {color};")
@@ -647,8 +657,8 @@ class ReportsPage(QWidget):
 class AddEmployeeDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Add Employee")
-        self.setFixedSize(350, 220)
+        self.setWindowTitle(t("add_user_dialog_title"))
+        self.setFixedSize(350, 260)
         self.setStyleSheet(f"background-color: {BG_CARD}; color: {TEXT_PRIMARY};")
 
         layout = QFormLayout(self)
@@ -656,17 +666,21 @@ class AddEmployeeDialog(QDialog):
         layout.setSpacing(12)
 
         self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText("Username")
-        layout.addRow("Username:", self.username_input)
+        self.username_input.setPlaceholderText(t("col_username"))
+        layout.addRow(f"{t('col_username')}:", self.username_input)
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Password")
+        self.password_input.setPlaceholderText(t("field_password"))
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addRow("Password:", self.password_input)
+        layout.addRow(f"{t('field_password')}:", self.password_input)
 
         self.fullname_input = QLineEdit()
-        self.fullname_input.setPlaceholderText("Full Name")
-        layout.addRow("Full Name:", self.fullname_input)
+        self.fullname_input.setPlaceholderText(t("col_fullname"))
+        layout.addRow(f"{t('col_fullname')}:", self.fullname_input)
+
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(["employee", "cashier"])
+        layout.addRow(t("role_label"), self.role_combo)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -686,15 +700,16 @@ class EmployeesPage(QWidget):
         scroll, layout = scrollable_page()
 
         header = QHBoxLayout()
-        header.addWidget(section_label("Employees"))
+        header.addWidget(section_label(t("users_title")))
         header.addStretch()
-        add_btn = accent_btn("+ Add Employee", ACCENT_GREEN)
+        add_btn = accent_btn(t("add_user_btn"), ACCENT_GREEN)
         add_btn.clicked.connect(self._on_add)
         header.addWidget(add_btn)
         layout.addLayout(header)
 
         self._table = make_table([
-            "ID", "Username", "Full Name", "Role", "Active", "Created", "Action",
+            t("col_id"), t("col_username"), t("col_fullname"),
+            t("col_role"), t("col_active"), t("col_created"), t("col_action"),
         ])
         layout.addWidget(self._table)
         self._status = QLabel("")
@@ -735,7 +750,18 @@ class EmployeesPage(QWidget):
                     item.setForeground(QColor(c))
                 self._table.setItem(row, col, item)
 
-            if u.get("role") == "employee":
+            role = u.get("role", "")
+            # Color-code role badge
+            role_item = self._table.item(row, 3)
+            if role_item:
+                role_color = {
+                    "owner":    ACCENT_BLUE,
+                    "cashier":  ACCENT_MAUVE,
+                    "employee": ACCENT_TEAL,
+                }.get(role, TEXT_SECONDARY)
+                role_item.setForeground(QColor(role_color))
+
+            if role in ("employee", "cashier"):
                 is_active = u.get("is_active", True)
                 txt = "Deactivate" if is_active else "Activate"
                 color = ACCENT_RED if is_active else ACCENT_GREEN
@@ -764,13 +790,14 @@ class EmployeesPage(QWidget):
             u = dlg.username_input.text().strip()
             p = dlg.password_input.text().strip()
             f = dlg.fullname_input.text().strip()
+            role = dlg.role_combo.currentText()
             if not u or not p or not f:
-                self._status.setText("All fields required")
+                self._status.setText("All fields are required.")
                 self._status.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
                 self._status.setVisible(True)
                 return
-            self._api.create_user(u, p, f)
-            self._status.setText(f"Employee '{u}' created")
+            self._api.create_user(u, p, f, role=role)
+            self._status.setText(f"{role.capitalize()} account '{u}' created successfully.")
             self._status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._status.setVisible(True)
             self.load_data()
@@ -793,13 +820,13 @@ class SettingsPage(QWidget):
         scroll, layout = scrollable_page()
 
         # Exchange rate section
-        layout.addWidget(section_label("Exchange Rate  (base: THB / quote: MMK)"))
+        layout.addWidget(section_label(t("settings_exrate")))
         rate_card = card_frame()
         rate_lo = QVBoxLayout(rate_card)
         rate_lo.setContentsMargins(20, 16, 20, 16)
         rate_lo.setSpacing(10)
 
-        self._current_rate_label = QLabel("Current: —")
+        self._current_rate_label = QLabel(t("current_rate_placeholder"))
         self._current_rate_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
         rate_lo.addWidget(self._current_rate_label)
 
@@ -808,7 +835,7 @@ class SettingsPage(QWidget):
         rate_lo.addWidget(self._rate_hint_label)
 
         row0 = QHBoxLayout()
-        row0.addWidget(QLabel("Base Amount  (THB):"))
+        row0.addWidget(QLabel(t("base_amount_thb")))
         self._base_amount_input = QLineEdit()
         self._base_amount_input.setPlaceholderText("1")
         self._base_amount_input.setFixedWidth(80)
@@ -818,19 +845,19 @@ class SettingsPage(QWidget):
         rate_lo.addLayout(row0)
 
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Buy Rate  (MMK per base THB):"))
+        row1.addWidget(QLabel(t("buy_rate_label")))
         self._buy_input = QLineEdit()
         self._buy_input.setPlaceholderText("128.2100")
         self._buy_input.textChanged.connect(self._on_rate_input_changed)
         row1.addWidget(self._buy_input)
-        row1.addWidget(QLabel("Sell Rate  (MMK per base THB):"))
+        row1.addWidget(QLabel(t("sell_rate_label")))
         self._sell_input = QLineEdit()
         self._sell_input.setPlaceholderText("128.2100")
         self._sell_input.textChanged.connect(self._on_rate_input_changed)
         row1.addWidget(self._sell_input)
         rate_lo.addLayout(row1)
 
-        save_rate_btn = accent_btn("Save Rate")
+        save_rate_btn = accent_btn(t("save_rate"))
         save_rate_btn.clicked.connect(self._on_save_rate)
         rate_lo.addWidget(save_rate_btn)
         self._rate_status = QLabel("")
@@ -841,28 +868,28 @@ class SettingsPage(QWidget):
 
         # Change password section
         layout.addSpacing(10)
-        layout.addWidget(section_label("Change Password"))
+        layout.addWidget(section_label(t("change_password")))
         pw_card = card_frame()
         pw_lo = QVBoxLayout(pw_card)
         pw_lo.setContentsMargins(20, 16, 20, 16)
         pw_lo.setSpacing(10)
 
         self._old_pw = QLineEdit()
-        self._old_pw.setPlaceholderText("Current Password")
+        self._old_pw.setPlaceholderText(t("current_password_ph"))
         self._old_pw.setEchoMode(QLineEdit.EchoMode.Password)
         pw_lo.addWidget(self._old_pw)
 
         self._new_pw = QLineEdit()
-        self._new_pw.setPlaceholderText("New Password")
+        self._new_pw.setPlaceholderText(t("new_password_ph"))
         self._new_pw.setEchoMode(QLineEdit.EchoMode.Password)
         pw_lo.addWidget(self._new_pw)
 
         self._confirm_pw = QLineEdit()
-        self._confirm_pw.setPlaceholderText("Confirm New Password")
+        self._confirm_pw.setPlaceholderText(t("confirm_password_ph"))
         self._confirm_pw.setEchoMode(QLineEdit.EchoMode.Password)
         pw_lo.addWidget(self._confirm_pw)
 
-        save_pw_btn = accent_btn("Change Password")
+        save_pw_btn = accent_btn(t("change_password"))
         save_pw_btn.clicked.connect(self._on_save_password)
         pw_lo.addWidget(save_pw_btn)
         self._pw_status = QLabel("")
@@ -873,7 +900,7 @@ class SettingsPage(QWidget):
 
         # Commission Tier Management
         layout.addSpacing(10)
-        layout.addWidget(section_label("Commission Tiers"))
+        layout.addWidget(section_label(t("settings_tiers")))
         tier_card = card_frame()
         tier_lo = QVBoxLayout(tier_card)
         tier_lo.setContentsMargins(20, 16, 20, 16)
@@ -881,15 +908,15 @@ class SettingsPage(QWidget):
 
         # ── Filter row ──
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Service:"))
+        filter_row.addWidget(QLabel(t("field_service")))
         self._tier_service = QComboBox()
         self._tier_service.addItems(["WAVE_WST", "WAVE_ACCOUNT", "WAVE_PAP_TO_PAY", "KPAY_WST", "KPAY_PAP_TO_PAY", "KPAY_QR"])
         filter_row.addWidget(self._tier_service)
-        filter_row.addWidget(QLabel("Account:"))
+        filter_row.addWidget(QLabel(t("field_account")))
         self._tier_acc_type = QComboBox()
         self._tier_acc_type.addItems(["agent", "personal"])
         filter_row.addWidget(self._tier_acc_type)
-        load_tier_btn = accent_btn("Load")
+        load_tier_btn = accent_btn(t("btn_load"))
         load_tier_btn.clicked.connect(self._load_tiers)
         filter_row.addWidget(load_tier_btn)
         filter_row.addStretch()
@@ -897,11 +924,11 @@ class SettingsPage(QWidget):
 
         # ── Tier table — all commission_tiers fields ──
         _TIER_COLS = [
-            "ID", "Acct Type", "From", "To",
-            "Fee Type", "Fee Dep", "Fee With",
-            "Comm Type", "Comm Dep", "Comm With",
-            "Add Type", "Add Dep", "Add With",
-            "Del",
+            t("col_id"), t("tier_col_acct_type"), t("tier_col_from"), t("tier_col_to"),
+            t("tier_col_fee_type"), t("tier_col_fee_dep"), t("tier_col_fee_with"),
+            t("tier_col_comm_type"), t("tier_col_comm_dep"), t("tier_col_comm_with"),
+            t("tier_col_add_type"), t("tier_col_add_dep"), t("tier_col_add_with"),
+            t("tier_col_delete"),
         ]
         self._tier_table = QTableWidget(0, len(_TIER_COLS))
         self._tier_table.setHorizontalHeaderLabels(_TIER_COLS)
@@ -918,19 +945,18 @@ class SettingsPage(QWidget):
         tier_lo.addWidget(self._tier_table)
 
         # ── Add form — row 1: basic fields ──
-        _lbl = lambda t: QLabel(t)  # noqa: E731
         add_r1 = QHBoxLayout()
-        add_r1.addWidget(_lbl("Acct Type:"))
+        add_r1.addWidget(QLabel(t("tier_acct_type")))
         self._new_acc_type = QComboBox()
         self._new_acc_type.addItems(["agent", "personal"])
         self._new_acc_type.setFixedWidth(95)
         add_r1.addWidget(self._new_acc_type)
-        add_r1.addWidget(_lbl("From:"))
+        add_r1.addWidget(QLabel(t("tier_from_amount")))
         self._new_from = QLineEdit()
         self._new_from.setPlaceholderText("0")
         self._new_from.setFixedWidth(85)
         add_r1.addWidget(self._new_from)
-        add_r1.addWidget(_lbl("To:"))
+        add_r1.addWidget(QLabel(t("tier_to_amount")))
         self._new_to = QLineEdit()
         self._new_to.setPlaceholderText("0")
         self._new_to.setFixedWidth(85)
@@ -940,17 +966,17 @@ class SettingsPage(QWidget):
 
         # ── Add form — row 2: fee fields ──
         add_r2 = QHBoxLayout()
-        add_r2.addWidget(_lbl("Fee Type:"))
+        add_r2.addWidget(QLabel(t("tier_fee_type")))
         self._new_fee_type = QComboBox()
         self._new_fee_type.addItems(["FIXED", "PERCENTAGE"])
         self._new_fee_type.setFixedWidth(115)
         add_r2.addWidget(self._new_fee_type)
-        add_r2.addWidget(_lbl("Fee Dep:"))
+        add_r2.addWidget(QLabel(t("tier_fee_dep")))
         self._new_fee = QLineEdit()
         self._new_fee.setPlaceholderText("0")
         self._new_fee.setFixedWidth(85)
         add_r2.addWidget(self._new_fee)
-        add_r2.addWidget(_lbl("Fee With:"))
+        add_r2.addWidget(QLabel(t("tier_fee_with")))
         self._new_fee_withdraw = QLineEdit()
         self._new_fee_withdraw.setPlaceholderText("0")
         self._new_fee_withdraw.setFixedWidth(85)
@@ -960,17 +986,17 @@ class SettingsPage(QWidget):
 
         # ── Add form — row 3: commission fields ──
         add_r3 = QHBoxLayout()
-        add_r3.addWidget(_lbl("Comm Type:"))
+        add_r3.addWidget(QLabel(t("tier_comm_type")))
         self._new_comm_type = QComboBox()
         self._new_comm_type.addItems(["FIXED", "PERCENTAGE"])
         self._new_comm_type.setFixedWidth(115)
         add_r3.addWidget(self._new_comm_type)
-        add_r3.addWidget(_lbl("Comm Dep:"))
+        add_r3.addWidget(QLabel(t("tier_comm_dep")))
         self._new_send = QLineEdit()
         self._new_send.setPlaceholderText("0")
         self._new_send.setFixedWidth(85)
         add_r3.addWidget(self._new_send)
-        add_r3.addWidget(_lbl("Comm With:"))
+        add_r3.addWidget(QLabel(t("tier_comm_with")))
         self._new_recv = QLineEdit()
         self._new_recv.setPlaceholderText("0")
         self._new_recv.setFixedWidth(85)
@@ -980,22 +1006,22 @@ class SettingsPage(QWidget):
 
         # ── Add form — row 4: additional fee fields + submit ──
         add_r4 = QHBoxLayout()
-        add_r4.addWidget(_lbl("Add Type:"))
+        add_r4.addWidget(QLabel(t("tier_add_type")))
         self._new_add_type = QComboBox()
         self._new_add_type.addItems(["FIXED", "PERCENTAGE"])
         self._new_add_type.setFixedWidth(115)
         add_r4.addWidget(self._new_add_type)
-        add_r4.addWidget(_lbl("Add Dep:"))
+        add_r4.addWidget(QLabel(t("tier_add_dep")))
         self._new_add_dep = QLineEdit()
         self._new_add_dep.setPlaceholderText("0")
         self._new_add_dep.setFixedWidth(85)
         add_r4.addWidget(self._new_add_dep)
-        add_r4.addWidget(_lbl("Add With:"))
+        add_r4.addWidget(QLabel(t("tier_add_with")))
         self._new_add_with = QLineEdit()
         self._new_add_with.setPlaceholderText("0")
         self._new_add_with.setFixedWidth(85)
         add_r4.addWidget(self._new_add_with)
-        add_tier_btn = accent_btn("+ Add Tier", ACCENT_GREEN)
+        add_tier_btn = accent_btn(t("add_tier"), ACCENT_GREEN)
         add_tier_btn.clicked.connect(self._on_add_tier)
         add_r4.addWidget(add_tier_btn)
         add_r4.addStretch()
@@ -1054,7 +1080,7 @@ class SettingsPage(QWidget):
             buy = float(self._buy_input.text())
             sell = float(self._sell_input.text())
             self._api.update_exchange_rate(buy, sell, base_amount=base_amt)
-            self._rate_status.setText("Rate saved!")
+            self._rate_status.setText(t("rate_saved"))
             self._rate_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._rate_status.setVisible(True)
             self.load_data()
@@ -1069,17 +1095,17 @@ class SettingsPage(QWidget):
             new = self._new_pw.text()
             confirm = self._confirm_pw.text()
             if not old or not new:
-                self._pw_status.setText("Fill all fields")
+                self._pw_status.setText(t("pw_required"))
                 self._pw_status.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
                 self._pw_status.setVisible(True)
                 return
             if new != confirm:
-                self._pw_status.setText("Passwords do not match")
+                self._pw_status.setText(t("pw_mismatch"))
                 self._pw_status.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
                 self._pw_status.setVisible(True)
                 return
             self._api.change_password(old, new)
-            self._pw_status.setText("Password changed!")
+            self._pw_status.setText(t("pw_success"))
             self._pw_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._pw_status.setVisible(True)
             self._old_pw.clear()
@@ -1150,7 +1176,7 @@ class SettingsPage(QWidget):
             for w in (self._new_from, self._new_to, self._new_fee, self._new_fee_withdraw,
                       self._new_send, self._new_recv, self._new_add_dep, self._new_add_with):
                 w.clear()
-            self._tier_status.setText("Tier added!")
+            self._tier_status.setText("Commission tier added successfully.")
             self._tier_status.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
             self._tier_status.setVisible(True)
             self._load_tiers()
@@ -1182,9 +1208,18 @@ class DashboardView(QMainWindow):
         self._start_timers()
         self._start_websocket()
         self._pages[0].load_data()
+        on_change(self.retranslate_ui)
+
+    def retranslate_ui(self) -> None:
+        fullname = self._api.user.get("full_name", "") if self._api.user else ""
+        self.setWindowTitle(f"{t('app_title')} — {fullname}")
+        for label, key, _ in _build_menu_items():
+            if key in self._menu_buttons:
+                self._menu_buttons[key].setText(label)
 
     def _init_ui(self) -> None:
-        self.setWindowTitle("ငွေလွှဲ — Owner Dashboard")
+        fullname = self._api.user.get("full_name", "") if self._api.user else ""
+        self.setWindowTitle(f"{t('app_title')} — {fullname}")
         self.setMinimumSize(1200, 750)
         self.setStyleSheet(STYLESHEET)
 
@@ -1232,14 +1267,14 @@ class DashboardView(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._sidebar_logo())
         layout.addSpacing(10)
-        for label, key, idx in MENU_ITEMS:
+        for label, key, idx in _build_menu_items():
             layout.addWidget(self._sidebar_button(label, key, idx))
         layout.addStretch()
         layout.addWidget(self._sidebar_logout_button())
         return sidebar
 
     def _sidebar_logo(self) -> QLabel:
-        logo = QLabel("ငွေလွှဲ System")
+        logo = QLabel(t("app_title"))
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         logo.setStyleSheet(f"color: {ACCENT_BLUE}; padding: 20px 10px;")
@@ -1255,7 +1290,7 @@ class DashboardView(QMainWindow):
         return btn
 
     def _sidebar_logout_button(self) -> QPushButton:
-        btn = QPushButton("  Logout")
+        btn = QPushButton(t("logout"))
         btn.setFixedHeight(42)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(
@@ -1320,7 +1355,7 @@ class DashboardView(QMainWindow):
             titles = {
                 0: "Owner Dashboard", 1: "Transactions",
                 2: "Accounts", 3: "Reports",
-                4: "Employees", 5: "Settings",
+                4: "Users", 5: "Settings",
             }
             self._page_title.setText(titles.get(index, ""))
 

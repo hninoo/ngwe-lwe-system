@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from i18n import t, on_change
 from services.api_client import ApiClient
 
 
@@ -62,12 +63,21 @@ TYPE_COLORS = {
     "exchange": ACCENT_YELLOW,
 }
 
-ACTIONS = [
-    ("deposit", "အသွင်း (Deposit)", ACCENT_GREEN),
-    ("withdraw", "အထုတ် (Withdraw)", ACCENT_RED),
-    ("transfer", "ဘဏ်ချင်းငွေလဲ (Transfer)", ACCENT_BLUE),
-    ("exchange", "ကျပ်-ဘတ် (Exchange)", ACCENT_YELLOW),
-]
+def _get_actions():
+    return [
+        ("deposit", t("action_deposit"), ACCENT_GREEN),
+        ("withdraw", t("action_withdraw"), ACCENT_RED),
+        ("transfer", t("action_transfer"), ACCENT_BLUE),
+        ("exchange", t("action_exchange"), ACCENT_YELLOW),
+    ]
+
+
+def _get_txn_headers():
+    return [
+        t("col_date_time"), t("col_type"), t("col_account_name"), t("col_account_number"),
+        t("col_customer"), t("col_customer_phone"), t("col_amount"), t("col_commission"),
+        t("col_fee"), t("col_fee_account"), t("col_screenshot"),
+    ]
 
 INPUT_STYLE = (
     f"QLineEdit, QTextEdit, QComboBox, QDateEdit {{ background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
@@ -129,7 +139,7 @@ def field_label(text: str, required: bool = False) -> QLabel:
 
 
 def back_button(callback) -> QPushButton:
-    btn = QPushButton("← Back")
+    btn = QPushButton(t("back"))
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedWidth(80)
     btn.setStyleSheet(
@@ -200,7 +210,7 @@ class HomePage(QWidget):
         self._time_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
         top.addWidget(self._time_label)
 
-        logout_btn = QPushButton("Logout")
+        logout_btn = QPushButton(t("logout"))
         logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         logout_btn.setStyleSheet(
             f"QPushButton {{ background-color: {ACCENT_RED}; color: {BG_DARK}; "
@@ -217,9 +227,9 @@ class HomePage(QWidget):
         cards_layout.setSpacing(20)
 
         cards = [
-            ("Make Transaction", "ငွေလွှဲမယ်", ACCENT_GREEN, 1),
-            ("Transaction History", "မှတ်တမ်းကြည့်မယ်", ACCENT_BLUE, 2),
-            ("Profile", "ကိုယ်ရေးအချက်အလက်", ACCENT_MAUVE, 3),
+            (t("new_transaction"), t("new_transaction_desc"), ACCENT_GREEN, 1),
+            (t("txn_history"), t("txn_history_desc"), ACCENT_BLUE, 2),
+            (t("my_profile"), t("my_profile_desc"), ACCENT_MAUVE, 3),
         ]
         for title_text, desc, color, page_idx in cards:
             cards_layout.addWidget(self._card(title_text, desc, color, page_idx))
@@ -282,10 +292,10 @@ class TransactionFormPage(QWidget):
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
         layout.addWidget(back_button(lambda: self._navigate(0)))
-        layout.addWidget(section_label("Transaction"))
+        layout.addWidget(section_label(t("transaction")))
         layout.addWidget(self._build_action_buttons())
         layout.addWidget(self._build_form())
-        layout.addWidget(section_label("Today's Transactions"))
+        layout.addWidget(section_label(t("todays_transactions")))
         layout.addWidget(self._build_txn_table())
         layout.addStretch()
 
@@ -304,7 +314,7 @@ class TransactionFormPage(QWidget):
         lo.setContentsMargins(0, 0, 0, 0)
         lo.setSpacing(10)
         self._action_buttons: dict[str, QPushButton] = {}
-        for key, label, color in ACTIONS:
+        for key, label, color in _get_actions():
             btn = QPushButton(label)
             btn.setFixedHeight(44)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -316,7 +326,7 @@ class TransactionFormPage(QWidget):
 
     def _update_action_styles(self) -> None:
         for key, btn in self._action_buttons.items():
-            color = dict((k, c) for k, _, c in ACTIONS).get(key, ACCENT_BLUE)
+            color = dict((k, c) for k, _, c in _get_actions()).get(key, ACCENT_BLUE)
             if key == self._selected_action:
                 btn.setStyleSheet(
                     f"QPushButton {{ background-color: {color}; color: {BG_DARK}; border: none; border-radius: 8px; font-size: 13px; font-weight: bold; }}")
@@ -345,12 +355,12 @@ class TransactionFormPage(QWidget):
         lo.setContentsMargins(20, 20, 20, 20)
         lo.setSpacing(12)
 
-        lo.addWidget(field_label("Service", required=True))
+        lo.addWidget(field_label(t("field_service"), required=True))
         self._service_combo = QComboBox()
         self._service_combo.currentIndexChanged.connect(self._on_service_changed)
         lo.addWidget(self._service_combo)
 
-        lo.addWidget(field_label("Account", required=True))
+        lo.addWidget(field_label(t("field_account"), required=True))
         self._account_combo = QComboBox()
         self._account_combo.currentIndexChanged.connect(self._on_account_changed)
         lo.addWidget(self._account_combo)
@@ -359,38 +369,38 @@ class TransactionFormPage(QWidget):
         self._balance_hint.setVisible(False)
         lo.addWidget(self._balance_hint)
 
-        self._to_account_label = field_label("To Account", required=True)
+        self._to_account_label = field_label(t("field_to_account"), required=True)
         lo.addWidget(self._to_account_label)
         self._to_account_combo = QComboBox()
         lo.addWidget(self._to_account_combo)
 
-        self._customer_label = field_label("Customer Name / Phone", required=True)
+        self._customer_label = field_label(t("field_customer"), required=True)
         lo.addWidget(self._customer_label)
         cust_row = QHBoxLayout()
         self._customer_name = QLineEdit()
-        self._customer_name.setPlaceholderText("Customer Name")
+        self._customer_name.setPlaceholderText(t("customer_name_ph"))
         self._customer_name.returnPressed.connect(lambda: self._customer_phone.setFocus())
         cust_row.addWidget(self._customer_name)
         self._customer_phone = QLineEdit()
-        self._customer_phone.setPlaceholderText("Phone Number")
+        self._customer_phone.setPlaceholderText(t("customer_phone_ph"))
         self._customer_phone.returnPressed.connect(lambda: self._amount_input.setFocus())
         cust_row.addWidget(self._customer_phone)
         lo.addLayout(cust_row)
 
-        self._currency_label = field_label("Currency", required=True)
+        self._currency_label = field_label(t("field_currency"), required=True)
         lo.addWidget(self._currency_label)
         self._currency_combo = QComboBox()
         self._currency_combo.addItems(["MMK", "THB"])
         lo.addWidget(self._currency_combo)
 
-        lo.addWidget(field_label("Amount", required=True))
+        lo.addWidget(field_label(t("field_amount"), required=True))
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
         self._amount_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
         lo.addWidget(self._amount_input)
 
-        self._commission_label = field_label("Commission")
+        self._commission_label = field_label(t("field_commission"))
         lo.addWidget(self._commission_label)
         self._commission_display = QLineEdit()
         self._commission_display.setReadOnly(True)
@@ -399,7 +409,7 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_MAUVE}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._commission_display)
 
-        lo.addWidget(field_label("Customer Fee (from tier)"))
+        lo.addWidget(field_label(t("field_customer_fee")))
         self._fee_display = QLineEdit()
         self._fee_display.setReadOnly(True)
         self._fee_display.setText("0")
@@ -407,7 +417,7 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_TEAL}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._fee_display)
 
-        lo.addWidget(field_label("Additional Fee (from tier)"))
+        lo.addWidget(field_label(t("field_additional_fee")))
         self._additional_fee_display = QLineEdit()
         self._additional_fee_display.setReadOnly(True)
         self._additional_fee_display.setText("0")
@@ -415,7 +425,7 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_YELLOW}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._additional_fee_display)
 
-        lo.addWidget(field_label("Total Fee  (→ Fee Account)"))
+        lo.addWidget(field_label(t("field_total_fee")))
         self._total_charge_display = QLineEdit()
         self._total_charge_display.setReadOnly(True)
         self._total_charge_display.setText("0")
@@ -428,12 +438,12 @@ class TransactionFormPage(QWidget):
         self._fee_hint.setVisible(False)
         lo.addWidget(self._fee_hint)
 
-        lo.addWidget(field_label("Fee Account"))
+        lo.addWidget(field_label(t("field_fee_account")))
         self._fee_account_combo = QComboBox()
-        self._fee_account_combo.addItem("— မရွေး —")
+        self._fee_account_combo.addItem(t("select_placeholder"))
         lo.addWidget(self._fee_account_combo)
 
-        lo.addWidget(field_label("Balance Change"))
+        lo.addWidget(field_label(t("field_balance_change")))
         self._balance_change_display = QLineEdit()
         self._balance_change_display.setReadOnly(True)
         self._balance_change_display.setText("0")
@@ -441,21 +451,21 @@ class TransactionFormPage(QWidget):
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_GREEN}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
         lo.addWidget(self._balance_change_display)
 
-        lo.addWidget(field_label("Note"))
+        lo.addWidget(field_label(t("field_note")))
         self._note_input = TabTextEdit(on_enter=lambda: self._screenshot_btn.setFocus())
         self._note_input.setFixedHeight(60)
-        self._note_input.setPlaceholderText("Optional note... (Ctrl+Enter for new line)")
+        self._note_input.setPlaceholderText(t("note_placeholder"))
         lo.addWidget(self._note_input)
 
         ss_row = QHBoxLayout()
-        self._screenshot_btn = QPushButton("Attach Screenshot")
+        self._screenshot_btn = QPushButton(t("attach_screenshot"))
         self._screenshot_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._screenshot_btn.setStyleSheet(
             f"QPushButton {{ background-color: {BG_DARK}; color: {ACCENT_BLUE}; border: 1px solid {ACCENT_BLUE}; border-radius: 6px; padding: 8px 16px; font-size: 13px; }}"
             f"QPushButton:hover {{ background-color: {BG_CARD}; }}")
         self._screenshot_btn.clicked.connect(self._on_select_screenshot)
         ss_row.addWidget(self._screenshot_btn)
-        self._screenshot_label = QLabel("No file selected")
+        self._screenshot_label = QLabel(t("no_file_selected"))
         self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         ss_row.addWidget(self._screenshot_label, 1)
         lo.addLayout(ss_row)
@@ -465,7 +475,7 @@ class TransactionFormPage(QWidget):
         self._status_label.setVisible(False)
         lo.addWidget(self._status_label)
 
-        self._save_btn = accent_btn("Save Transaction")
+        self._save_btn = accent_btn(t("save_transaction"))
         self._save_btn.setFixedHeight(44)
         self._save_btn.clicked.connect(self._on_save)
         lo.addWidget(self._save_btn)
@@ -532,7 +542,7 @@ class TransactionFormPage(QWidget):
             self._additional_fee_display.setText("0")
             self._total_charge_display.setText("0")
             self._balance_change_display.setText(f"{amount:,.0f}")
-            self._fee_hint.setText("Tier မသတ်မှတ်ရသေး — manual ဖြည့်ပါ")
+            self._fee_hint.setText(t("no_tier"))
             self._fee_hint.setStyleSheet(f"color: {ACCENT_YELLOW}; font-size: 11px; font-style: italic; padding-left: 2px;")
             self._fee_hint.setVisible(True)
             return
@@ -567,12 +577,12 @@ class TransactionFormPage(QWidget):
 
         if is_withdraw:
             self._fee_hint.setText(
-                f"Customer ထုတ်: {amount:,.0f}  |  Fee: {fee_amount:,.0f} + {additional:,.0f} = {total_fee:,.0f}  |  "
-                f"Customer ပေးရ (fee): {total_fee:,.0f}  |  Agent ကော်မရှင်: {commission:,.0f}")
+                f"Withdrawal: {amount:,.0f}  |  Fee: {fee_amount:,.0f} + {additional:,.0f} = {total_fee:,.0f}  |  "
+                f"Customer pays (fee): {total_fee:,.0f}  |  Agent commission: {commission:,.0f}")
         else:
             self._fee_hint.setText(
-                f"Customer ပေးရ: {amount:,.0f} + {total_fee:,.0f} (fee) = {customer_total:,.0f}  |  "
-                f"Fee Account သို့: {total_fee:,.0f}  |  Agent ကော်မရှင်: {commission:,.0f}")
+                f"Customer pays: {amount:,.0f} + {total_fee:,.0f} (fee) = {customer_total:,.0f}  |  "
+                f"To fee account: {total_fee:,.0f}  |  Agent commission: {commission:,.0f}")
         self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
         self._fee_hint.setVisible(True)
 
@@ -659,12 +669,12 @@ class TransactionFormPage(QWidget):
         amount = self._parse_amount()
         if amount <= 0:
             c = ACCENT_GREEN if balance >= 0 else ACCENT_RED
-            self._balance_hint.setText(f"လက်ရှိ Balance: {balance:,.0f} MMK")
+            self._balance_hint.setText(t("current_balance", balance=f"{balance:,.0f}"))
             self._balance_hint.setStyleSheet(f"color: {c}; font-size: 12px; font-style: italic; padding-left: 2px;")
         else:
             projected = self._calc_projected(balance, amount)
             c = ACCENT_GREEN if projected >= 0 else ACCENT_RED
-            self._balance_hint.setText(f"လက်ရှိ: {balance:,.0f} → ငွေလွှဲပြီး: {projected:,.0f} MMK")
+            self._balance_hint.setText(t("balance_after", balance=f"{balance:,.0f}", projected=f"{projected:,.0f}"))
             self._balance_hint.setStyleSheet(f"color: {c}; font-size: 12px; font-style: italic; padding-left: 2px;")
         self._balance_hint.setVisible(True)
 
@@ -683,7 +693,7 @@ class TransactionFormPage(QWidget):
         try:
             self._all_accounts_cache = [FEE_CASH_ITEM] + self._api.get_accounts()
             self._fee_account_combo.clear()
-            self._fee_account_combo.addItem("— မရွေး —")
+            self._fee_account_combo.addItem(t("select_placeholder"))
             for a in self._all_accounts_cache:
                 label = f"{a.get('account_name', '')} | {a.get('phone_number', '')}" if a.get("phone_number") else a.get("account_name", "")
                 self._fee_account_combo.addItem(label)
@@ -714,7 +724,7 @@ class TransactionFormPage(QWidget):
     # ── Screenshot ──
     def _on_select_screenshot(self) -> None:
         try:
-            path, _ = QFileDialog.getOpenFileName(self, "Select Screenshot", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
+            path, _ = QFileDialog.getOpenFileName(self, t("select_screenshot"), "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
             if path:
                 self._screenshot_path = path
                 self._screenshot_label.setText(path.rsplit("/", 1)[-1] if "/" in path else path.rsplit("\\", 1)[-1])
@@ -758,32 +768,32 @@ class TransactionFormPage(QWidget):
             self._api.create_exchange(account_id=account["id"], amount=amount,
                 currency=self._currency_combo.currentText(), screenshot_path=self._screenshot_path,
                 customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
-        self._show_status("Transaction saved successfully!", error=False)
+        self._show_status(t("txn_saved"), error=False)
         self._clear_form()
         self._load_my_transactions()
 
     def _validate(self) -> Optional[str]:
         if self._account_combo.currentIndex() < 0:
-            return "Account ရွေးပါ"
+            return t("err_select_account")
         if self._parse_amount() <= 0:
-            return "Amount ထည့်ပါ"
+            return t("err_enter_amount")
         if self._selected_action in ("deposit", "withdraw"):
             if not self._customer_name.text().strip():
-                return "Customer Name ထည့်ပါ"
+                return t("err_customer_name")
             if not self._customer_phone.text().strip():
-                return "Customer Phone ထည့်ပါ"
+                return t("err_customer_phone")
         if self._selected_action == "transfer":
             to_idx = self._to_account_combo.currentIndex()
             if to_idx < 0:
-                return "To Account ရွေးပါ"
+                return t("err_select_to_account")
             if to_idx == self._account_combo.currentIndex():
-                return "From နှင့် To Account တူလို့မရပါ"
+                return t("err_same_account")
         if self._selected_action != "withdraw":
             account = self._get_selected_account()
             if account:
                 balance = self._get_fresh_balance(account["id"])
                 if self._calc_projected(balance, self._parse_amount()) < 0:
-                    return f"Balance မလုံလောက်ပါ (လက်ရှိ: {balance:,.0f} MMK)"
+                    return t("err_insufficient", balance=f"{balance:,.0f}")
         return None
 
     def _clear_form(self) -> None:
@@ -799,7 +809,7 @@ class TransactionFormPage(QWidget):
         self._commission_display.setText("0")
         self._balance_change_display.setText("0")
         self._screenshot_path = None
-        self._screenshot_label.setText("No file selected")
+        self._screenshot_label.setText(t("no_file_selected"))
         self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
 
     def _show_status(self, msg: str, error: bool = False) -> None:
@@ -808,13 +818,12 @@ class TransactionFormPage(QWidget):
         self._status_label.setVisible(True)
 
     # ── Table ──
-    TXN_HEADERS = ["Date Time", "Type", "Account Name", "Account Number", "Customer Name", "Customer Number", "Amount", "Commission", "Fee", "Fee Account", "Screenshot"]
     TXN_COL_WIDTHS = [180, 100, 0, 140, 0, 140, 140, 90, 90, 120, 90]
     TXN_STRETCH = {2, 4}
 
     def _build_txn_table(self) -> QTableWidget:
-        self._txn_table = QTableWidget(0, len(self.TXN_HEADERS))
-        self._txn_table.setHorizontalHeaderLabels(self.TXN_HEADERS)
+        self._txn_table = QTableWidget(0, len(_get_txn_headers()))
+        self._txn_table.setHorizontalHeaderLabels(_get_txn_headers())
         self._txn_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._txn_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._txn_table.setAlternatingRowColors(True)
@@ -877,7 +886,7 @@ class TransactionFormPage(QWidget):
             self._txn_table.setItem(row, col, item)
         path = txn.get("screenshot_path", "")
         if path:
-            btn = QPushButton("View")
+            btn = QPushButton(t("view"))
             btn.setStyleSheet(f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}")
             btn.clicked.connect(lambda _, p=path: self._show_screenshot(p))
             self._txn_table.setCellWidget(row, 10, btn)
@@ -899,10 +908,10 @@ class TransactionFormPage(QWidget):
         try:
             pixmap = QPixmap(path)
             if pixmap.isNull():
-                self._show_status(f"ဖိုင်ဖွင့်လို့မရပါ: {path}", error=True)
+                self._show_status(t("err_open_file", path=path), error=True)
                 return
             dlg = QDialog(self)
-            dlg.setWindowTitle("Screenshot")
+            dlg.setWindowTitle(t("screenshot_title"))
             dlg.setMinimumSize(600, 400)
             dlg.setStyleSheet(f"background-color: {BG_DARK};")
             scroll = QScrollArea()
@@ -917,7 +926,7 @@ class TransactionFormPage(QWidget):
             lo.addWidget(scroll)
             dlg.exec()
         except Exception as e:
-            self._show_status(f"Screenshot error: {e}", error=True)
+            self._show_status(t("err_screenshot", error=str(e)), error=True)
 
 
 # ════════════════════════════════════════════
@@ -936,10 +945,10 @@ class HistoryPage(QWidget):
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
         layout.addWidget(back_button(lambda: self._navigate(0)))
-        layout.addWidget(section_label("Transaction History"))
+        layout.addWidget(section_label(t("txn_history_title")))
         layout.addWidget(self._build_filters())
         self._table = QTableWidget(0, 11)
-        self._table.setHorizontalHeaderLabels(TransactionFormPage.TXN_HEADERS)
+        self._table.setHorizontalHeaderLabels(_get_txn_headers())
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(True)
@@ -957,7 +966,7 @@ class HistoryPage(QWidget):
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
                 self._table.setColumnWidth(i, w)
         layout.addWidget(self._table)
-        self._load_more_btn = accent_btn("Load More")
+        self._load_more_btn = accent_btn(t("load_more"))
         self._load_more_btn.clicked.connect(self._on_load_more)
         self._load_more_btn.setVisible(False)
         layout.addWidget(self._load_more_btn, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -972,27 +981,27 @@ class HistoryPage(QWidget):
         lo = QHBoxLayout(frame)
         lo.setContentsMargins(14, 10, 14, 10)
         lo.setSpacing(12)
-        lo.addWidget(QLabel("From:"))
+        lo.addWidget(QLabel(t("filter_from")))
         self._date_from = QDateEdit(QDate.currentDate())
         self._date_from.setCalendarPopup(True)
         lo.addWidget(self._date_from)
-        lo.addWidget(QLabel("To:"))
+        lo.addWidget(QLabel(t("filter_to")))
         self._date_to = QDateEdit(QDate.currentDate())
         self._date_to.setCalendarPopup(True)
         lo.addWidget(self._date_to)
-        lo.addWidget(QLabel("Type:"))
+        lo.addWidget(QLabel(t("filter_type")))
         self._type_filter = QComboBox()
         self._type_filter.addItems(["All", "deposit", "withdraw", "transfer", "exchange"])
         lo.addWidget(self._type_filter)
 
-        lo.addWidget(QLabel("Phone:"))
+        lo.addWidget(QLabel(t("filter_phone")))
         self._phone_filter = QLineEdit()
-        self._phone_filter.setPlaceholderText("Account / Customer No.")
+        self._phone_filter.setPlaceholderText(t("filter_phone_ph"))
         self._phone_filter.setFixedWidth(180)
         self._phone_filter.returnPressed.connect(self._on_search)
         lo.addWidget(self._phone_filter)
 
-        btn = accent_btn("Search")
+        btn = accent_btn(t("search"))
         btn.clicked.connect(self._on_search)
         lo.addWidget(btn)
         lo.addStretch()
@@ -1012,10 +1021,10 @@ class HistoryPage(QWidget):
             d_to = self._date_to.date().toString("yyyy-MM-dd")
             t_type = self._type_filter.currentText()
             phone_q = self._phone_filter.text().strip().lower()
-            self._all_filtered = [t for t in txns
-                if d_from <= str(t.get("created_at", ""))[:10] <= d_to
-                and (t_type == "All" or t.get("transaction_type") == t_type)
-                and self._matches_phone(t, phone_q)]
+            self._all_filtered = [tx for tx in txns
+                if d_from <= str(tx.get("created_at", ""))[:10] <= d_to
+                and (t_type == "All" or tx.get("transaction_type") == t_type)
+                and self._matches_phone(tx, phone_q)]
             self._show_rows(self._all_filtered[:self._limit])
             self._load_more_btn.setVisible(len(self._all_filtered) > self._limit)
         except Exception:
@@ -1076,7 +1085,7 @@ class HistoryPage(QWidget):
                 self._table.setItem(row, col, item)
             path = txn.get("screenshot_path", "")
             if path:
-                btn = QPushButton("View")
+                btn = QPushButton(t("view"))
                 btn.setStyleSheet(f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; }}")
                 btn.clicked.connect(lambda _, p=path: self._view_screenshot(p))
                 self._table.setCellWidget(row, 10, btn)
@@ -1098,7 +1107,7 @@ class HistoryPage(QWidget):
             if pixmap.isNull():
                 return
             dlg = QDialog(self)
-            dlg.setWindowTitle("Screenshot")
+            dlg.setWindowTitle(t("screenshot_title"))
             dlg.setMinimumSize(600, 400)
             dlg.setStyleSheet(f"background-color: {BG_DARK};")
             scroll = QScrollArea()
@@ -1129,7 +1138,7 @@ class ProfilePage(QWidget):
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
         layout.addWidget(back_button(lambda: self._navigate(0)))
-        layout.addWidget(section_label("Profile"))
+        layout.addWidget(section_label(t("profile_title")))
 
         # Info card
         card = QFrame()
@@ -1159,7 +1168,7 @@ class ProfilePage(QWidget):
 
         # Change password
         layout.addSpacing(10)
-        layout.addWidget(section_label("Change Password"))
+        layout.addWidget(section_label(t("change_password")))
 
         pw_card = QFrame()
         pw_card.setStyleSheet(f"QFrame {{ background-color: {BG_CARD}; border-radius: 10px; border: 1px solid {BORDER_COLOR}; }}")
@@ -1167,22 +1176,22 @@ class ProfilePage(QWidget):
         plo.setContentsMargins(20, 20, 20, 20)
         plo.setSpacing(12)
 
-        plo.addWidget(field_label("Current Password", required=True))
+        plo.addWidget(field_label(t("current_password_ph"), required=True))
         self._old_pw = QLineEdit()
         self._old_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self._old_pw.setPlaceholderText("Current Password")
+        self._old_pw.setPlaceholderText(t("current_password_ph"))
         plo.addWidget(self._old_pw)
 
-        plo.addWidget(field_label("New Password", required=True))
+        plo.addWidget(field_label(t("new_password_ph"), required=True))
         self._new_pw = QLineEdit()
         self._new_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self._new_pw.setPlaceholderText("New Password")
+        self._new_pw.setPlaceholderText(t("new_password_ph"))
         plo.addWidget(self._new_pw)
 
-        plo.addWidget(field_label("Confirm New Password", required=True))
+        plo.addWidget(field_label(t("confirm_password_ph"), required=True))
         self._confirm_pw = QLineEdit()
         self._confirm_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self._confirm_pw.setPlaceholderText("Confirm New Password")
+        self._confirm_pw.setPlaceholderText(t("confirm_password_ph"))
         plo.addWidget(self._confirm_pw)
 
         self._pw_status = QLabel("")
@@ -1190,7 +1199,7 @@ class ProfilePage(QWidget):
         self._pw_status.setVisible(False)
         plo.addWidget(self._pw_status)
 
-        save_btn = accent_btn("Save Password")
+        save_btn = accent_btn(t("save_password"))
         save_btn.clicked.connect(self._on_save_password)
         plo.addWidget(save_btn)
 
@@ -1210,13 +1219,13 @@ class ProfilePage(QWidget):
             new = self._new_pw.text()
             confirm = self._confirm_pw.text()
             if not old or not new:
-                self._show_pw_status("Fill all fields", True)
+                self._show_pw_status(t("pw_required"), True)
                 return
             if new != confirm:
-                self._show_pw_status("Passwords do not match", True)
+                self._show_pw_status(t("pw_mismatch"), True)
                 return
             self._api.change_password(old, new)
-            self._show_pw_status("Password changed!", False)
+            self._show_pw_status(t("pw_success"), False)
             self._old_pw.clear()
             self._new_pw.clear()
             self._confirm_pw.clear()
@@ -1238,10 +1247,23 @@ class TransactionView(QMainWindow):
         self._api = api_client
         self._init_ui()
         self._start_clock()
+        on_change(self.retranslate_ui)
+
+    def retranslate_ui(self) -> None:
+        fullname = self._api.user.get("full_name", "") if self._api.user else ""
+        self.setWindowTitle(f"{t('app_title')} — {fullname}")
+        # Cascade to sub-pages: action buttons
+        for key, label, _ in _get_actions():
+            if key in self._form._action_buttons:
+                self._form._action_buttons[key].setText(label)
+        # Cascade to sub-pages: table headers
+        headers = _get_txn_headers()
+        self._form._txn_table.setHorizontalHeaderLabels(headers)
+        self._history._table.setHorizontalHeaderLabels(headers)
 
     def _init_ui(self) -> None:
         fullname = self._api.user.get("full_name", "") if self._api.user else ""
-        self.setWindowTitle(f"ငွေလွှဲ — {fullname}")
+        self.setWindowTitle(f"{t('app_title')} — {fullname}")
         self.setMinimumSize(1000, 700)
         self.setStyleSheet(STYLESHEET)
 

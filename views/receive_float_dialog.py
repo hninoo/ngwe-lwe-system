@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from i18n import t
 from services.api_client import ApiClient
 
 # ── Colors ──
@@ -71,7 +72,7 @@ class ReceiveFloatDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        self.setWindowTitle("Receive Float — Enter PIN")
+        self.setWindowTitle(t("float_receipt_window"))
         self.setFixedWidth(480)
         self.setStyleSheet(DIALOG_STYLE)
         self.setWindowFlags(
@@ -83,7 +84,7 @@ class ReceiveFloatDialog(QDialog):
         layout.setSpacing(16)
 
         # Title
-        title = QLabel("Float Ready to Receive")
+        title = QLabel(t("float_ready_title"))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {ACCENT_BLUE}; background: transparent;")
         layout.addWidget(title)
@@ -102,7 +103,7 @@ class ReceiveFloatDialog(QDialog):
 
         # Total row
         total_row = QHBoxLayout()
-        total_lbl = QLabel("Total Float:")
+        total_lbl = QLabel(t("total_float_label"))
         total_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         total_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
         total_val = QLabel(f"{int(total):,} MMK")
@@ -120,7 +121,7 @@ class ReceiveFloatDialog(QDialog):
         layout.addWidget(sep)
 
         # PIN input
-        pin_lbl = QLabel("Enter your 6-digit PIN to confirm:")
+        pin_lbl = QLabel(t("pin_prompt"))
         pin_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; background: transparent;")
         layout.addWidget(pin_lbl)
 
@@ -139,7 +140,7 @@ class ReceiveFloatDialog(QDialog):
 
         # Buttons
         btn_row = QHBoxLayout()
-        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn = QPushButton(t("cancel"))
         self._cancel_btn.setStyleSheet(
             f"QPushButton {{ background-color: #313244; color: {TEXT_PRIMARY}; "
             f"border: none; border-radius: 6px; padding: 10px 24px; font-size: 13px; }}"
@@ -147,7 +148,7 @@ class ReceiveFloatDialog(QDialog):
         )
         self._cancel_btn.clicked.connect(self.reject)
 
-        self._confirm_btn = QPushButton("Confirm Receipt")
+        self._confirm_btn = QPushButton(t("confirm_receipt_btn"))
         self._confirm_btn.clicked.connect(self._on_confirm)
 
         btn_row.addWidget(self._cancel_btn)
@@ -163,7 +164,7 @@ class ReceiveFloatDialog(QDialog):
         active_denoms = [d for d in denoms if d.get("quantity", 0) > 0]
 
         table = QTableWidget(len(active_denoms), 3)
-        table.setHorizontalHeaderLabels(["Denomination", "Quantity", "Value"])
+        table.setHorizontalHeaderLabels([t("col_denomination"), t("col_quantity"), t("col_value")])
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         table.verticalHeader().setVisible(False)
@@ -195,12 +196,12 @@ class ReceiveFloatDialog(QDialog):
     def _on_confirm(self) -> None:
         pin = self._pin_input.text().strip()
         if len(pin) != 6 or not pin.isdigit():
-            self._show_error("PIN must be exactly 6 digits")
+            self._show_error(t("pin_invalid"))
             return
 
         self._error_label.setVisible(False)
         self._confirm_btn.setEnabled(False)
-        self._confirm_btn.setText("Confirming...")
+        self._confirm_btn.setText(t("verifying"))
 
         try:
             float_id = self._float_data["id"]
@@ -218,7 +219,7 @@ class ReceiveFloatDialog(QDialog):
                 pass
             self._show_error(f"Error: {error_text}")
             self._confirm_btn.setEnabled(True)
-            self._confirm_btn.setText("Confirm Receipt")
+            self._confirm_btn.setText(t("confirm_receipt_btn"))
             self._pin_input.clear()
             self._pin_input.setFocus()
 

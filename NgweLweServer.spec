@@ -10,6 +10,8 @@ hiddenimports = [
     'uvicorn.lifespan', 'uvicorn.lifespan.on',
     'anyio._backends._asyncio', 'anyio._backends._trio',
     'bcrypt', 'passlib', 'multipart',
+    # i18n
+    'i18n', 'i18n.i18n',
     # backend modules
     'backend', 'backend.main', 'backend.database', 'backend.auth',
     'backend.websocket_manager',

@@ -66,6 +66,9 @@ class ExchangeRequest(BaseModel):
     note: Optional[str] = None
 
 
+_txn_repo_direct = None  # lazy import to avoid circular
+
+
 async def _broadcast_balances() -> None:
     if ws_manager is None:
         return
@@ -75,6 +78,12 @@ async def _broadcast_balances() -> None:
         "accounts": [asdict(a) for a in accounts],
     }
     await ws_manager.broadcast(payload)
+
+
+async def _broadcast_new_transaction(txn_dict: dict) -> None:
+    if ws_manager is None:
+        return
+    await ws_manager.broadcast({"type": "new_transaction", "transaction": txn_dict})
 
 
 @router.post("/deposit")
@@ -96,8 +105,10 @@ async def create_deposit(
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
+    txn_dict = asdict(txn)
     await _broadcast_balances()
-    return asdict(txn)
+    await _broadcast_new_transaction(txn_dict)
+    return txn_dict
 
 
 @router.post("/withdraw")
@@ -123,8 +134,10 @@ async def create_withdraw(
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
+    txn_dict = asdict(txn)
     await _broadcast_balances()
-    return asdict(txn)
+    await _broadcast_new_transaction(txn_dict)
+    return txn_dict
 
 
 @router.post("/transfer")
@@ -145,8 +158,10 @@ async def create_transfer(
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
+    txn_dict = asdict(txn)
     await _broadcast_balances()
-    return asdict(txn)
+    await _broadcast_new_transaction(txn_dict)
+    return txn_dict
 
 
 @router.post("/exchange")
@@ -167,8 +182,10 @@ async def create_exchange(
         fee_account_id=body.fee_account_id,
         note=body.note,
     )
+    txn_dict = asdict(txn)
     await _broadcast_balances()
-    return asdict(txn)
+    await _broadcast_new_transaction(txn_dict)
+    return txn_dict
 
 
 @router.get("/recent")
@@ -177,6 +194,17 @@ def get_recent(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     from viewmodels.dashboard_viewmodel import DashboardViewModel
-    limit = min(limit, 200)
+    limit = min(limit, 1000)
     txns = DashboardViewModel().get_recent_transactions(limit)
+    return [asdict(t) for t in txns]
+
+
+@router.get("/by-date")
+def get_by_date(
+    date: str,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    """Return all transactions for a given date (YYYY-MM-DD)."""
+    from repositories.transaction_repository import TransactionRepository
+    txns = TransactionRepository().get_by_date(date)
     return [asdict(t) for t in txns]
