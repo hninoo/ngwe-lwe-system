@@ -27,14 +27,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t, on_change
 from services.api_client import ApiClient
-
-
-def _map_tier_service_type(service_type: str, account_type: str) -> str:
-    if service_type == "WAVE":
-        return "WAVE_WST" if account_type == "agent" else "WAVE_ACCOUNT"
-    if service_type == "KPAY":
-        return "KPAY_WST"
-    return service_type
+from views.widgets.company_selector import CompanySelector, ServiceTypeSelector, AccountSelector
 
 MMT = timezone(timedelta(hours=6, minutes=30))
 
@@ -285,8 +278,8 @@ class TransactionFormPage(QWidget):
         self._selected_action: str = "deposit"
         self._screenshot_path: Optional[str] = None
         self._accounts_cache: list[dict] = []
+        self._to_accounts_cache: list[dict] = []
         self._all_accounts_cache: list[dict] = []
-        self._services_cache: list[dict] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -304,7 +297,7 @@ class TransactionFormPage(QWidget):
         outer.addWidget(scroll)
 
     def load_data(self) -> None:
-        self._load_services()
+        self._load_companies()
         self._load_my_transactions()
 
     # ── Action buttons ──
@@ -355,24 +348,42 @@ class TransactionFormPage(QWidget):
         lo.setContentsMargins(20, 20, 20, 20)
         lo.setSpacing(12)
 
-        lo.addWidget(field_label(t("field_service"), required=True))
-        self._service_combo = QComboBox()
-        self._service_combo.currentIndexChanged.connect(self._on_service_changed)
-        lo.addWidget(self._service_combo)
+        lo.addWidget(field_label(t("field_company"), required=True))
+        self._company_selector = CompanySelector()
+        self._company_selector.company_changed.connect(self._on_company_changed)
+        lo.addWidget(self._company_selector)
+
+        lo.addWidget(field_label(t("field_service_type"), required=True))
+        self._service_type_selector = ServiceTypeSelector()
+        self._service_type_selector.service_type_changed.connect(self._on_service_type_changed)
+        lo.addWidget(self._service_type_selector)
 
         lo.addWidget(field_label(t("field_account"), required=True))
-        self._account_combo = QComboBox()
-        self._account_combo.currentIndexChanged.connect(self._on_account_changed)
-        lo.addWidget(self._account_combo)
+        self._account_selector = AccountSelector()
+        self._account_selector.currentIndexChanged.connect(self._on_account_changed)
+        lo.addWidget(self._account_selector)
 
         self._balance_hint = QLabel("")
         self._balance_hint.setVisible(False)
         lo.addWidget(self._balance_hint)
 
+        # Transfer: to-side cascade
+        self._to_company_label = field_label(t("field_to_company"), required=True)
+        lo.addWidget(self._to_company_label)
+        self._to_company_selector = CompanySelector()
+        self._to_company_selector.company_changed.connect(self._on_to_company_changed)
+        lo.addWidget(self._to_company_selector)
+
+        self._to_service_type_label = field_label(t("field_to_service_type"), required=True)
+        lo.addWidget(self._to_service_type_label)
+        self._to_service_type_selector = ServiceTypeSelector()
+        self._to_service_type_selector.service_type_changed.connect(self._on_to_service_type_changed)
+        lo.addWidget(self._to_service_type_selector)
+
         self._to_account_label = field_label(t("field_to_account"), required=True)
         lo.addWidget(self._to_account_label)
-        self._to_account_combo = QComboBox()
-        lo.addWidget(self._to_account_combo)
+        self._to_account_selector = AccountSelector()
+        lo.addWidget(self._to_account_selector)
 
         self._customer_label = field_label(t("field_customer"), required=True)
         lo.addWidget(self._customer_label)
@@ -487,8 +498,13 @@ class TransactionFormPage(QWidget):
         is_transfer = self._selected_action == "transfer"
         is_exchange = self._selected_action == "exchange"
         has_customer = self._selected_action in ("deposit", "withdraw")
+        # Show "to" cascade only for transfer
+        self._to_company_label.setVisible(is_transfer)
+        self._to_company_selector.setVisible(is_transfer)
+        self._to_service_type_label.setVisible(is_transfer)
+        self._to_service_type_selector.setVisible(is_transfer)
         self._to_account_label.setVisible(is_transfer)
-        self._to_account_combo.setVisible(is_transfer)
+        self._to_account_selector.setVisible(is_transfer)
         self._customer_label.setVisible(has_customer)
         self._customer_name.setVisible(has_customer)
         self._customer_phone.setVisible(has_customer)
@@ -497,10 +513,7 @@ class TransactionFormPage(QWidget):
 
     # ── Calculations ──
     def _get_selected_account(self) -> Optional[dict]:
-        idx = self._account_combo.currentIndex()
-        if idx < 0 or idx >= len(self._accounts_cache):
-            return None
-        return self._accounts_cache[idx]
+        return self._account_selector.selected_account()
 
     def _on_amount_changed(self) -> None:
         try:
@@ -511,10 +524,6 @@ class TransactionFormPage(QWidget):
 
     def _on_account_changed(self, index: int) -> None:
         try:
-            account = self._get_selected_account()
-            is_bank = account and account.get("service_type") == "BANK"
-            self._commission_label.setVisible(not is_bank)
-            self._commission_display.setVisible(not is_bank)
             self._recalculate()
             self._update_balance_hint()
         except Exception:
@@ -587,11 +596,11 @@ class TransactionFormPage(QWidget):
         self._fee_hint.setVisible(True)
 
     def _lookup_tier(self, account: dict, amount: float) -> Optional[dict]:
-        service_type = account.get("service_type", "KPAY")
-        account_type = account.get("account_type", "personal")
-        tier_service_type = _map_tier_service_type(service_type, account_type)
+        service_type_id = account.get("service_type_id")
+        if service_type_id is None:
+            return None
         try:
-            tier = self._api.lookup_tier(tier_service_type, account_type, amount)
+            tier = self._api.lookup_tier(service_type_id, amount)
             if (tier.get("fee_amount_deposit", 0) == 0 and tier.get("fee_amount_withdraw", 0) == 0
                     and tier.get("comm_deposit", 0) == 0 and tier.get("comm_withdraw", 0) == 0):
                 return None
@@ -679,12 +688,18 @@ class TransactionFormPage(QWidget):
         self._balance_hint.setVisible(True)
 
     # ── Data loading ──
-    def _load_services(self) -> None:
+    def _load_companies(self) -> None:
         try:
-            self._services_cache = self._api.get_services()
-            self._service_combo.clear()
-            for s in self._services_cache:
-                self._service_combo.addItem(s.get("name", ""))
+            companies = self._api.get_companies()
+            self._company_selector.populate(companies, self._api)
+            self._to_company_selector.populate(companies, self._api)
+            # Manually trigger first company's service types (signals blocked during populate)
+            cid = self._company_selector.selected_company_id()
+            if cid is not None:
+                self._on_company_changed(cid)
+            cid_to = self._to_company_selector.selected_company_id()
+            if cid_to is not None:
+                self._on_to_company_changed(cid_to)
         except Exception:
             pass
         self._load_fee_accounts()
@@ -700,18 +715,40 @@ class TransactionFormPage(QWidget):
         except Exception:
             self._all_accounts_cache = [FEE_CASH_ITEM]
 
-    def _on_service_changed(self, index: int) -> None:
+    def _on_company_changed(self, company_id: int) -> None:
         try:
-            if index < 0 or index >= len(self._services_cache):
-                return
-            service_id = self._services_cache[index].get("id")
-            self._accounts_cache = self._api.get_accounts(service_id=service_id)
-            self._account_combo.clear()
-            self._to_account_combo.clear()
-            for a in self._accounts_cache:
-                label = f"{a.get('account_name', '')} | {a.get('phone_number', '')}"
-                self._account_combo.addItem(label)
-                self._to_account_combo.addItem(label)
+            service_types = self._api.get_service_types(company_id)
+            self._service_type_selector.populate(service_types)
+            st_id = self._service_type_selector.selected_service_type_id()
+            if st_id is not None:
+                self._on_service_type_changed(st_id)
+        except Exception:
+            pass
+
+    def _on_service_type_changed(self, service_type_id: int) -> None:
+        try:
+            accounts = self._api.get_accounts(service_type_id=service_type_id)
+            self._account_selector.populate(accounts)
+            self._accounts_cache = accounts
+            self._on_account_changed(0)
+        except Exception:
+            pass
+
+    def _on_to_company_changed(self, company_id: int) -> None:
+        try:
+            service_types = self._api.get_service_types(company_id)
+            self._to_service_type_selector.populate(service_types)
+            st_id = self._to_service_type_selector.selected_service_type_id()
+            if st_id is not None:
+                self._on_to_service_type_changed(st_id)
+        except Exception:
+            pass
+
+    def _on_to_service_type_changed(self, service_type_id: int) -> None:
+        try:
+            accounts = self._api.get_accounts(service_type_id=service_type_id)
+            self._to_account_selector.populate(accounts)
+            self._to_accounts_cache = accounts
         except Exception:
             pass
 
@@ -761,8 +798,8 @@ class TransactionFormPage(QWidget):
                 customer_name=self._customer_name.text().strip(), customer_phone=self._customer_phone.text().strip(),
                 screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "transfer":
-            to_acc = self._accounts_cache[self._to_account_combo.currentIndex()]
-            self._api.create_transfer(from_account_id=account["id"], to_account_id=to_acc["id"],
+            to_acc_id = self._to_account_selector.selected_account_id()
+            self._api.create_transfer(from_account_id=account["id"], to_account_id=to_acc_id,
                 amount=amount, screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "exchange":
             self._api.create_exchange(account_id=account["id"], amount=amount,
@@ -773,7 +810,7 @@ class TransactionFormPage(QWidget):
         self._load_my_transactions()
 
     def _validate(self) -> Optional[str]:
-        if self._account_combo.currentIndex() < 0:
+        if self._account_selector.selected_account_id() is None:
             return t("err_select_account")
         if self._parse_amount() <= 0:
             return t("err_enter_amount")
@@ -783,10 +820,10 @@ class TransactionFormPage(QWidget):
             if not self._customer_phone.text().strip():
                 return t("err_customer_phone")
         if self._selected_action == "transfer":
-            to_idx = self._to_account_combo.currentIndex()
-            if to_idx < 0:
+            to_acc_id = self._to_account_selector.selected_account_id()
+            if to_acc_id is None:
                 return t("err_select_to_account")
-            if to_idx == self._account_combo.currentIndex():
+            if to_acc_id == self._account_selector.selected_account_id():
                 return t("err_same_account")
         if self._selected_action != "withdraw":
             account = self._get_selected_account()
@@ -808,6 +845,7 @@ class TransactionFormPage(QWidget):
         self._note_input.clear()
         self._commission_display.setText("0")
         self._balance_change_display.setText("0")
+        self._balance_hint.setVisible(False)
         self._screenshot_path = None
         self._screenshot_label.setText(t("no_file_selected"))
         self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")

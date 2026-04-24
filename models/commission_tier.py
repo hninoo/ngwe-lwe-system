@@ -5,8 +5,7 @@ from typing import Optional
 @dataclass
 class CommissionTier:
     id: Optional[int] = None
-    service_type: Optional[str] = None
-    account_type: Optional[str] = None  # 'personal' | 'agent' | None
+    service_type_id: Optional[int] = None   # FK → service_types (replaces service_type TEXT + account_type TEXT)
     amount_from: Optional[float] = None
     amount_to: Optional[float] = None
     fee_amount_type: str = "FIXED"

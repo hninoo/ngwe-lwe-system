@@ -70,6 +70,38 @@ class TransactionRepository(BaseRepository):
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]
 
+    def get_all_filtered(
+        self,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        txn_type: Optional[str] = None,
+        account_id: Optional[int] = None,
+        limit: int = 200,
+    ) -> list["Transaction"]:
+        conditions: list[str] = []
+        params: list = []
+        if date_from:
+            conditions.append("date(created_at) >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("date(created_at) <= ?")
+            params.append(date_to)
+        if txn_type:
+            conditions.append("transaction_type = ?")
+            params.append(txn_type)
+        if account_id is not None:
+            conditions.append("(account_id = ? OR to_account_id = ?)")
+            params.extend([account_id, account_id])
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(limit)
+        with get_cursor() as cursor:
+            cursor.execute(
+                f"SELECT * FROM transactions {where} ORDER BY created_at DESC LIMIT ?",
+                tuple(params),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
     def get_by_date(self, date_str: str) -> list[Transaction]:
         """Return all transactions for a given date (YYYY-MM-DD)."""
         with get_cursor() as cursor:

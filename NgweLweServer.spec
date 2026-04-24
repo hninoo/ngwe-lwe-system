@@ -1,7 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('backend/database.sql', 'backend')]
+datas = [
+    ('backend/database.sql', 'backend'),
+    ('assets/logos', 'assets/logos'),
+]
 binaries = []
 hiddenimports = [
     'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto',
@@ -16,10 +19,12 @@ hiddenimports = [
     'backend', 'backend.main', 'backend.database', 'backend.auth',
     'backend.websocket_manager',
     'backend.routes', 'backend.routes.auth', 'backend.routes.accounts',
+    'backend.routes.companies', 'backend.routes.service_types',
     'backend.routes.services', 'backend.routes.transactions',
     'backend.routes.dashboard', 'backend.routes.users',
     'backend.routes.exchange_rates', 'backend.routes.reports',
-    'backend.routes.commission_tiers', 'backend.routes.cashier',
+    'backend.routes.commission_tiers', 'backend.routes.activity_logs',
+    'backend.routes.cashier',
 ]
 
 for pkg in ('uvicorn', 'fastapi', 'PyQt6'):
@@ -62,6 +67,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    Tree('assets/logos', prefix='assets/logos'),
     strip=False,
     upx=True,
     upx_exclude=[],

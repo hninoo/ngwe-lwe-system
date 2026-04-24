@@ -25,3 +25,5 @@ class Transaction:
     created_at: Optional[datetime] = None
     cash_approved_by: Optional[int] = None
     cash_approved_at: Optional[str] = None
+    from_company_id: Optional[int] = None   # FK → companies (set for all transaction types)
+    to_company_id: Optional[int] = None     # FK → companies (set for transfer/exchange)

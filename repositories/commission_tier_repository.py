@@ -14,8 +14,7 @@ class CommissionTierRepository(BaseRepository):
     def _row_to_model(self, row: dict) -> CommissionTier:
         return CommissionTier(
             id=row["id"],
-            service_type=row["service_type"],
-            account_type=row["account_type"],
+            service_type_id=row["service_type_id"],
             amount_from=float(row["amount_from"]) if row["amount_from"] is not None else None,
             amount_to=float(row["amount_to"]) if row["amount_to"] is not None else None,
             fee_amount_type=row["fee_amount_type"] or "FIXED",
@@ -32,35 +31,31 @@ class CommissionTierRepository(BaseRepository):
 
     def get_tier_for_amount(
         self,
-        service_type: str,
-        account_type: str,
+        service_type_id: int,
         amount: float,
     ) -> Optional[CommissionTier]:
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = ? AND (account_type = ? OR account_type IS NULL) "
-                "AND is_active = 1 "
+                "WHERE service_type_id = ? AND is_active = 1 "
                 "AND (amount_from IS NULL OR amount_from <= ?) "
                 "AND (amount_to IS NULL OR amount_to >= ?) "
                 "LIMIT 1",
-                (service_type, account_type, amount, amount),
+                (service_type_id, amount, amount),
             )
             row = cursor.fetchone()
         return self._row_to_model(row) if row else None
 
     def get_by_service_type(
         self,
-        service_type: str,
-        account_type: str,
+        service_type_id: int,
     ) -> list[CommissionTier]:
         with get_cursor() as cursor:
             cursor.execute(
                 "SELECT * FROM commission_tiers "
-                "WHERE service_type = ? AND (account_type = ? OR account_type IS NULL) "
-                "AND is_active = 1 "
+                "WHERE service_type_id = ? AND is_active = 1 "
                 "ORDER BY amount_from ASC",
-                (service_type, account_type),
+                (service_type_id,),
             )
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]

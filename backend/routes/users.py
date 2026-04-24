@@ -24,8 +24,17 @@ class ToggleActiveRequest(BaseModel):
     is_active: bool
 
 
+class UpdateUserRequest(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str
+    new_password: str
+
+
+class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
@@ -56,6 +65,38 @@ def create_user(
         "role": body.role,
     })
     return {"message": "User created", "user_id": user_id}
+
+
+@router.patch("/{user_id}")
+def update_user(
+    user_id: int,
+    body: UpdateUserRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "role" in data and data["role"] not in ("employee", "cashier"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    _user_repo.update(user_id, data)
+    return {"message": "User updated", "user_id": user_id}
+
+
+@router.post("/{user_id}/reset-password")
+def reset_password(
+    user_id: int,
+    body: ResetPasswordRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    if not body.new_password:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
+    new_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt(12)).decode()
+    _user_repo.update(user_id, {"password_hash": new_hash})
+    return {"message": "Password reset", "user_id": user_id}
 
 
 @router.patch("/{user_id}/active")

@@ -13,6 +13,12 @@ hiddenimports = [
     'views', 'views.login_view', 'views.dashboard_view',
     'views.transaction_view', 'views.cashier_view',
     'views.receive_float_dialog',
+    'views.admin_page',
+    'views.widgets', 'views.widgets.company_selector', 'views.widgets.company_logo_label',
+    'views.settings', 'views.settings.company_settings_view', 'views.settings.service_type_settings_view',
+    'views.settings.user_settings_view', 'views.settings.account_settings_view',
+    'views.settings.transaction_admin_view', 'views.settings.activity_log_view',
+    'views.settings.cash_float_admin_view',
 ]
 
 for pkg in ('PyQt6',):

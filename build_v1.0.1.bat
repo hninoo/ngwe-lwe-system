@@ -69,6 +69,7 @@ echo.
 if exist dist\NgweLweServer rmdir /s /q dist\NgweLweServer
 if exist build              rmdir /s /q build
 
+if not exist assets\logos mkdir assets\logos
 pyinstaller NgweLweServer.spec
 if errorlevel 1 (
     echo ERROR: NgweLweServer PyInstaller build failed.

@@ -13,8 +13,7 @@ _tier_repo = CommissionTierRepository()
 
 
 class TierRequest(BaseModel):
-    service_type: str
-    account_type: Optional[str] = None
+    service_type_id: int
     amount_from: Optional[float] = None
     amount_to: Optional[float] = None
     fee_amount_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
@@ -30,22 +29,20 @@ class TierRequest(BaseModel):
 
 @router.get("/")
 def get_tiers(
-    service_type: str = "KPAY_WST",
-    account_type: str = "agent",
+    service_type_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
-    tiers = _tier_repo.get_by_service_type(service_type, account_type)
+    tiers = _tier_repo.get_by_service_type(service_type_id)
     return [asdict(t) for t in tiers]
 
 
 @router.get("/lookup")
 def lookup_tier(
-    service_type: str,
-    account_type: str,
+    service_type_id: int,
     amount: float,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    tier = _tier_repo.get_tier_for_amount(service_type, account_type, amount)
+    tier = _tier_repo.get_tier_for_amount(service_type_id, amount)
     if tier is None:
         return {
             "fee_amount_deposit": 0, "fee_amount_withdraw": 0,
@@ -62,8 +59,7 @@ def create_tier(
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
     tier_id = _tier_repo.create({
-        "service_type": body.service_type,
-        "account_type": body.account_type,
+        "service_type_id": body.service_type_id,
         "amount_from": body.amount_from,
         "amount_to": body.amount_to,
         "fee_amount_type": body.fee_amount_type,
@@ -88,8 +84,7 @@ def update_tier(
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
     _tier_repo.update(tier_id, {
-        "service_type": body.service_type,
-        "account_type": body.account_type,
+        "service_type_id": body.service_type_id,
         "amount_from": body.amount_from,
         "amount_to": body.amount_to,
         "fee_amount_type": body.fee_amount_type,

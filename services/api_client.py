@@ -38,8 +38,25 @@ class ApiClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _get_raw(self, path: str) -> bytes:
+        """Return raw response bytes (for logo/binary endpoints)."""
+        resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.content
+
     def _post(self, path: str, data: Optional[dict] = None) -> Any:
         resp = requests.post(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+
+    def _post_multipart(self, path: str, file_bytes: bytes, mime_type: str, field: str = "file") -> Any:
+        """Upload a binary file via multipart/form-data."""
+        resp = requests.post(
+            f"{BASE_URL}{path}",
+            headers=self._headers(),
+            files={field: ("logo", file_bytes, mime_type)},
+            timeout=REQUEST_TIMEOUT,
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -62,19 +79,94 @@ class ApiClient:
         self._token = None
         self._user = None
 
-    # ── Services ──
+    # ── Companies ──
 
-    def get_services(self) -> list[dict]:
-        return self._get("/services/")
+    def get_companies(self) -> list[dict]:
+        """GET /companies/ — list all active companies."""
+        return self._get("/companies/")
+
+    def get_company(self, company_id: int) -> dict:
+        """GET /companies/{id} — single company detail."""
+        return self._get(f"/companies/{company_id}")
+
+    def create_company(self, name: str, category: str) -> dict:
+        """POST /companies/ — create a new company (owner only)."""
+        return self._post("/companies/", {"name": name, "category": category})
+
+    def update_company(self, company_id: int, data: dict) -> dict:
+        """PATCH /companies/{id} — update company fields (owner only)."""
+        return self._patch(f"/companies/{company_id}", data)
+
+    # ── Company Logos ──
+
+    def get_logo(self, company_id: int) -> bytes:
+        """GET /companies/{id}/logo — returns raw image bytes."""
+        return self._get_raw(f"/companies/{company_id}/logo")
+
+    def upload_logo(self, company_id: int, file_bytes: bytes, mime_type: str) -> dict:
+        """POST /companies/{id}/logo — upload logo file (owner only)."""
+        return self._post_multipart(f"/companies/{company_id}/logo", file_bytes, mime_type)
+
+    # ── ServiceTypes ──
+
+    def get_service_types(self, company_id: int) -> list[dict]:
+        """GET /companies/{id}/service-types — list service types for a company."""
+        return self._get(f"/companies/{company_id}/service-types")
+
+    def create_service_type(self, company_id: int, name: str, operation: str) -> dict:
+        """POST /companies/{id}/service-types — create service type (owner only)."""
+        return self._post(f"/companies/{company_id}/service-types", {"name": name, "operation": operation})
+
+    def update_service_type(self, service_type_id: int, data: dict) -> dict:
+        """PATCH /service-types/{id} — update service type (owner only)."""
+        return self._patch(f"/service-types/{service_type_id}", data)
 
     # ── Accounts ──
 
-    def get_accounts(self, service_id: Optional[int] = None) -> list[dict]:
-        params = {"service_id": service_id} if service_id else None
-        return self._get("/accounts/", params=params)
+    def get_accounts(
+        self,
+        company_id: Optional[int] = None,
+        service_type_id: Optional[int] = None,
+    ) -> list[dict]:
+        """GET /accounts/ with optional company_id and/or service_type_id filters."""
+        params: dict = {}
+        if company_id is not None:
+            params["company_id"] = company_id
+        if service_type_id is not None:
+            params["service_type_id"] = service_type_id
+        return self._get("/accounts/", params=params or None)
+
+    def get_accounts_by_company(self, company_id: int) -> list[dict]:
+        """GET /accounts/?company_id=<id>"""
+        return self._get("/accounts/", params={"company_id": company_id})
 
     def get_account(self, account_id: int) -> dict:
         return self._get(f"/accounts/{account_id}")
+
+    def create_account(
+        self,
+        service_type_id: int,
+        account_name: str,
+        phone_number: str,
+        balance: float = 0.0,
+    ) -> dict:
+        return self._post("/accounts/", {
+            "service_type_id": service_type_id,
+            "account_name": account_name,
+            "phone_number": phone_number,
+            "balance": balance,
+        })
+
+    def update_account(self, account_id: int, data: dict) -> dict:
+        return self._patch(f"/accounts/{account_id}", data)
+
+    def delete_account(self, account_id: int) -> dict:
+        resp = requests.delete(
+            f"{BASE_URL}/accounts/{account_id}",
+            headers=self._headers(), timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     # ── Transactions ──
 
@@ -170,6 +262,33 @@ class ApiClient:
             "note": note,
         })
 
+    def get_all_transactions(
+        self,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        txn_type: Optional[str] = None,
+        account_id: Optional[int] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        params: dict = {"limit": limit}
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
+        if txn_type:
+            params["txn_type"] = txn_type
+        if account_id is not None:
+            params["account_id"] = account_id
+        return self._get("/transactions/", params=params)
+
+    def delete_transaction(self, txn_id: int) -> dict:
+        resp = requests.delete(
+            f"{BASE_URL}/transactions/{txn_id}",
+            headers=self._headers(), timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def get_recent_transactions(self, limit: int = 20) -> list[dict]:
         return self._get("/transactions/recent", params={"limit": limit})
 
@@ -210,8 +329,14 @@ class ApiClient:
             "role": role,
         })
 
+    def update_user(self, user_id: int, data: dict) -> dict:
+        return self._patch(f"/users/{user_id}", data)
+
     def toggle_user_active(self, user_id: int, is_active: bool) -> dict:
         return self._patch(f"/users/{user_id}/active", {"is_active": is_active})
+
+    def reset_user_password(self, user_id: int, new_password: str) -> dict:
+        return self._post(f"/users/{user_id}/reset-password", {"new_password": new_password})
 
     def change_password(self, old_password: str, new_password: str) -> dict:
         return self._post("/users/change-password", {
@@ -221,6 +346,27 @@ class ApiClient:
 
     def set_user_pin(self, user_id: int, pin: str) -> dict:
         return self._post(f"/users/{user_id}/pin", {"pin": pin})
+
+    # ── Activity Logs ──
+
+    def get_activity_logs(
+        self,
+        user_id: Optional[int] = None,
+        entity_type: Optional[str] = None,
+        action: Optional[str] = None,
+        date: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        params: dict = {"limit": limit}
+        if user_id is not None:
+            params["user_id"] = user_id
+        if entity_type:
+            params["entity_type"] = entity_type
+        if action:
+            params["action"] = action
+        if date:
+            params["date"] = date
+        return self._get("/activity-logs/", params=params)
 
     # ── Exchange Rates ──
 
@@ -250,14 +396,14 @@ class ApiClient:
 
     # ── Commission Tiers ──
 
-    def get_commission_tiers(self, service_type: str, account_type: str) -> list[dict]:
-        return self._get("/commission-tiers/", params={
-            "service_type": service_type, "account_type": account_type,
-        })
+    def get_commission_tiers(self, service_type_id: int) -> list[dict]:
+        """GET /commission-tiers/?service_type_id=<id>"""
+        return self._get("/commission-tiers/", params={"service_type_id": service_type_id})
 
-    def lookup_tier(self, service_type: str, account_type: str, amount: float) -> dict:
+    def lookup_tier(self, service_type_id: int, amount: float) -> dict:
+        """GET /commission-tiers/lookup?service_type_id=<id>&amount=<amount>"""
         return self._get("/commission-tiers/lookup", params={
-            "service_type": service_type, "account_type": account_type, "amount": amount,
+            "service_type_id": service_type_id, "amount": amount,
         })
 
     def create_commission_tier(self, data: dict) -> dict:

@@ -1,3 +1,12 @@
+import warnings
+
+warnings.warn(
+    "ServiceRepository is deprecated after migration_004. "
+    "Use CompanyRepository and ServiceTypeRepository instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from typing import Optional
 
 from backend.database import get_cursor

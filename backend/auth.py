@@ -47,7 +47,9 @@ def decode_token(token: str) -> dict:
     return payload
 
 
-def get_current_user(authorization: str = Header(...)) -> dict:
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization.removeprefix("Bearer ")

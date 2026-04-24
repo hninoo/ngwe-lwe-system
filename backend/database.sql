@@ -1,4 +1,4 @@
--- Ngwe Lwe System — SQLite Schema
+-- Ngwe Lwe System — SQLite Schema (v4)
 
 -- ============================================================
 -- 0. schema_version (must be first)
@@ -28,51 +28,72 @@ AFTER UPDATE ON users FOR EACH ROW
 BEGIN UPDATE users SET updated_at = datetime('now') WHERE id = NEW.id; END;
 
 -- ============================================================
--- 2. services
+-- 2. companies
 -- ============================================================
-CREATE TABLE IF NOT EXISTS services (
-    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                 TEXT NOT NULL UNIQUE,
-    service_type         TEXT NOT NULL,
-    default_customer_fee REAL NOT NULL DEFAULT 0.00,
-    is_active            INTEGER NOT NULL DEFAULT 1,
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS companies (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    logo_path   TEXT,
+    category    TEXT NOT NULL DEFAULT 'Pay'
+                CHECK(category IN ('Pay','Bank','Both')),
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE TRIGGER IF NOT EXISTS trg_services_updated_at
-AFTER UPDATE ON services FOR EACH ROW
-BEGIN UPDATE services SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE TRIGGER IF NOT EXISTS trg_companies_updated_at
+AFTER UPDATE ON companies FOR EACH ROW
+BEGIN UPDATE companies SET updated_at = datetime('now') WHERE id = NEW.id; END;
 
 -- ============================================================
--- 3. accounts
+-- 3. service_types
+-- ============================================================
+CREATE TABLE IF NOT EXISTS service_types (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id  INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    operation   TEXT NOT NULL
+                CHECK(operation IN ('Deposit','Withdraw','Transfer','Exchange','All')),
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(company_id, name),
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+CREATE TRIGGER IF NOT EXISTS trg_service_types_updated_at
+AFTER UPDATE ON service_types FOR EACH ROW
+BEGIN UPDATE service_types SET updated_at = datetime('now') WHERE id = NEW.id; END;
+
+-- ============================================================
+-- 4. accounts
 -- ============================================================
 CREATE TABLE IF NOT EXISTS accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    service_id      INTEGER NOT NULL,
+    service_type_id INTEGER NOT NULL,
     account_name    TEXT NOT NULL,
-    account_type    TEXT NOT NULL DEFAULT 'personal' CHECK(account_type IN ('personal','agent')),
     phone_number    TEXT NOT NULL,
-    service_type    TEXT NOT NULL DEFAULT 'KPAY' CHECK(service_type IN ('KPAY','WAVE','BANK')),
     balance         REAL NOT NULL DEFAULT 0.00,
     commission_rate REAL NOT NULL DEFAULT 0.0000,
     is_active       INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (service_id, phone_number),
-    FOREIGN KEY (service_id) REFERENCES services(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
 CREATE TRIGGER IF NOT EXISTS trg_accounts_updated_at
 AFTER UPDATE ON accounts FOR EACH ROW
 BEGIN UPDATE accounts SET updated_at = datetime('now') WHERE id = NEW.id; END;
+CREATE INDEX IF NOT EXISTS idx_accounts_service_type_id ON accounts(service_type_id);
 
 -- ============================================================
--- 4. transactions
+-- 5. transactions
 -- ============================================================
 CREATE TABLE IF NOT EXISTS transactions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     transaction_type    TEXT NOT NULL CHECK(transaction_type IN ('deposit','withdraw','transfer','exchange')),
     account_id          INTEGER NOT NULL,
     to_account_id       INTEGER,
+    from_company_id     INTEGER,
+    to_company_id       INTEGER,
     customer_name       TEXT,
     customer_phone      TEXT,
     amount              REAL NOT NULL,
@@ -87,24 +108,25 @@ CREATE TABLE IF NOT EXISTS transactions (
     note                TEXT,
     created_by          INTEGER NOT NULL,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (account_id)    REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    FOREIGN KEY (to_account_id) REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    FOREIGN KEY (fee_account_id)REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    FOREIGN KEY (created_by)    REFERENCES users(id)    ON UPDATE CASCADE ON DELETE RESTRICT
+    cash_approved_by    INTEGER,
+    cash_approved_at    TEXT,
+    FOREIGN KEY (account_id)      REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (to_account_id)   REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (fee_account_id)  REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (created_by)      REFERENCES users(id)    ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (from_company_id) REFERENCES companies(id),
+    FOREIGN KEY (to_company_id)   REFERENCES companies(id)
 );
 CREATE INDEX IF NOT EXISTS idx_txn_type       ON transactions(transaction_type);
 CREATE INDEX IF NOT EXISTS idx_txn_created    ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_txn_created_by ON transactions(created_by);
 
 -- ============================================================
--- 5. commission_tiers
--- base=THB, quote=MMK; rates expressed as MMK per base_amount THB
--- PERCENTAGE values stored as decimals (e.g. 0.03 = 3%)
+-- 6. commission_tiers
 -- ============================================================
 CREATE TABLE IF NOT EXISTS commission_tiers (
     id                             INTEGER PRIMARY KEY AUTOINCREMENT,
-    service_type                   TEXT NOT NULL,
-    account_type                   TEXT CHECK(account_type IN ('personal','agent')),
+    service_type_id                INTEGER NOT NULL,
     amount_from                    REAL,
     amount_to                      REAL,
     fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED' CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
@@ -117,15 +139,13 @@ CREATE TABLE IF NOT EXISTS commission_tiers (
     additional_fee_deposit_amount  REAL NOT NULL DEFAULT 0.0,
     additional_fee_withdraw_amount REAL NOT NULL DEFAULT 0.0,
     is_active                      INTEGER NOT NULL DEFAULT 1,
-    created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at                     TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
-CREATE INDEX IF NOT EXISTS idx_tier_lookup ON commission_tiers(service_type, is_active);
+CREATE INDEX IF NOT EXISTS idx_tier_lookup ON commission_tiers(service_type_id, is_active);
 
 -- ============================================================
--- 6. exchange_rates
--- base_amount: reference quantity of base currency
--- MMK→THB: THB = MMK * base_amount / sell_rate
--- THB→MMK: MMK = THB * buy_rate  / base_amount
+-- 7. exchange_rates
 -- ============================================================
 CREATE TABLE IF NOT EXISTS exchange_rates (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_rate_pair    ON exchange_rates(base_currency, quo
 CREATE INDEX IF NOT EXISTS idx_rate_updated ON exchange_rates(updated_at);
 
 -- ============================================================
--- 7. daily_summary
+-- 8. daily_summary
 -- ============================================================
 CREATE TABLE IF NOT EXISTS daily_summary (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,7 +182,7 @@ CREATE TABLE IF NOT EXISTS daily_summary (
 CREATE INDEX IF NOT EXISTS idx_summary_date ON daily_summary(summary_date);
 
 -- ============================================================
--- 8. activity_logs
+-- 9. activity_logs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS activity_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,7 +198,7 @@ CREATE INDEX IF NOT EXISTS idx_log_user    ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_log_created ON activity_logs(created_at);
 
 -- ============================================================
--- 9. cash_float_assignments
+-- 10. cash_float_assignments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_float_assignments (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,7 +217,7 @@ CREATE TABLE IF NOT EXISTS cash_float_assignments (
 CREATE INDEX IF NOT EXISTS idx_float_employee ON cash_float_assignments(employee_id, status);
 
 -- ============================================================
--- 10. cash_denomination_logs
+-- 11. cash_denomination_logs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_denomination_logs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,7 +234,7 @@ CREATE TABLE IF NOT EXISTS cash_denomination_logs (
 CREATE INDEX IF NOT EXISTS idx_denom_log_created ON cash_denomination_logs(created_at);
 
 -- ============================================================
--- 11. cash_float_denominations
+-- 12. cash_float_denominations
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_float_denominations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,10 +249,12 @@ CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(flo
 -- SEED DATA
 -- ============================================================
 
--- schema_version seed (fresh install = already at version 2)
+-- schema_version seed (fresh install = already at version 4, all migrations applied)
 INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (1, 'Add cashier role and pin_hash'),
-(2, 'Create cash management tables');
+(2, 'Create cash management tables'),
+(3, 'Add cash approval fields to transactions'),
+(4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123
@@ -241,95 +263,32 @@ INSERT OR IGNORE INTO users (username, password_hash, full_name, role) VALUES
 ('employee', '$2b$12$YMQbtr6qdvg.wS3t5S6/iOqgEweIOnaKqlKeXBbqWzdE48YO1CIJu', 'Employee Name', 'employee'),
 ('cashier',  '$2b$12$xVqJyqiLc4Buur1RbX84meWNqNmW9G/fkatHEA3MxrhjKkEemo48a', 'Cashier Name',  'cashier');
 
--- Services
-INSERT OR IGNORE INTO services (name, service_type, default_customer_fee) VALUES
-('KBZ Pay',      'mobile_wallet', 0),
-('Wave Pay',     'mobile_wallet', 0),
-('KBZ Bank',     'bank',          0),
-('AYA Bank',     'bank',          0),
-('CB Bank',      'bank',          0),
-('MPT Pay',      'mobile_wallet', 0),
-('OK Dollar',    'mobile_wallet', 0),
-('True Money',   'mobile_wallet', 0),
-('One Pay',      'mobile_wallet', 0),
-('AYA Pay',      'mobile_wallet', 0),
-('Yoma Pay',     'mobile_wallet', 0),
-('City Express', 'express',       0),
-('KBZ Express',  'express',       0),
-('Thai Bank',    'bank',          0);
+-- Companies (canonical + legacy)
+INSERT OR IGNORE INTO companies (name, category, is_active) VALUES
+('KBZ Pay',      'Pay',  1),
+('Wave Money',   'Pay',  1),
+('True Money',   'Pay',  1),
+('KBZ Bank',     'Bank', 1),
+('AYA Bank',     'Bank', 1),
+('CB Bank',      'Bank', 1),
+('MPT Pay',      'Pay',  1),
+('OK Dollar',    'Pay',  1),
+('One Pay',      'Pay',  1),
+('AYA Pay',      'Pay',  1),
+('Yoma Pay',     'Pay',  1),
+('City Express', 'Pay',  1),
+('KBZ Express',  'Pay',  1),
+('Thai Bank',    'Bank', 1);
 
--- Accounts (KBZ Pay — service_id=1)
-INSERT OR IGNORE INTO accounts (service_id, account_name, account_type, phone_number, service_type, balance) VALUES
-(1, 'KPay Main',     'agent',    '09-987-654-321', 'KPAY', 5000000.00),
-(1, 'KPay Personal', 'personal', '09-111-222-333', 'KPAY', 1200000.00);
+-- Service types per company (Pay: WST + Pay_To_Pay / Bank: Transfer + Exchange)
+INSERT OR IGNORE INTO service_types (company_id, name, operation)
+SELECT id, 'WST',       'All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','MPT Pay','OK Dollar','One Pay','AYA Pay','Yoma Pay','City Express','KBZ Express');
 
--- Accounts (Wave Pay — service_id=2)
-INSERT OR IGNORE INTO accounts (service_id, account_name, account_type, phone_number, service_type, balance) VALUES
-(2, 'Wave Agent',    'agent',    '09-876-543-210', 'WAVE', 3500000.00),
-(2, 'Wave Personal', 'personal', '09-444-555-666', 'WAVE',  800000.00);
+INSERT OR IGNORE INTO service_types (company_id, name, operation)
+SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','MPT Pay','OK Dollar','One Pay','AYA Pay','Yoma Pay','City Express','KBZ Express');
 
--- Accounts (Banks)
-INSERT OR IGNORE INTO accounts (service_id, account_name, account_type, phone_number, service_type, balance) VALUES
-(3, 'KBZ Saving',  'personal', '01234567890', 'BANK', 10000000.00),
-(4, 'AYA Current', 'personal', '09876543210', 'BANK',  7500000.00),
-(5, 'CB Saving',   'personal', '05678901234', 'BANK',  2000000.00);
+INSERT OR IGNORE INTO service_types (company_id, name, operation)
+SELECT id, 'Transfer',  'Transfer' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');
 
--- Accounts (Others)
-INSERT OR IGNORE INTO accounts (service_id, account_name, account_type, phone_number, service_type, balance) VALUES
-(6, 'MPT Agent',       'agent', '09-777-888-999', 'KPAY', 1500000.00),
-(7, 'OK Dollar Agent', 'agent', '09-333-444-555', 'KPAY',  900000.00);
-
--- Exchange rate  (1 THB = 128.21 MMK)
-INSERT OR IGNORE INTO exchange_rates (base_currency, quote_currency, base_amount, buy_rate, sell_rate) VALUES
-('THB', 'MMK', 1.00, 128.2100, 128.2100);
-
--- Commission tiers — WAVE_WST agent
-INSERT OR IGNORE INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
-('WAVE_WST','agent',1,10000,'FIXED',400,0,'FIXED',69,88,'FIXED',0,0),
-('WAVE_WST','agent',10001,25000,'FIXED',700,0,'FIXED',123,172,'FIXED',0,0),
-('WAVE_WST','agent',25001,50000,'FIXED',1000,0,'FIXED',147,245,'FIXED',0,0),
-('WAVE_WST','agent',50001,100000,'FIXED',1500,0,'FIXED',196,392,'FIXED',0,0),
-('WAVE_WST','agent',100001,150000,'FIXED',2000,0,'FIXED',294,490,'FIXED',0,0),
-('WAVE_WST','agent',150001,200000,'FIXED',2500,0,'FIXED',392,588,'FIXED',0,0),
-('WAVE_WST','agent',200001,300000,'FIXED',3000,0,'FIXED',490,686,'FIXED',0,0),
-('WAVE_WST','agent',300001,400000,'FIXED',4000,0,'FIXED',653,915,'FIXED',0,0),
-('WAVE_WST','agent',400001,500000,'FIXED',4500,0,'FIXED',735,1029,'FIXED',0,0),
-('WAVE_WST','agent',500001,600000,'FIXED',5400,0,'FIXED',882,1235,'FIXED',0,0),
-('WAVE_WST','agent',600001,700000,'FIXED',6000,0,'FIXED',980,1372,'FIXED',0,0),
-('WAVE_WST','agent',700001,800000,'FIXED',6700,0,'FIXED',1094,1532,'FIXED',0,0),
-('WAVE_WST','agent',800001,900000,'FIXED',7400,0,'FIXED',1209,1692,'FIXED',0,0),
-('WAVE_WST','agent',900001,1000000,'FIXED',8000,0,'FIXED',1307,1829,'FIXED',0,0);
-
--- Commission tiers — WAVE_ACCOUNT
-INSERT OR IGNORE INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
-('WAVE_ACCOUNT',NULL,0,30000,'FIXED',300,0,'FIXED',300,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,30000,50000,'FIXED',500,0,'FIXED',500,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,50000,70000,'FIXED',700,0,'FIXED',700,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,70000,90000,'FIXED',1100,0,'FIXED',1100,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,90000,100000,'FIXED',1400,0,'FIXED',1400,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,100000,200000,'FIXED',1700,0,'FIXED',1700,0,'FIXED',0,0),
-('WAVE_ACCOUNT',NULL,NULL,NULL,'PERCENTAGE',0.03,0,'PERCENTAGE',0.03,0,'FIXED',0,0);
-
--- Commission tiers — KPAY_WST agent
-INSERT OR IGNORE INTO commission_tiers (service_type, account_type, amount_from, amount_to, fee_amount_type, fee_amount_deposit, fee_amount_withdraw, comm_type, comm_deposit, comm_withdraw, additional_fee_type, additional_fee_deposit_amount, additional_fee_withdraw_amount) VALUES
-('KPAY_WST','agent',1,10000,'FIXED',400,0,'FIXED',80,80,'FIXED',0,0),
-('KPAY_WST','agent',10001,25000,'FIXED',700,0,'FIXED',140,140,'FIXED',0,0),
-('KPAY_WST','agent',25001,50000,'FIXED',1000,0,'FIXED',200,200,'FIXED',0,0),
-('KPAY_WST','agent',50001,100000,'FIXED',1500,0,'FIXED',300,300,'FIXED',0,0),
-('KPAY_WST','agent',100001,150000,'FIXED',2000,0,'FIXED',400,400,'FIXED',0,0),
-('KPAY_WST','agent',150001,200000,'FIXED',2500,0,'FIXED',500,500,'FIXED',0,0),
-('KPAY_WST','agent',200001,300000,'FIXED',3000,0,'FIXED',600,600,'FIXED',0,0),
-('KPAY_WST','agent',300001,400000,'FIXED',4000,0,'FIXED',800,800,'FIXED',0,0),
-('KPAY_WST','agent',400001,500000,'FIXED',4500,0,'FIXED',900,900,'FIXED',0,0),
-('KPAY_WST','agent',500001,600000,'FIXED',5200,0,'FIXED',1040,1040,'FIXED',0,0),
-('KPAY_WST','agent',600001,700000,'FIXED',5800,0,'FIXED',1160,1160,'FIXED',0,0),
-('KPAY_WST','agent',700001,800000,'FIXED',6500,0,'FIXED',1300,1300,'FIXED',0,0),
-('KPAY_WST','agent',800001,900000,'FIXED',7200,0,'FIXED',1440,1440,'FIXED',0,0),
-('KPAY_WST','agent',900001,1000000,'FIXED',7800,0,'FIXED',1560,1560,'FIXED',0,0);
-
--- Activity logs
-INSERT OR IGNORE INTO activity_logs (user_id, action, entity_type, entity_id, details) VALUES
-(1, 'login',  'user', 1, 'owner logged in'),
-(2, 'login',  'user', 2, 'employee logged in'),
-(3, 'login',  'user', 3, 'cashier logged in'),
-(1, 'update', 'exchange_rate', 1, 'Updated MMK/THB rate');
+INSERT OR IGNORE INTO service_types (company_id, name, operation)
+SELECT id, 'Exchange',  'Exchange' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');

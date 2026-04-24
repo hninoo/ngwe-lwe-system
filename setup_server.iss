@@ -38,6 +38,10 @@ Name: "desktopicon"; \
 Source: "dist\NgweLweServer\*"; \
   DestDir: "{app}"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\NgweLweServer\assets\logos\*"; \
+  DestDir: "{app}\assets\logos"; \
+  Flags: ignoreversion recursesubdirs createallsubdirs; \
+  Check: DirExists(ExpandConstant('dist\NgweLweServer\assets\logos'))
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"

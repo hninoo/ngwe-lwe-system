@@ -123,9 +123,9 @@ def get_vault_logs(current_user: dict = Depends(get_current_user)) -> list[dict]
 
 @router.get("/floats")
 def get_floats(current_user: dict = Depends(get_current_user)) -> list[dict]:
-    """Cashier sees all floats; employee sees their own."""
+    """Cashier/owner sees all floats; employee sees their own."""
     role = current_user["role"]
-    if role == "cashier":
+    if role in ("cashier", "owner"):
         floats = _float_repo.get_all_floats()
     elif role == "employee":
         floats = _float_repo.get_floats_for_employee(current_user["user_id"])

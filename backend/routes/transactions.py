@@ -188,6 +188,44 @@ async def create_exchange(
     return txn_dict
 
 
+@router.get("/")
+def get_all(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    txn_type: Optional[str] = None,
+    account_id: Optional[int] = None,
+    limit: int = 200,
+    current_user: dict = Depends(get_current_user),
+) -> list[dict]:
+    """Owner-only: list all transactions with optional filters."""
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    from repositories.transaction_repository import TransactionRepository
+    repo = TransactionRepository()
+    txns = repo.get_all_filtered(
+        date_from=date_from, date_to=date_to,
+        txn_type=txn_type, account_id=account_id,
+        limit=min(limit, 1000),
+    )
+    return [asdict(t) for t in txns]
+
+
+@router.delete("/{txn_id}")
+def delete_transaction(
+    txn_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Owner-only: permanently delete a transaction record."""
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    from repositories.transaction_repository import TransactionRepository
+    repo = TransactionRepository()
+    deleted = repo.delete(txn_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"message": "Transaction deleted", "txn_id": txn_id}
+
+
 @router.get("/recent")
 def get_recent(
     limit: int = 20,

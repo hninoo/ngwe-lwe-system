@@ -1,16 +1,32 @@
+import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import init_db
 from backend.websocket_manager import ConnectionManager
-from backend.routes import auth, accounts, services, transactions, dashboard, users, exchange_rates, reports, commission_tiers
+from backend.routes import auth, accounts, transactions, dashboard, users, exchange_rates, reports, commission_tiers
 from backend.routes import cashier
+from backend.routes import companies, service_types, activity_logs
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure assets/logos/ directory exists and is writable
+    logos_dir = Path("assets/logos")
+    logos_dir.mkdir(parents=True, exist_ok=True)
+    logo_env_fallback = os.environ.get("LOGO_DIR", "")
+    if not os.access(str(logos_dir), os.W_OK):
+        logger.warning(
+            "assets/logos/ directory is not writable. "
+            "Logo uploads will fail. LOGO_DIR env fallback: %s",
+            logo_env_fallback or "(not set)",
+        )
     init_db()
     yield
 
@@ -31,7 +47,8 @@ ws_manager = ConnectionManager()
 transactions.ws_manager = ws_manager
 
 app.include_router(auth.router)
-app.include_router(services.router)
+app.include_router(companies.router)
+app.include_router(service_types.router)
 app.include_router(accounts.router)
 app.include_router(transactions.router)
 app.include_router(dashboard.router)
@@ -39,6 +56,7 @@ app.include_router(users.router)
 app.include_router(exchange_rates.router)
 app.include_router(reports.router)
 app.include_router(commission_tiers.router)
+app.include_router(activity_logs.router)
 app.include_router(cashier.router)
 
 
