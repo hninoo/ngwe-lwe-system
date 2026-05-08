@@ -535,7 +535,8 @@ class TransactionFormPage(QWidget):
         self._company_selector.company_changed.connect(self._on_company_changed)
         lo.addWidget(self._company_selector)
 
-        lo.addWidget(field_label(t("field_service_type"), required=True))
+        self._service_type_label = field_label(t("field_service_type"), required=True)
+        lo.addWidget(self._service_type_label)
         self._service_type_selector = ServiceTypeSelector()
         self._service_type_selector.service_type_changed.connect(self._on_service_type_changed)
         lo.addWidget(self._service_type_selector)
@@ -689,11 +690,15 @@ class TransactionFormPage(QWidget):
         is_transfer = self._selected_action == "transfer"
         is_exchange = self._selected_action == "exchange"
         has_customer = self._selected_action in ("deposit", "withdraw")
-        # Show "to" cascade only for transfer
+        need_st = self._selected_action in ("deposit", "withdraw")
+        # Service type selector only shown for deposit/withdraw (Pay types)
+        self._service_type_label.setVisible(need_st)
+        self._service_type_selector.setVisible(need_st)
+        # To-side cascade for transfer only; service type is always auto-selected
         self._to_company_label.setVisible(is_transfer)
         self._to_company_selector.setVisible(is_transfer)
-        self._to_service_type_label.setVisible(is_transfer)
-        self._to_service_type_selector.setVisible(is_transfer)
+        self._to_service_type_label.setVisible(False)
+        self._to_service_type_selector.setVisible(False)
         self._to_account_label.setVisible(is_transfer)
         self._to_account_selector.setVisible(is_transfer)
         self._customer_label.setVisible(has_customer)
@@ -923,10 +928,16 @@ class TransactionFormPage(QWidget):
     def _on_company_changed(self, company_id: int) -> None:
         try:
             service_types = self._api.get_service_types(company_id)
-            self._service_type_selector.populate(service_types)
-            st_id = self._service_type_selector.selected_service_type_id()
-            if st_id is not None:
-                self._on_service_type_changed(st_id)
+            if self._selected_action in ("transfer", "exchange"):
+                target = self._selected_action.capitalize()  # "Transfer" or "Exchange"
+                st = next((s for s in service_types if s.get("name", "").lower() == target.lower()), None)
+                if st:
+                    self._on_service_type_changed(st["id"])
+            else:
+                self._service_type_selector.populate(service_types)
+                st_id = self._service_type_selector.selected_service_type_id()
+                if st_id is not None:
+                    self._on_service_type_changed(st_id)
         except Exception:
             pass
 
@@ -942,10 +953,9 @@ class TransactionFormPage(QWidget):
     def _on_to_company_changed(self, company_id: int) -> None:
         try:
             service_types = self._api.get_service_types(company_id)
-            self._to_service_type_selector.populate(service_types)
-            st_id = self._to_service_type_selector.selected_service_type_id()
-            if st_id is not None:
-                self._on_to_service_type_changed(st_id)
+            st = next((s for s in service_types if s.get("name", "").lower() == "transfer"), None)
+            if st:
+                self._on_to_service_type_changed(st["id"])
         except Exception:
             pass
 
