@@ -4,7 +4,7 @@
 ; ============================================================
 
 #define AppName    "Ngwe Lwe System"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.0-beta"
 #define AppExe     "NgweLweSystem.exe"
 #define AppId      "B5A3C8D2-9F1E-4A7B-8C3D-2E6F0A1B4C5D"
 
@@ -23,7 +23,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 
 ; Output
 OutputDir=installer
-OutputBaseFilename=NgweLweSystem-Setup-v{#AppVersion}
+OutputBaseFilename=NgweLwe-v{#AppVersion}-Setup
 Compression=lzma2
 SolidCompression=yes
 

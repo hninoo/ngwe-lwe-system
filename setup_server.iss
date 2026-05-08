@@ -3,7 +3,7 @@
 ; ============================================================
 
 #define AppName    "Ngwe Lwe Server"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.0-beta"
 #define AppExe     "NgweLweServer.exe"
 #define AppId      "A2B4C6D8-1E3F-5A7B-9C2D-4E8F0B2C6D0A"
 
@@ -18,7 +18,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
 OutputDir=installer
-OutputBaseFilename=NgweLweServer-Setup-v{#AppVersion}
+OutputBaseFilename=NgweLweServer-v{#AppVersion}-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

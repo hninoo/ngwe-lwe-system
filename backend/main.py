@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Ngwe Lwe System", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Ngwe Lwe System", version="1.0.0-beta", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
