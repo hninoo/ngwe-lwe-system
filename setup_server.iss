@@ -53,8 +53,36 @@ Filename: "{app}\{#AppExe}"; \
   Description: "Launch {#AppName}"; \
   Flags: nowait postinstall skipifsilent
 
+[Dirs]
+; Ensure the shared config directory exists
+Name: "{localappdata}\NgweLweSystem"
+
 [UninstallDelete]
 Type: files; Name: "{app}\ngwe_lwe.db"
 Type: files; Name: "{app}\ngwe_lwe.db-wal"
 Type: files; Name: "{app}\ngwe_lwe.db-shm"
 Type: files; Name: "{app}\server_config.json"
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ConfigDir, ConfigFile: string;
+  Lines: TStringList;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    ConfigDir  := ExpandConstant('{localappdata}\NgweLweSystem');
+    ConfigFile := ConfigDir + '\app_config.json';
+    if not DirExists(ConfigDir) then
+      ForceDirectories(ConfigDir);
+    Lines := TStringList.Create;
+    try
+      Lines.Add('{');
+      Lines.Add('  "app_mode": "host"');
+      Lines.Add('}');
+      Lines.SaveToFile(ConfigFile);
+    finally
+      Lines.Free;
+    end;
+  end;
+end;

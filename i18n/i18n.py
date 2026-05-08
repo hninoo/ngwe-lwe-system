@@ -419,6 +419,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "server_ready_msg":       {"mm": "ဆာဗာ အသင့်ဖြစ်ပြီ!",        "en": "Server is ready!"},
     "server_start_failed":    {"mm": "ဆာဗာ မစတင်နိုင်ပါ။ Port 8000 ကို စစ်ဆေးပါ။",
                                "en": "Server failed to start. Check that port 8000 is free."},
+    "host_active_label":      {"mm": "🟢 ဆာဗာ လည်ပတ်နေသည် — ချိတ်ဆက်ရန်: {ip} : {port}",
+                               "en": "🟢 Server Active — Connect via: {ip} : {port}"},
 
     # ── Company / ServiceType settings ───────────────────────
     "settings_companies":     {"mm": "ကုမ္ပဏီများ",               "en": "Companies"},

@@ -24,8 +24,9 @@ BTN_COLOR = "#89b4fa"
 BTN_HOVER = "#74c7ec"
 ERROR_COLOR = "#f38ba8"
 
-WINDOW_WIDTH = 400
-WINDOW_HEIGHT = 520
+WINDOW_WIDTH      = 400
+WINDOW_HEIGHT     = 520
+WINDOW_HEIGHT_HOST = 568   # extra 48px for the host-info bar
 
 STYLESHEET = f"""
     QMainWindow {{ background-color: {BG_COLOR}; }}
@@ -92,6 +93,7 @@ class LoginView(QMainWindow):
         self._add_error_label(layout)
         self._add_login_button(layout)
         layout.addStretch()
+        self._add_host_info_bar(layout)
         self._add_server_footer(layout)
 
     def _center_on_screen(self) -> None:
@@ -105,7 +107,12 @@ class LoginView(QMainWindow):
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         layout.addWidget(self._title_label)
-        layout.addSpacing(20)
+
+        self._version_label = QLabel("")
+        self._version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._version_label.setStyleSheet("color:#45475a; font-size:11px;")
+        layout.addWidget(self._version_label)
+        layout.addSpacing(12)
 
     def _add_inputs(self, layout: QVBoxLayout) -> None:
         self._username_input = QLineEdit()
@@ -130,6 +137,26 @@ class LoginView(QMainWindow):
         self._login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._login_btn.clicked.connect(self._on_login)
         layout.addWidget(self._login_btn)
+
+    def _add_host_info_bar(self, layout: QVBoxLayout) -> None:
+        """Green info bar shown only when this machine is hosting the server."""
+        self._host_info_bar = QWidget()
+        self._host_info_bar.setStyleSheet(
+            "background:#1c3a2e; border-left:3px solid #a6e3a1; border-radius:4px;"
+        )
+        bar_layout = QVBoxLayout(self._host_info_bar)
+        bar_layout.setContentsMargins(12, 8, 12, 8)
+        bar_layout.setSpacing(2)
+
+        self._host_info_label = QLabel("")
+        self._host_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._host_info_label.setStyleSheet(
+            "color:#a6e3a1; font-size:12px; font-weight:bold; background:transparent; border:none;"
+        )
+        bar_layout.addWidget(self._host_info_label)
+
+        self._host_info_bar.setVisible(False)
+        layout.addWidget(self._host_info_bar)
 
     def _add_server_footer(self, layout: QVBoxLayout) -> None:
         """Server info + Change Server button + language switcher."""
@@ -160,6 +187,21 @@ class LoginView(QMainWindow):
         row.addWidget(self._change_server_btn, alignment=Qt.AlignmentFlag.AlignRight)
         layout.addLayout(row)
 
+    # ── Public configuration methods (called from main.py) ──
+
+    def set_version(self, version: str) -> None:
+        """Display a version string below the title."""
+        self._version_label.setText(version)
+
+    def show_host_info(self, ip: str, port: int) -> None:
+        """Show the green host-active bar with the LAN IP employees should use."""
+        self._host_info_label.setText(
+            t("host_active_label", ip=ip, port=port)
+        )
+        self._host_info_bar.setVisible(True)
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT_HOST)
+        self._center_on_screen()
+
     def _on_lang_changed(self, index: int) -> None:
         locale = self._lang_combo.itemData(index)
         set_locale(locale)
@@ -172,10 +214,10 @@ class LoginView(QMainWindow):
         self._password_input.setPlaceholderText(t("password_placeholder"))
         self._login_btn.setText(t("sign_in"))
         self._change_server_btn.setText(t("change_server"))
-        # Keep server label text but re-apply translated template if possible
-        current = self._server_label.text()
-        if current:
-            self._server_label.setText(current)  # server label is set externally
+        # Refresh host info label if visible
+        if self._host_info_bar.isVisible():
+            current_text = self._host_info_label.text()
+            self._host_info_label.setText(current_text)
 
     def _on_login(self) -> None:
         try:

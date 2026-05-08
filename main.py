@@ -1,9 +1,11 @@
 """
-Ngwe Lwe System — unified launcher
+Ngwe Lwe System — unified launcher  (v1.0.0-beta)
 
-On startup shows a choice dialog:
-  • Host Server & Open App — starts the FastAPI backend locally, then opens the UI
-  • Join LAN Server        — asks for a server IP and connects the UI to it
+Startup logic:
+  1. Check %LOCALAPPDATA%/NgweLweSystem/app_config.json
+       app_mode == "host"   → start local server automatically, open app
+       app_mode == "client" → connect to saved/entered LAN server IP
+  2. If no config file (dev / first run) → show StartupChoiceDialog
 """
 import os
 import sys
@@ -27,8 +29,8 @@ os.environ.setdefault("WS_URL",       "ws://127.0.0.1:8000/ws")
 
 import requests
 import uvicorn
-from PyQt6.QtCore  import Qt, QThread, QTimer, QObject, pyqtSignal
-from PyQt6.QtGui   import QFont
+from PyQt6.QtCore    import Qt, QThread, QTimer, QObject, pyqtSignal
+from PyQt6.QtGui     import QFont
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QWidget,
     QVBoxLayout, QFormLayout, QGroupBox,
@@ -39,9 +41,13 @@ from i18n import t
 
 
 # ──────────────────────────────────────────────────────────
-# Config / URL helpers
+# App-wide constants
 # ──────────────────────────────────────────────────────────
-_CONFIG_FILE    = os.path.join(_BASE, "client_config.json")
+APP_VERSION     = "v1.0.0-beta"
+APP_CONFIG_DIR  = os.path.join(os.environ.get("LOCALAPPDATA", _BASE), "NgweLweSystem")
+APP_CONFIG_PATH = os.path.join(APP_CONFIG_DIR, "app_config.json")
+
+_CLIENT_CONFIG  = os.path.join(_BASE, "client_config.json")
 _DEFAULT_HOST   = "192.168.1.1"
 _DEFAULT_PORT   = 8000
 _LOCAL_PORT     = 8000
@@ -58,19 +64,33 @@ QPushButton    { border-radius:5px; padding:8px 20px; font-weight:bold; }
 """
 
 
-def _load_config() -> dict:
-    if os.path.exists(_CONFIG_FILE):
+# ──────────────────────────────────────────────────────────
+# Config / URL helpers
+# ──────────────────────────────────────────────────────────
+def _read_app_config() -> dict | None:
+    """Return installer-written app_config, or None in dev/first-run mode."""
+    if os.path.exists(APP_CONFIG_PATH):
         try:
-            with open(_CONFIG_FILE) as f:
+            with open(APP_CONFIG_PATH) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def _load_client_config() -> dict:
+    if os.path.exists(_CLIENT_CONFIG):
+        try:
+            with open(_CLIENT_CONFIG) as f:
                 return json.load(f)
         except Exception:
             pass
     return {"host": _DEFAULT_HOST, "port": _DEFAULT_PORT}
 
 
-def _save_config(host: str, port: int) -> None:
+def _save_client_config(host: str, port: int) -> None:
     try:
-        with open(_CONFIG_FILE, "w") as f:
+        with open(_CLIENT_CONFIG, "w") as f:
             json.dump({"host": host, "port": port}, f, indent=2)
     except Exception:
         pass
@@ -80,7 +100,8 @@ def _make_urls(host: str, port: int) -> tuple[str, str]:
     return f"http://{host}:{port}", f"ws://{host}:{port}/ws"
 
 
-def _get_local_ip() -> str:
+def get_server_ip() -> str:
+    """Return the machine's LAN IP (the interface used for outbound traffic)."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -88,7 +109,7 @@ def _get_local_ip() -> str:
         s.close()
         return ip
     except Exception:
-        return "127.0.0.1"
+        return socket.gethostbyname(socket.gethostname())
 
 
 def _apply_urls(base_url: str, ws_url: str) -> None:
@@ -236,7 +257,7 @@ class _ConnectThread(QThread):
 
 
 # ──────────────────────────────────────────────────────────
-# Server config dialog (LAN join mode)
+# Server config dialog (LAN join / client mode)
 # ──────────────────────────────────────────────────────────
 class ServerConfigDialog(QDialog):
     def __init__(self, parent=None, host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT) -> None:
@@ -320,7 +341,7 @@ class ServerConfigDialog(QDialog):
     def _on_success(self, host: str, port: int) -> None:
         self._result_host = host
         self._result_port = port
-        _save_config(host, port)
+        _save_client_config(host, port)
         self._set_status(t("connected_msg"), "#a6e3a1")
         self.accept()
 
@@ -336,7 +357,7 @@ class ServerConfigDialog(QDialog):
 
 
 # ──────────────────────────────────────────────────────────
-# Startup choice dialog
+# Startup choice dialog (dev / first-run only)
 # ──────────────────────────────────────────────────────────
 class _StartupChoiceDialog(QDialog):
     HOST_MODE = "host"
@@ -359,6 +380,11 @@ class _StartupChoiceDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("color:#89b4fa;")
         root.addWidget(title)
+
+        ver = QLabel(APP_VERSION)
+        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ver.setStyleSheet("color:#585b70; font-size:11px;")
+        root.addWidget(ver)
 
         sub = QLabel(t("startup_choice_sub"))
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -399,7 +425,7 @@ class _StartupChoiceDialog(QDialog):
 
 
 # ──────────────────────────────────────────────────────────
-# Login window helper
+# Open login window
 # ──────────────────────────────────────────────────────────
 def _open_login(
     app: QApplication,
@@ -415,12 +441,14 @@ def _open_login(
 
     api    = ApiClient()
     window = LoginView(api)
+    window.set_version(APP_VERSION)
 
     if host_mode:
         window._change_server_btn.setVisible(False)
         window._server_label.setText(
-            t("server_label", host=_get_local_ip(), port=_LOCAL_PORT)
+            t("server_label", host="localhost", port=_LOCAL_PORT)
         )
+        window.show_host_info(get_server_ip(), _LOCAL_PORT)
     else:
         _host = [lan_host]
         _port = [lan_port]
@@ -451,12 +479,24 @@ def _open_login(
 def main() -> None:
     app = QApplication(sys.argv)
 
-    choice = _StartupChoiceDialog()
-    if choice.exec() != QDialog.DialogCode.Accepted:
-        sys.exit(0)
+    # ── Determine mode from installer config or choice dialog ──
+    app_cfg = _read_app_config()
+
+    if app_cfg is not None:
+        mode = app_cfg.get("app_mode", "client")
+        cfg_host = app_cfg.get("host", _DEFAULT_HOST)
+        cfg_port = int(app_cfg.get("port", _DEFAULT_PORT))
+    else:
+        # Dev / first-run: show choice dialog
+        choice = _StartupChoiceDialog()
+        if choice.exec() != QDialog.DialogCode.Accepted:
+            sys.exit(0)
+        mode     = choice.mode
+        cfg_host = _DEFAULT_HOST
+        cfg_port = _DEFAULT_PORT
 
     # ── HOST MODE ─────────────────────────────────────────
-    if choice.mode == _StartupChoiceDialog.HOST_MODE:
+    if mode == "host":
         base_url, ws_url = _make_urls("127.0.0.1", _LOCAL_PORT)
         _apply_urls(base_url, ws_url)
 
@@ -481,9 +521,10 @@ def main() -> None:
 
         def _on_ready() -> None:
             splash.set_status(t("server_ready_msg"))
-            QTimer.singleShot(300, lambda: (splash.close(), _open_login(
-                app, server_thread, host_mode=True
-            )))
+            QTimer.singleShot(300, lambda: (
+                splash.close(),
+                _open_login(app, server_thread, host_mode=True),
+            ))
 
         def _on_timeout(msg: str) -> None:
             splash.close()
@@ -494,25 +535,29 @@ def main() -> None:
         watcher.failed.connect(_on_timeout)
         watcher.start()
 
-    # ── JOIN LAN MODE ─────────────────────────────────────
+    # ── CLIENT / JOIN MODE ────────────────────────────────
     else:
-        cfg  = _load_config()
-        host = cfg.get("host", _DEFAULT_HOST)
-        port = cfg.get("port", _DEFAULT_PORT)
+        # Use host from app_config if present; else fall back to client_config.json
+        if app_cfg and "host" in app_cfg:
+            host = cfg_host
+            port = cfg_port
+        else:
+            saved = _load_client_config()
+            host  = saved.get("host", _DEFAULT_HOST)
+            port  = saved.get("port", _DEFAULT_PORT)
 
-        # Try saved config silently; fall back to dialog on failure
+        # Try saved host silently; show dialog on failure
         connected = False
-        if os.path.exists(_CONFIG_FILE):
-            try:
-                base_url, _ = _make_urls(host, port)
-                r = requests.get(f"{base_url}/health", timeout=3)
-                connected = r.status_code == 200
-            except Exception:
-                pass
+        try:
+            base_url, _ = _make_urls(host, port)
+            r = requests.get(f"{base_url}/health", timeout=3)
+            connected = r.status_code == 200
+        except Exception:
+            pass
 
         if not connected:
             dlg = ServerConfigDialog(host=host, port=port)
-            if os.path.exists(_CONFIG_FILE):
+            if os.path.exists(_CLIENT_CONFIG) or (app_cfg and "host" in app_cfg):
                 dlg.set_initial_status(
                     t("saved_server_fail", host=host, port=port), "#f9e2af"
                 )
