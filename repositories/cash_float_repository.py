@@ -229,6 +229,35 @@ class CashFloatRepository:
 
         return self.get_float(float_id)
 
+    # ── Convenience wrappers called by the cashier route ─────────────────────
+
+    def get_all_floats(self) -> list[CashFloat]:
+        return self.list_floats()
+
+    def get_floats_for_employee(self, employee_id: int) -> list[CashFloat]:
+        return self.list_floats(employee_id=employee_id)
+
+    def issue_float(
+        self,
+        employee_id: int,
+        issued_by: int,
+        denominations: dict[int, int],
+        denom_repo: CashDenominationRepository,
+        note: Optional[str] = None,
+    ) -> CashFloat:
+        """Create a PENDING float and return the full CashFloat object."""
+        total = sum(d * q for d, q in denominations.items() if q > 0)
+        float_id = self.create_float(
+            employee_id=employee_id,
+            issued_by=issued_by,
+            denominations=denominations,
+            total_amount=total,
+            note=note,
+        )
+        return self.get_float(float_id)
+
+    # ─────────────────────────────────────────────────────────────────────────
+
     def get_float_denominations(self, float_id: int) -> list[CashFloatDenomination]:
         with get_cursor() as cursor:
             cursor.execute(

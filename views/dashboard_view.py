@@ -44,6 +44,7 @@ from views.settings.service_type_settings_view import ServiceTypeSettingsView
 from views.settings.user_settings_view import UserSettingsView
 from views.settings.activity_log_view import ActivityLogView
 from views.settings.cash_float_admin_view import CashFloatAdminView
+from views.server_info_view import ServerInfoSubView
 
 # ── Colors ──
 BG_DARK = "#1e1e2e"
@@ -104,7 +105,8 @@ _SIDEBAR_GROUPS: list[tuple[str | None, list[tuple[str, int, str]]]] = [
         ("admin_cash_floats",     10, "⊙"),
     ]),
     ("admin_group_system", [
-        ("admin_change_password", 11, "⊕"),
+        ("admin_server_connection", 11, "⌁"),
+        ("admin_change_password",   12, "⊕"),
     ]),
 ]
 
@@ -1340,7 +1342,8 @@ class DashboardView(QMainWindow):
             CommissionTierSubView(self._api),    # 8  Commission Tiers
             ExchangeRateSubView(self._api),      # 9  Exchange Rate
             CashFloatAdminView(self._api),       # 10 Cash Floats
-            PasswordSubView(self._api),          # 11 Change Password
+            ServerInfoSubView(),                 # 11 Server Connection
+            PasswordSubView(self._api),          # 12 Change Password
         ]:
             self._stack.addWidget(page)
             self._pages.append(page)

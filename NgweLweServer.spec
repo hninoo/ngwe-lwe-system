@@ -1,10 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+# NgweLweServer.exe — server manager
+import os
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+# ── python-multipart: three-layer collection ──────────────────────────────────
+# collect_all('multipart') can silently return nothing because the distribution
+# is registered as "python-multipart" while the importable name is "multipart".
+# collect_submodules() walks the module directory directly and is distribution-
+# name-agnostic, so it always finds every submodule regardless of metadata.
+_mp_mods = collect_submodules('multipart')
 
 datas = [
     ('backend/database.sql', 'backend'),
-    ('assets/logos',        'assets/logos'),
-    ('assets/app_icon.ico', 'assets'),
+    ('assets',               'assets'),
 ]
 binaries = []
 hiddenimports = [
@@ -13,7 +21,7 @@ hiddenimports = [
     'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto',
     'uvicorn.lifespan', 'uvicorn.lifespan.on',
     'anyio._backends._asyncio', 'anyio._backends._trio',
-    'bcrypt', 'passlib', 'multipart',
+    'bcrypt', 'passlib',
     # i18n
     'i18n', 'i18n.i18n',
     # backend modules
@@ -26,11 +34,21 @@ hiddenimports = [
     'backend.routes.exchange_rates', 'backend.routes.reports',
     'backend.routes.commission_tiers', 'backend.routes.activity_logs',
     'backend.routes.cashier',
-]
+    # python-multipart: explicit names as final fail-safe
+    'multipart', 'multipart.multipart',
+] + _mp_mods  # append every submodule found by directory walk
 
-for pkg in ('uvicorn', 'fastapi', 'PyQt6'):
+# collect_all covers data files, binaries, and any hook-discovered imports
+for pkg in ('uvicorn', 'fastapi', 'PyQt6', 'multipart'):
     tmp = collect_all(pkg)
     datas += tmp[0]; binaries += tmp[1]; hiddenimports += tmp[2]
+
+# Guard Tree so an empty or missing logos folder never aborts the build
+_logos_tree = (
+    Tree('assets/logos', prefix='assets/logos')
+    if os.path.isdir('assets/logos') and os.listdir('assets/logos')
+    else []
+)
 
 a = Analysis(
     ['run_server_app.py'],
@@ -69,7 +87,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    Tree('assets/logos', prefix='assets/logos'),
+    _logos_tree,
     strip=False,
     upx=True,
     upx_exclude=[],

@@ -202,7 +202,7 @@ def receive_float(
     if not bcrypt.checkpw(body.pin.encode(), user.pin_hash.encode()):
         raise HTTPException(401, "Incorrect PIN")
 
-    updated = _float_repo.receive_float(float_id)
+    updated = _float_repo.activate_float(float_id, denom_repo=_denom_repo)
     return asdict(updated)
 
 

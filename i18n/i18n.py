@@ -562,7 +562,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "admin_all_transactions": {"mm": "ငွေလွှဲ အားလုံး",           "en": "All Transactions"},
     "admin_activity_logs":    {"mm": "လုပ်ဆောင်ချက် မှတ်တမ်း",    "en": "Activity Logs"},
     "admin_cash_floats":      {"mm": "ငွေသားလုပ်ငန်း",             "en": "Cash Floats"},
+    "admin_server_connection": {"mm": "ဆာဗာ ချိတ်ဆက်မှု",          "en": "Server Connection"},
     "admin_change_password":  {"mm": "စကားဝှက်ပြောင်းမည်",        "en": "Change Password"},
+
+    # ── Server Connection page ───────────────────────────
+    "server_status_label":    {"mm": "ဆာဗာ အခြေအနေ:",             "en": "Server Status:"},
+    "server_status_online":   {"mm": "Online",                      "en": "Online"},
+    "server_ip_label":        {"mm": "Local IP လိပ်စာ:",           "en": "Local IP Address:"},
+    "server_port_label":      {"mm": "Port နံပါတ်:",               "en": "Port:"},
+    "server_client_link_label":{"mm": "Client ချိတ်ဆက်ရန် Link:",  "en": "Client Setup Link:"},
+    "server_copy_btn":        {"mm": "ကူးယူမည်",                   "en": "Copy"},
+    "server_copied_msg":      {"mm": "ကူးယူပြီးပါပြီ!",            "en": "Copied to clipboard!"},
+    "server_refresh_btn":     {"mm": "IP ပြန်စစ်မည်",              "en": "Refresh IP"},
     "save_password":          {"mm": "စကားဝှက်သိမ်းမည်",           "en": "Save Password"},
 }
 

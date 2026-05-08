@@ -13,6 +13,7 @@ PyQt6==6.10.2
 PyQt6-Qt6==6.10.2
 PyQt6_sip==13.11.1
 python-dotenv==1.2.2
+python-multipart==0.0.27
 starlette==1.0.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
