@@ -3,7 +3,8 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [
     ('backend/database.sql', 'backend'),
-    ('assets/logos', 'assets/logos'),
+    ('assets/logos',        'assets/logos'),
+    ('assets/app_icon.ico', 'assets'),
 ]
 binaries = []
 hiddenimports = [
@@ -57,6 +58,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon='assets/app_icon.ico',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

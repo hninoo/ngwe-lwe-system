@@ -30,7 +30,7 @@ os.environ.setdefault("WS_URL",       "ws://127.0.0.1:8000/ws")
 import requests
 import uvicorn
 from PyQt6.QtCore    import Qt, QThread, QTimer, QObject, pyqtSignal
-from PyQt6.QtGui     import QFont
+from PyQt6.QtGui     import QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QWidget,
     QVBoxLayout, QFormLayout, QGroupBox,
@@ -46,6 +46,9 @@ from i18n import t
 APP_VERSION     = "v1.0.0-beta"
 APP_CONFIG_DIR  = os.path.join(os.environ.get("LOCALAPPDATA", _BASE), "NgweLweSystem")
 APP_CONFIG_PATH = os.path.join(APP_CONFIG_DIR, "app_config.json")
+# Icon path resolves correctly in both dev mode (_BUNDLE == project root)
+# and frozen PyInstaller exe (_BUNDLE == sys._MEIPASS extraction dir)
+_ICON_PATH      = os.path.join(_BUNDLE, "assets", "app_icon.ico")
 
 _CLIENT_CONFIG  = os.path.join(_BASE, "client_config.json")
 _DEFAULT_HOST   = "192.168.1.1"
@@ -478,6 +481,11 @@ def _open_login(
 # ──────────────────────────────────────────────────────────
 def main() -> None:
     app = QApplication(sys.argv)
+
+    # Set the app icon once — all windows and dialogs in this process inherit it
+    _icon = QIcon(_ICON_PATH)
+    if not _icon.isNull():
+        app.setWindowIcon(_icon)
 
     # ── Determine mode from installer config or choice dialog ──
     app_cfg = _read_app_config()

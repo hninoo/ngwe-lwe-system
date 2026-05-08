@@ -30,10 +30,11 @@ SolidCompression=yes
 ; Wizard appearance
 WizardStyle=modern
 WizardSizePercent=100
+SetupIconFile=assets\app_icon.ico
 
 ; Uninstall
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={app}\{#AppExe}
+UninstallDisplayIcon={app}\assets\app_icon.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -51,10 +52,12 @@ Source: "dist\NgweLweSystem\*"; \
 
 [Icons]
 ; Start Menu
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; \
+  IconFilename: "{app}\assets\app_icon.ico"
 
 ; Desktop shortcut (if task selected)
 Name: "{autodesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; \
+  IconFilename: "{app}\assets\app_icon.ico"; \
   Tasks: desktopicon
 
 [Run]

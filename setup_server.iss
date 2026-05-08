@@ -22,9 +22,10 @@ OutputBaseFilename=NgweLweServer-Setup-v{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=assets\app_icon.ico
 
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={app}\{#AppExe}
+UninstallDisplayIcon={app}\assets\app_icon.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -44,8 +45,10 @@ Source: "dist\NgweLweServer\assets\logos\*"; \
   Check: DirExists(ExpandConstant('dist\NgweLweServer\assets\logos'))
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; \
+  IconFilename: "{app}\assets\app_icon.ico"
 Name: "{autodesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; \
+  IconFilename: "{app}\assets\app_icon.ico"; \
   Tasks: desktopicon
 
 [Run]
