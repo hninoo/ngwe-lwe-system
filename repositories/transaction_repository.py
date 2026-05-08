@@ -52,10 +52,17 @@ class TransactionRepository(BaseRepository):
     def get_by_employee(self, user_id: int) -> list[Transaction]:
         with get_cursor() as cursor:
             cursor.execute(
-                "SELECT * FROM transactions "
-                "WHERE created_by = ? "
-                "ORDER BY created_at DESC",
+                "SELECT * FROM transactions WHERE created_by = ? ORDER BY created_at DESC",
                 (user_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    def get_recent_by_user(self, user_id: int, limit: int = 50) -> list[Transaction]:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM transactions WHERE created_by = ? ORDER BY created_at DESC LIMIT ?",
+                (user_id, limit),
             )
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]

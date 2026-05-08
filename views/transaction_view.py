@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, QDate
+from PyQt6.QtCore import Qt, QTimer, QDate, QSize, pyqtSignal
 from PyQt6.QtGui import QFont, QKeyEvent, QColor, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,7 +28,8 @@ from PyQt6.QtWidgets import (
 
 from i18n import t, on_change
 from services.api_client import ApiClient
-from views.widgets.company_selector import CompanySelector, ServiceTypeSelector, AccountSelector
+from views.widgets.company_selector import ServiceTypeSelector, AccountSelector
+from views.widgets.company_logo_label import get_logo_pixmap
 
 MMT = timezone(timedelta(hours=6, minutes=30))
 
@@ -177,6 +179,159 @@ def format_datetime(raw) -> str:
 
 
 # ════════════════════════════════════════════
+# Company Grid Selector
+# ════════════════════════════════════════════
+class _CompanyTile(QFrame):
+    """Single selectable company tile: logo + name label."""
+
+    clicked_id = pyqtSignal(int)
+    W, H = 90, 80
+
+    def __init__(self, company_id: int, name: str, pixmap: QPixmap, parent=None) -> None:
+        super().__init__(parent)
+        self._company_id = company_id
+        self.setFixedSize(self.W, self.H)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(name)
+
+        lo = QVBoxLayout(self)
+        lo.setContentsMargins(4, 8, 4, 5)
+        lo.setSpacing(4)
+        lo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(
+            pixmap.scaled(QSize(38, 38), Qt.AspectRatioMode.KeepAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation)
+        )
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet("border: none; background: transparent;")
+        lo.addWidget(icon_lbl)
+
+        short = name if len(name) <= 11 else name[:10] + "…"
+        name_lbl = QLabel(short)
+        name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_lbl.setStyleSheet(
+            f"font-size: 10px; color: {TEXT_SECONDARY}; border: none; background: transparent;"
+        )
+        lo.addWidget(name_lbl)
+
+        self.set_selected(False)
+
+    def set_selected(self, selected: bool) -> None:
+        if selected:
+            self.setStyleSheet(
+                f"QFrame {{ background-color: {BG_INPUT}; "
+                f"border: 2px solid {ACCENT_BLUE}; border-radius: 8px; }}"
+            )
+        else:
+            self.setStyleSheet(
+                f"QFrame {{ background-color: {BG_CARD}; "
+                f"border: 1px solid {BORDER_COLOR}; border-radius: 8px; }}"
+                f"QFrame:hover {{ background-color: {BG_INPUT}; "
+                f"border: 1px solid {ACCENT_BLUE}88; }}"
+            )
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked_id.emit(self._company_id)
+        super().mousePressEvent(event)
+
+
+class CompanyGridSelector(QWidget):
+    """
+    Scrollable icon-grid replacement for the CompanySelector QComboBox.
+    Displays one tile per company (logo + name). Clicking a tile selects it.
+
+    Drop-in API:
+      populate(companies, api_client)   — rebuild tiles
+      company_changed(int)              — signal emitted on selection change
+      selected_company_id() -> int|None — current selection
+    """
+
+    company_changed = pyqtSignal(int)
+    _COLS = 4
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._companies: list[dict] = []
+        self._selected_id: Optional[int] = None
+        self._tiles: dict[int, _CompanyTile] = {}
+        self._populating = False
+
+        self._inner = QWidget()
+        self._inner.setStyleSheet("background: transparent;")
+        self._grid = QGridLayout(self._inner)
+        self._grid.setContentsMargins(4, 4, 4, 4)
+        self._grid.setSpacing(6)
+        self._grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._inner)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll.setFixedHeight(_CompanyTile.H + 22)
+        self._scroll.setStyleSheet(
+            f"QScrollArea {{ border: 1px solid {BORDER_COLOR}; border-radius: 8px; "
+            f"background-color: {BG_DARK}; }}"
+            f"QScrollBar:vertical {{ background: {BG_DARK}; width: 6px; border: none; }}"
+            f"QScrollBar::handle:vertical {{ background: {BORDER_COLOR}; border-radius: 3px; }}"
+        )
+
+        lo = QVBoxLayout(self)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.addWidget(self._scroll)
+
+    def populate(self, companies: list[dict], api_client) -> None:
+        self._populating = True
+        for tile in self._tiles.values():
+            tile.deleteLater()
+        self._tiles.clear()
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._companies = companies
+        self._selected_id = None
+
+        for idx, company in enumerate(companies):
+            cid = company["id"]
+            name = company.get("name", "")
+            pixmap = get_logo_pixmap(api_client, cid, name, size=38)
+            tile = _CompanyTile(cid, name, pixmap)
+            tile.clicked_id.connect(self._on_tile_clicked)
+            row, col = divmod(idx, self._COLS)
+            self._grid.addWidget(tile, row, col)
+            self._tiles[cid] = tile
+
+        # Resize scroll area to show 1 or 2 rows without wasted space
+        n_rows = max(1, -(-len(companies) // self._COLS))  # ceil division
+        visible_rows = min(n_rows, 2)
+        self._scroll.setFixedHeight(visible_rows * (_CompanyTile.H + self._grid.spacing()) + 12)
+
+        self._populating = False
+        if companies:
+            self._apply_selection(companies[0]["id"])
+            self._selected_id = companies[0]["id"]
+
+    def _on_tile_clicked(self, company_id: int) -> None:
+        if self._populating or self.signalsBlocked():
+            return
+        self._apply_selection(company_id)
+        self._selected_id = company_id
+        self.company_changed.emit(company_id)
+
+    def _apply_selection(self, company_id: int) -> None:
+        for cid, tile in self._tiles.items():
+            tile.set_selected(cid == company_id)
+
+    def selected_company_id(self) -> Optional[int]:
+        return self._selected_id
+
+
+# ════════════════════════════════════════════
 # Page 0: Home (Landing)
 # ════════════════════════════════════════════
 class HomePage(QWidget):
@@ -280,6 +435,7 @@ class TransactionFormPage(QWidget):
         self._accounts_cache: list[dict] = []
         self._to_accounts_cache: list[dict] = []
         self._all_accounts_cache: list[dict] = []
+        self._all_companies_cache: list[dict] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -299,6 +455,26 @@ class TransactionFormPage(QWidget):
     def load_data(self) -> None:
         self._load_companies()
         self._load_my_transactions()
+        user = self._api.user or {}
+        if user.get("role") == "employee":
+            self._set_float_state(self._check_float_status())
+
+    def _check_float_status(self) -> bool:
+        try:
+            floats = self._api.get_floats()
+            return any(f.get("status") == "ACTIVE" for f in floats)
+        except Exception:
+            return True
+
+    def _set_float_state(self, has_float: bool) -> None:
+        self._float_banner.setText("" if has_float else t("warn_no_float_banner"))
+        self._float_banner.setVisible(not has_float)
+        for key in ("withdraw", "transfer", "exchange"):
+            btn = self._action_buttons.get(key)
+            if btn:
+                btn.setEnabled(has_float)
+        if not has_float and self._selected_action in ("withdraw", "transfer", "exchange"):
+            self._on_action_select("deposit")
 
     # ── Action buttons ──
     def _build_action_buttons(self) -> QFrame:
@@ -320,7 +496,12 @@ class TransactionFormPage(QWidget):
     def _update_action_styles(self) -> None:
         for key, btn in self._action_buttons.items():
             color = dict((k, c) for k, _, c in _get_actions()).get(key, ACCENT_BLUE)
-            if key == self._selected_action:
+            disabled = not btn.isEnabled()
+            if disabled:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {TEXT_MUTED}; "
+                    f"border: 1px solid {TEXT_MUTED}; border-radius: 8px; font-size: 13px; }}")
+            elif key == self._selected_action:
                 btn.setStyleSheet(
                     f"QPushButton {{ background-color: {color}; color: {BG_DARK}; border: none; border-radius: 8px; font-size: 13px; font-weight: bold; }}")
             else:
@@ -333,6 +514,7 @@ class TransactionFormPage(QWidget):
             self._selected_action = key
             self._update_action_styles()
             self._update_form_visibility()
+            self._repopulate_company_selectors()
             self._clear_form()
         except Exception:
             pass
@@ -349,7 +531,7 @@ class TransactionFormPage(QWidget):
         lo.setSpacing(12)
 
         lo.addWidget(field_label(t("field_company"), required=True))
-        self._company_selector = CompanySelector()
+        self._company_selector = CompanyGridSelector()
         self._company_selector.company_changed.connect(self._on_company_changed)
         lo.addWidget(self._company_selector)
 
@@ -370,7 +552,7 @@ class TransactionFormPage(QWidget):
         # Transfer: to-side cascade
         self._to_company_label = field_label(t("field_to_company"), required=True)
         lo.addWidget(self._to_company_label)
-        self._to_company_selector = CompanySelector()
+        self._to_company_selector = CompanyGridSelector()
         self._to_company_selector.company_changed.connect(self._on_to_company_changed)
         lo.addWidget(self._to_company_selector)
 
@@ -481,6 +663,15 @@ class TransactionFormPage(QWidget):
         ss_row.addWidget(self._screenshot_label, 1)
         lo.addLayout(ss_row)
 
+        self._float_banner = QLabel("")
+        self._float_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._float_banner.setStyleSheet(
+            f"background-color: #45475a; color: {ACCENT_YELLOW}; "
+            f"border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: bold;"
+        )
+        self._float_banner.setVisible(False)
+        lo.addWidget(self._float_banner)
+
         self._status_label = QLabel("")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_label.setVisible(False)
@@ -573,8 +764,8 @@ class TransactionFormPage(QWidget):
         commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
         additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
 
-        # balance_change = full amount (commission is agent profit, not deducted from balance)
-        balance_change = amount if not is_withdraw else -amount
+        # deposit/exchange: balance increases; withdraw/transfer: from-account decreases
+        balance_change = -amount if self._selected_action in ("withdraw", "transfer") else amount
         total_fee = fee_amount + additional
         customer_total = amount + total_fee
 
@@ -663,11 +854,11 @@ class TransactionFormPage(QWidget):
     def _calc_projected(self, balance: float, amount: float) -> float:
         if amount <= 0:
             return balance
+        if self._selected_action in ("withdraw", "transfer"):
+            return balance - amount
         if self._selected_action == "deposit":
             return balance + amount
-        if self._selected_action == "withdraw":
-            return balance - amount
-        return balance
+        return balance  # exchange: balance increases, no check needed
 
     def _update_balance_hint(self) -> None:
         account = self._get_selected_account()
@@ -688,18 +879,32 @@ class TransactionFormPage(QWidget):
         self._balance_hint.setVisible(True)
 
     # ── Data loading ──
+    def _get_companies_for_action(self) -> list[dict]:
+        if self._selected_action in ("deposit", "withdraw"):
+            return [c for c in self._all_companies_cache if c.get("category") in ("Pay", "Both")]
+        return [c for c in self._all_companies_cache if c.get("category") in ("Bank", "Both")]
+
+    def _repopulate_company_selectors(self) -> None:
+        if not self._all_companies_cache:
+            return
+        filtered = self._get_companies_for_action()
+        self._company_selector.blockSignals(True)
+        self._company_selector.populate(filtered, self._api)
+        self._company_selector.blockSignals(False)
+        self._to_company_selector.blockSignals(True)
+        self._to_company_selector.populate(filtered, self._api)
+        self._to_company_selector.blockSignals(False)
+        cid = self._company_selector.selected_company_id()
+        if cid is not None:
+            self._on_company_changed(cid)
+        cid_to = self._to_company_selector.selected_company_id()
+        if cid_to is not None:
+            self._on_to_company_changed(cid_to)
+
     def _load_companies(self) -> None:
         try:
-            companies = self._api.get_companies()
-            self._company_selector.populate(companies, self._api)
-            self._to_company_selector.populate(companies, self._api)
-            # Manually trigger first company's service types (signals blocked during populate)
-            cid = self._company_selector.selected_company_id()
-            if cid is not None:
-                self._on_company_changed(cid)
-            cid_to = self._to_company_selector.selected_company_id()
-            if cid_to is not None:
-                self._on_to_company_changed(cid_to)
+            self._all_companies_cache = self._api.get_companies()
+            self._repopulate_company_selectors()
         except Exception:
             pass
         self._load_fee_accounts()
@@ -810,6 +1015,10 @@ class TransactionFormPage(QWidget):
         self._load_my_transactions()
 
     def _validate(self) -> Optional[str]:
+        user = self._api.user or {}
+        if user.get("role") == "employee" and self._selected_action in ("withdraw", "transfer", "exchange"):
+            if not self._check_float_status():
+                return t("err_no_float")
         if self._account_selector.selected_account_id() is None:
             return t("err_select_account")
         if self._parse_amount() <= 0:
@@ -825,7 +1034,7 @@ class TransactionFormPage(QWidget):
                 return t("err_select_to_account")
             if to_acc_id == self._account_selector.selected_account_id():
                 return t("err_same_account")
-        if self._selected_action != "withdraw":
+        if self._selected_action in ("withdraw", "transfer"):
             account = self._get_selected_account()
             if account:
                 balance = self._get_fresh_balance(account["id"])

@@ -147,6 +147,10 @@ async def create_transfer(
 ) -> dict:
     if current_user["role"] == "cashier":
         raise HTTPException(403, "Cashiers cannot record transactions")
+    if current_user["role"] == "employee":
+        active = _float_repo.get_active_float_for_employee(current_user["user_id"])
+        if active is None:
+            raise HTTPException(403, "No active float. Receive your float from the cashier first.")
     txn = _txn_vm.create_transfer(
         from_account_id=body.from_account_id,
         to_account_id=body.to_account_id,
@@ -171,6 +175,10 @@ async def create_exchange(
 ) -> dict:
     if current_user["role"] == "cashier":
         raise HTTPException(403, "Cashiers cannot record transactions")
+    if current_user["role"] == "employee":
+        active = _float_repo.get_active_float_for_employee(current_user["user_id"])
+        if active is None:
+            raise HTTPException(403, "No active float. Receive your float from the cashier first.")
     txn = _txn_vm.create_exchange(
         account_id=body.account_id,
         amount=body.amount,
@@ -231,9 +239,13 @@ def get_recent(
     limit: int = 20,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
-    from viewmodels.dashboard_viewmodel import DashboardViewModel
     limit = min(limit, 1000)
-    txns = DashboardViewModel().get_recent_transactions(limit)
+    if current_user["role"] == "employee":
+        from repositories.transaction_repository import TransactionRepository
+        txns = TransactionRepository().get_recent_by_user(current_user["user_id"], limit)
+    else:
+        from viewmodels.dashboard_viewmodel import DashboardViewModel
+        txns = DashboardViewModel().get_recent_transactions(limit)
     return [asdict(t) for t in txns]
 
 
