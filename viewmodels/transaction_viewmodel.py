@@ -4,10 +4,14 @@ from typing import Optional
 from models.account import Account
 from models.transaction import Transaction
 from repositories.account_repository import AccountRepository
-from repositories.transaction_repository import TransactionRepository
-from repositories.exchange_rate_repository import ExchangeRateRepository
+from repositories.cash_float_repository import CashFloatRepository, InsufficientFloatError
 from repositories.commission_tier_repository import CommissionTierRepository
+from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_type_repository import ServiceTypeRepository
+from repositories.transaction_repository import TransactionRepository
+
+# Re-export so routes can import from one place
+__all__ = ["TransactionViewModel", "InsufficientFloatError"]
 
 
 class TransactionViewModel:
@@ -19,12 +23,14 @@ class TransactionViewModel:
         exchange_rate_repo: Optional[ExchangeRateRepository] = None,
         commission_tier_repo: Optional[CommissionTierRepository] = None,
         service_type_repo: Optional[ServiceTypeRepository] = None,
+        float_repo: Optional[CashFloatRepository] = None,
     ) -> None:
         self._txn_repo = transaction_repo or TransactionRepository()
         self._account_repo = account_repo or AccountRepository()
         self._rate_repo = exchange_rate_repo or ExchangeRateRepository()
         self._tier_repo = commission_tier_repo or CommissionTierRepository()
         self._service_type_repo = service_type_repo or ServiceTypeRepository()
+        self._float_repo = float_repo or CashFloatRepository()
 
     def _get_company_id(self, service_type_id: Optional[int]) -> Optional[int]:
         """Resolve service_type_id → company_id via ServiceTypeRepository."""
@@ -118,10 +124,16 @@ class TransactionViewModel:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        employee_id: Optional[int] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount, "receive")
         from_company_id = self._get_company_id(account.service_type_id)
+
+        # Deduct from employee mini-vault before touching account balance.
+        # Raises InsufficientFloatError if float balance is too low.
+        if employee_id is not None:
+            self._float_repo.deduct_float_balance(employee_id, amount)
 
         new_balance = (account.balance or 0.0) - amount
         self._account_repo.update_balance(account_id, new_balance)
@@ -158,6 +170,7 @@ class TransactionViewModel:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        employee_id: Optional[int] = None,
     ) -> Transaction:
         from_account = self._account_repo.get_by_id(from_account_id)
         to_account = self._account_repo.get_by_id(to_account_id)
@@ -166,6 +179,9 @@ class TransactionViewModel:
 
         from_company_id = self._get_company_id(from_account.service_type_id)
         to_company_id = self._get_company_id(to_account.service_type_id)
+
+        if employee_id is not None:
+            self._float_repo.deduct_float_balance(employee_id, amount)
 
         from_balance = (from_account.balance or 0.0) - balance_change
         self._account_repo.update_balance(from_account_id, from_balance)
@@ -205,6 +221,7 @@ class TransactionViewModel:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        employee_id: Optional[int] = None,
     ) -> Transaction:
         rate = self._rate_repo.get_latest("THB", "MMK")
         if rate is None:
@@ -220,6 +237,9 @@ class TransactionViewModel:
         commission = self._calc_commission(account, amount, "send")
         balance_change = self._calc_balance_change(account, amount, commission)
         from_company_id = self._get_company_id(account.service_type_id)
+
+        if employee_id is not None:
+            self._float_repo.deduct_float_balance(employee_id, amount)
 
         new_balance = (account.balance or 0.0) + balance_change
         self._account_repo.update_balance(account_id, new_balance)

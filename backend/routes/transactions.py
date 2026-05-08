@@ -8,7 +8,7 @@ from backend.auth import get_current_user
 from backend.websocket_manager import ConnectionManager
 from repositories.cash_float_repository import CashFloatRepository
 from viewmodels.account_viewmodel import AccountViewModel
-from viewmodels.transaction_viewmodel import TransactionViewModel
+from viewmodels.transaction_viewmodel import TransactionViewModel, InsufficientFloatError
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -122,18 +122,23 @@ async def create_withdraw(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
-    txn = _txn_vm.create_withdraw(
-        account_id=body.account_id,
-        amount=body.amount,
-        customer_name=body.customer_name,
-        customer_phone=body.customer_phone,
-        screenshot_path=body.screenshot_path,
-        created_by=current_user["user_id"],
-        customer_fee=body.customer_fee,
-        additional_fee_amount=body.additional_fee_amount,
-        fee_account_id=body.fee_account_id,
-        note=body.note,
-    )
+    employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
+    try:
+        txn = _txn_vm.create_withdraw(
+            account_id=body.account_id,
+            amount=body.amount,
+            customer_name=body.customer_name,
+            customer_phone=body.customer_phone,
+            screenshot_path=body.screenshot_path,
+            created_by=current_user["user_id"],
+            customer_fee=body.customer_fee,
+            additional_fee_amount=body.additional_fee_amount,
+            fee_account_id=body.fee_account_id,
+            note=body.note,
+            employee_id=employee_id,
+        )
+    except InsufficientFloatError as exc:
+        raise HTTPException(422, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
@@ -151,17 +156,22 @@ async def create_transfer(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
-    txn = _txn_vm.create_transfer(
-        from_account_id=body.from_account_id,
-        to_account_id=body.to_account_id,
-        amount=body.amount,
-        screenshot_path=body.screenshot_path,
-        created_by=current_user["user_id"],
-        customer_fee=body.customer_fee,
-        additional_fee_amount=body.additional_fee_amount,
-        fee_account_id=body.fee_account_id,
-        note=body.note,
-    )
+    employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
+    try:
+        txn = _txn_vm.create_transfer(
+            from_account_id=body.from_account_id,
+            to_account_id=body.to_account_id,
+            amount=body.amount,
+            screenshot_path=body.screenshot_path,
+            created_by=current_user["user_id"],
+            customer_fee=body.customer_fee,
+            additional_fee_amount=body.additional_fee_amount,
+            fee_account_id=body.fee_account_id,
+            note=body.note,
+            employee_id=employee_id,
+        )
+    except InsufficientFloatError as exc:
+        raise HTTPException(422, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
@@ -179,17 +189,22 @@ async def create_exchange(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
-    txn = _txn_vm.create_exchange(
-        account_id=body.account_id,
-        amount=body.amount,
-        currency=body.currency,
-        screenshot_path=body.screenshot_path,
-        created_by=current_user["user_id"],
-        customer_fee=body.customer_fee,
-        additional_fee_amount=body.additional_fee_amount,
-        fee_account_id=body.fee_account_id,
-        note=body.note,
-    )
+    employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
+    try:
+        txn = _txn_vm.create_exchange(
+            account_id=body.account_id,
+            amount=body.amount,
+            currency=body.currency,
+            screenshot_path=body.screenshot_path,
+            created_by=current_user["user_id"],
+            customer_fee=body.customer_fee,
+            additional_fee_amount=body.additional_fee_amount,
+            fee_account_id=body.fee_account_id,
+            note=body.note,
+            employee_id=employee_id,
+        )
+    except InsufficientFloatError as exc:
+        raise HTTPException(422, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)

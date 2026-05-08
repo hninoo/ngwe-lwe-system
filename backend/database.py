@@ -582,6 +582,44 @@ def _migrate_005(conn):
         pass  # column already exists
 
 
+def _migrate_006(conn):
+    """Add current_balance to cash_float_assignments; create daily_reconciliation_logs."""
+    try:
+        conn.execute(
+            "ALTER TABLE cash_float_assignments ADD COLUMN current_balance REAL NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS daily_reconciliation_logs (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            recon_date            TEXT NOT NULL,
+            closed_by             INTEGER NOT NULL,
+            closed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+            total_deposit         REAL NOT NULL DEFAULT 0,
+            total_withdraw        REAL NOT NULL DEFAULT 0,
+            total_transfer        REAL NOT NULL DEFAULT 0,
+            total_exchange        REAL NOT NULL DEFAULT 0,
+            total_commission      REAL NOT NULL DEFAULT 0,
+            total_customer_fees   REAL NOT NULL DEFAULT 0,
+            main_vault_total      REAL NOT NULL DEFAULT 0,
+            employee_floats_total REAL NOT NULL DEFAULT 0,
+            total_cash            REAL NOT NULL DEFAULT 0,
+            total_digital         REAL NOT NULL DEFAULT 0,
+            grand_total           REAL NOT NULL DEFAULT 0,
+            employee_snapshots    TEXT,
+            account_snapshots     TEXT,
+            vault_snapshot        TEXT,
+            notes                 TEXT,
+            FOREIGN KEY (closed_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+        );
+        CREATE INDEX IF NOT EXISTS idx_recon_date ON daily_reconciliation_logs(recon_date);
+    """)
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -595,6 +633,7 @@ def _run_migrations(conn):
         (3, "Add cash approval fields to transactions", _migrate_003),
         (4, "Add companies, service_types; migrate accounts, commission_tiers, and transactions", _migrate_004),
         (5, "Add is_fee_account flag to accounts", _migrate_005),
+        (6, "Add current_balance to floats; create daily_reconciliation_logs", _migrate_006),
     ]:
         if version not in applied:
             fn(conn)

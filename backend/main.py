@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.database import init_db
 from backend.websocket_manager import ConnectionManager
 from backend.routes import auth, accounts, transactions, dashboard, users, exchange_rates, reports, commission_tiers
-from backend.routes import cashier
+from backend.routes import cashier, reconciliation
 from backend.routes import companies, service_types, activity_logs
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ app.include_router(reports.router)
 app.include_router(commission_tiers.router)
 app.include_router(activity_logs.router)
 app.include_router(cashier.router)
+app.include_router(reconciliation.router)
 
 
 @app.websocket("/ws")

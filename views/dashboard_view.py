@@ -45,6 +45,7 @@ from views.settings.user_settings_view import UserSettingsView
 from views.settings.activity_log_view import ActivityLogView
 from views.settings.cash_float_admin_view import CashFloatAdminView
 from views.server_info_view import ServerInfoSubView
+from views.daily_closing_view import DailyClosingView
 
 # ── Colors ──
 BG_DARK = "#1e1e2e"
@@ -103,6 +104,7 @@ _SIDEBAR_GROUPS: list[tuple[str | None, list[tuple[str, int, str]]]] = [
     ]),
     ("admin_group_operations", [
         ("admin_cash_floats",     10, "⊙"),
+        ("nav_daily_closing",     13, "◑"),
     ]),
     ("admin_group_system", [
         ("admin_server_connection", 11, "⌁"),
@@ -1344,6 +1346,7 @@ class DashboardView(QMainWindow):
             CashFloatAdminView(self._api),       # 10 Cash Floats
             ServerInfoSubView(),                 # 11 Server Connection
             PasswordSubView(self._api),          # 12 Change Password
+            DailyClosingView(self._api),         # 13 Daily Closing
         ]:
             self._stack.addWidget(page)
             self._pages.append(page)

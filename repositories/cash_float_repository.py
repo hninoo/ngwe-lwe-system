@@ -5,6 +5,16 @@ from models.cash_float import CashFloat, CashFloatDenomination
 from repositories.cash_denomination_repository import CashDenominationRepository
 
 
+class InsufficientFloatError(Exception):
+    def __init__(self, available: float, required: float) -> None:
+        self.available = available
+        self.required = required
+        super().__init__(
+            f"Insufficient cash in float. "
+            f"Available: {available:,.0f}, Required: {required:,.0f}"
+        )
+
+
 class CashFloatRepository:
 
     def _row_to_float(self, row: dict) -> CashFloat:
@@ -170,7 +180,8 @@ class CashFloatRepository:
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 """UPDATE cash_float_assignments
-                   SET status = 'ACTIVE', received_at = datetime('now')
+                   SET status = 'ACTIVE', received_at = datetime('now'),
+                       current_balance = total_amount
                    WHERE id = ?""",
                 (float_id,),
             )
@@ -255,6 +266,57 @@ class CashFloatRepository:
             note=note,
         )
         return self.get_float(float_id)
+
+    def deduct_float_balance(self, employee_id: int, amount: float) -> float:
+        """Deduct amount from employee's active float current_balance. Raises InsufficientFloatError if too low."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """SELECT id, current_balance FROM cash_float_assignments
+                   WHERE employee_id = ? AND status = 'ACTIVE'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (employee_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError("No active float found for employee")
+            current = float(row["current_balance"] or 0)
+            if amount > current:
+                raise InsufficientFloatError(available=current, required=amount)
+            new_balance = current - amount
+            cursor.execute(
+                "UPDATE cash_float_assignments SET current_balance = ? WHERE id = ?",
+                (new_balance, row["id"]),
+            )
+        return new_balance
+
+    def get_active_employee_float_summaries(self) -> list[dict]:
+        """Return all ACTIVE floats with employee name and current_balance."""
+        with get_cursor() as cursor:
+            cursor.execute(
+                """SELECT cfa.id AS float_id, cfa.employee_id,
+                          u.full_name AS employee_name,
+                          cfa.current_balance, cfa.total_amount, cfa.created_at
+                   FROM cash_float_assignments cfa
+                   JOIN users u ON u.id = cfa.employee_id
+                   WHERE cfa.status = 'ACTIVE'
+                   ORDER BY u.full_name""",
+            )
+            rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    def close_all_active_end_of_day(self) -> int:
+        """Close all ACTIVE floats at end of day. Returns count of closed floats."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """UPDATE cash_float_assignments
+                   SET status = 'CLOSED',
+                       closed_at = datetime('now'),
+                       closing_total = current_balance,
+                       current_balance = 0,
+                       note = COALESCE(note || ' | EOD auto-close', 'EOD auto-close')
+                   WHERE status = 'ACTIVE'""",
+            )
+            return cursor.rowcount
 
     # ─────────────────────────────────────────────────────────────────────────
 

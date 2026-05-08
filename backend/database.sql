@@ -202,16 +202,17 @@ CREATE INDEX IF NOT EXISTS idx_log_created ON activity_logs(created_at);
 -- 10. cash_float_assignments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_float_assignments (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_id  INTEGER NOT NULL,
-    issued_by    INTEGER NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACTIVE','CLOSED')),
-    total_amount REAL NOT NULL DEFAULT 0.00,
-    received_at  TEXT,
-    closed_at    TEXT,
-    closing_total REAL,
-    note         TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id     INTEGER NOT NULL,
+    issued_by       INTEGER NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACTIVE','CLOSED')),
+    total_amount    REAL NOT NULL DEFAULT 0.00,
+    current_balance REAL NOT NULL DEFAULT 0,
+    received_at     TEXT,
+    closed_at       TEXT,
+    closing_total   REAL,
+    note            TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (employee_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (issued_by)   REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
@@ -247,6 +248,33 @@ CREATE TABLE IF NOT EXISTS cash_float_denominations (
 CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(float_id);
 
 -- ============================================================
+-- 13. daily_reconciliation_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS daily_reconciliation_logs (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    recon_date            TEXT NOT NULL,
+    closed_by             INTEGER NOT NULL,
+    closed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    total_deposit         REAL NOT NULL DEFAULT 0,
+    total_withdraw        REAL NOT NULL DEFAULT 0,
+    total_transfer        REAL NOT NULL DEFAULT 0,
+    total_exchange        REAL NOT NULL DEFAULT 0,
+    total_commission      REAL NOT NULL DEFAULT 0,
+    total_customer_fees   REAL NOT NULL DEFAULT 0,
+    main_vault_total      REAL NOT NULL DEFAULT 0,
+    employee_floats_total REAL NOT NULL DEFAULT 0,
+    total_cash            REAL NOT NULL DEFAULT 0,
+    total_digital         REAL NOT NULL DEFAULT 0,
+    grand_total           REAL NOT NULL DEFAULT 0,
+    employee_snapshots    TEXT,
+    account_snapshots     TEXT,
+    vault_snapshot        TEXT,
+    notes                 TEXT,
+    FOREIGN KEY (closed_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_recon_date ON daily_reconciliation_logs(recon_date);
+
+-- ============================================================
 -- SEED DATA
 -- ============================================================
 
@@ -256,7 +284,8 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (2, 'Create cash management tables'),
 (3, 'Add cash approval fields to transactions'),
 (4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions'),
-(5, 'Add is_fee_account flag to accounts');
+(5, 'Add is_fee_account flag to accounts'),
+(6, 'Add current_balance to floats; create daily_reconciliation_logs');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123

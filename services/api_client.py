@@ -402,6 +402,20 @@ class ApiClient:
     def get_daily_report(self, date: str) -> dict:
         return self._get("/reports/daily", params={"date": date})
 
+    # ── Reconciliation ──
+
+    def get_reconciliation_snapshot(self) -> dict:
+        """GET /reconciliation/current — live today's snapshot."""
+        return self._get("/reconciliation/current")
+
+    def close_day(self, notes: Optional[str] = None) -> dict:
+        """POST /reconciliation/close-day — snapshot + close all active floats."""
+        return self._post("/reconciliation/close-day", {"notes": notes})
+
+    def get_reconciliation_history(self, limit: int = 30) -> list[dict]:
+        """GET /reconciliation/history — recent daily reconciliation records."""
+        return self._get("/reconciliation/history", params={"limit": limit})
+
     # ── Commission Tiers ──
 
     def get_commission_tiers(self, service_type_id: int) -> list[dict]:

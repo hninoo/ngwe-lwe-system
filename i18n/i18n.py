@@ -572,6 +572,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "admin_cash_floats":      {"mm": "ငွေသားလုပ်ငန်း",             "en": "Cash Floats"},
     "admin_server_connection": {"mm": "ဆာဗာ ချိတ်ဆက်မှု",          "en": "Server Connection"},
     "admin_change_password":  {"mm": "စကားဝှက်ပြောင်းမည်",        "en": "Change Password"},
+    "nav_daily_closing":      {"mm": "နေ့ ပိတ်သိမ်းမှု",            "en": "Daily Closing"},
 
     # ── Server Connection page ───────────────────────────
     "server_status_label":    {"mm": "ဆာဗာ အခြေအနေ:",             "en": "Server Status:"},
@@ -583,6 +584,31 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "server_copied_msg":      {"mm": "ကူးယူပြီးပါပြီ!",            "en": "Copied to clipboard!"},
     "server_refresh_btn":     {"mm": "IP ပြန်စစ်မည်",              "en": "Refresh IP"},
     "save_password":          {"mm": "စကားဝှက်သိမ်းမည်",           "en": "Save Password"},
+
+    # ── Daily Closing / Reconciliation ───────────────────
+    "closing_title":           {"mm": "နေ့ ပိတ်သိမ်းမှု အစီရင်ခံစာ",  "en": "Daily Closing Report"},
+    "closing_digital_section": {"mm": "ဒစ်ဂျစ်တယ် အကောင့် ငွေပမာဏ", "en": "Digital Account Balances"},
+    "closing_physical_section":{"mm": "ငွေသား (လက်ကိုင်)",            "en": "Physical Cash"},
+    "closing_main_vault":      {"mm": "ပင်မ ငွေသေတ္တာ",               "en": "Main Vault Balance"},
+    "closing_employee_floats": {"mm": "ဝန်ထမ်းများ လက်ကိုင်ငွေ",     "en": "Employee Cash in Hand"},
+    "closing_pending_deposits":{"mm": "ငွေသေတ္တာ မဝင်သေးသော အပ်ငွေ", "en": "Pending Deposits (Not in Vault)"},
+    "col_opening_bal":         {"mm": "ဖွင့်ချိန်",                    "en": "Opening"},
+    "col_net_change":          {"mm": "ကွာခြားချက်",                   "en": "Net Change"},
+    "col_closing_bal":         {"mm": "ပိတ်ချိန်",                    "en": "Closing"},
+    "col_float_balance":       {"mm": "Float ငွေပမာဏ",                "en": "Float Balance"},
+    "closing_total_cash":      {"mm": "ငွေသား စုစုပေါင်း",             "en": "Total Cash Assets"},
+    "closing_total_digital":   {"mm": "ဒစ်ဂျစ်တယ် စုစုပေါင်း",        "en": "Total Digital Assets"},
+    "closing_grand_total":     {"mm": "ကြီးမားသော စုစုပေါင်း",         "en": "Grand Total"},
+    "btn_close_day":           {"mm": "နေ့ ပိတ်မည်",                  "en": "Close Day"},
+    "closing_confirm_title":   {"mm": "နေ့ ပိတ်ရန် သေချာပါသလား?",    "en": "Close Day?"},
+    "closing_confirm_msg":     {
+        "mm": "ဝန်ထမ်းများ Float အားလုံး ပိတ်မည်ဖြစ်ပြီး ညှိနှိုင်းမှု snapshot သိမ်းဆည်းမည်။ ဆက်လက်မည်လား?",
+        "en": "All employee floats will be closed and the reconciliation snapshot will be saved. Continue?",
+    },
+    "closing_day_closed":      {"mm": "နေ့ ပိတ်သိမ်းပြီး။",            "en": "Day closed successfully."},
+    "closing_loading":         {"mm": "ဒေတာ ဆွဲယူနေသည်...",           "en": "Loading data..."},
+    "closing_no_floats":       {"mm": "ACTIVE Float မရှိပါ",           "en": "No active employee floats"},
+    "closing_no_pending":      {"mm": "Pending အပ်ငွေ မရှိပါ",         "en": "No pending deposits"},
 }
 
 
