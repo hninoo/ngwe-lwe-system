@@ -571,6 +571,17 @@ def _migrate_004(conn):
     conn.commit()
 
 
+def _migrate_005(conn):
+    """Add is_fee_account flag to accounts table."""
+    try:
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN is_fee_account INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -583,6 +594,7 @@ def _run_migrations(conn):
         (2, "Create cash management tables", _migrate_002),
         (3, "Add cash approval fields to transactions", _migrate_003),
         (4, "Add companies, service_types; migrate accounts, commission_tiers, and transactions", _migrate_004),
+        (5, "Add is_fee_account flag to accounts", _migrate_005),
     ]:
         if version not in applied:
             fn(conn)

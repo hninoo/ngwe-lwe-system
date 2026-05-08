@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     balance         REAL NOT NULL DEFAULT 0.00,
     commission_rate REAL NOT NULL DEFAULT 0.0000,
     is_active       INTEGER NOT NULL DEFAULT 1,
+    is_fee_account  INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON UPDATE CASCADE ON DELETE RESTRICT
@@ -254,7 +255,8 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (1, 'Add cashier role and pin_hash'),
 (2, 'Create cash management tables'),
 (3, 'Add cash approval fields to transactions'),
-(4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions');
+(4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions'),
+(5, 'Add is_fee_account flag to accounts');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123

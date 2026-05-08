@@ -12,3 +12,4 @@ class Account:
     balance: Optional[float] = None
     commission_rate: Optional[float] = None  # deprecated — use commission_tiers
     is_active: Optional[bool] = None
+    is_fee_account: Optional[bool] = None

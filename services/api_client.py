@@ -149,12 +149,14 @@ class ApiClient:
         account_name: str,
         phone_number: str,
         balance: float = 0.0,
+        is_fee_account: bool = False,
     ) -> dict:
         return self._post("/accounts/", {
             "service_type_id": service_type_id,
             "account_name": account_name,
             "phone_number": phone_number,
             "balance": balance,
+            "is_fee_account": is_fee_account,
         })
 
     def update_account(self, account_id: int, data: dict) -> dict:

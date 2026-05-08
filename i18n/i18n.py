@@ -136,6 +136,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "col_account_number":     {"mm": "အကောင့်နံပါတ်",            "en": "Account Number"},
     "col_customer_phone":     {"mm": "ဖောက်သည်ဖုန်း",            "en": "Customer Phone"},
     "col_fee_account":        {"mm": "ကြေးပေးအကောင့်",           "en": "Fee Account"},
+    "btn_set_fee":            {"mm": "ကြေးအကောင့်သတ်မှတ်",        "en": "Set Fee"},
+    "btn_unset_fee":          {"mm": "ကြေးအကောင့်ဖျက်သိမ်း",      "en": "Unset Fee"},
 
     # ── Transaction form ─────────────────────────────────
     "transaction":            {"mm": "ငွေလွှဲ",                   "en": "Transaction"},

@@ -8,6 +8,7 @@ from typing import Optional
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QDate
 from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -577,6 +578,8 @@ class _AccountDialog(QDialog):
         self._balance_spin = QSpinBox()
         self._balance_spin.setRange(0, 999_999_999)
         self._balance_spin.setSingleStep(1000)
+        self._fee_account_chk = QCheckBox(t("col_fee_account"))
+        self._fee_account_chk.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px;")
 
         for w in (self._company_combo, self._st_combo, self._name_edit,
                   self._phone_edit, self._balance_spin):
@@ -591,6 +594,7 @@ class _AccountDialog(QDialog):
         form.addRow(t("col_phone") + ":", self._phone_edit)
         if not self._account:
             form.addRow(t("col_balance") + ":", self._balance_spin)
+        form.addRow("", self._fee_account_chk)
         layout.addLayout(form)
 
         self._status_lbl = QLabel("")
@@ -625,6 +629,7 @@ class _AccountDialog(QDialog):
         if self._account:
             self._name_edit.setText(self._account.get("account_name", ""))
             self._phone_edit.setText(self._account.get("phone_number", ""))
+            self._fee_account_chk.setChecked(bool(self._account.get("is_fee_account", False)))
 
     def _on_company_changed(self, company_id: int) -> None:
         try:
@@ -654,15 +659,17 @@ class _AccountDialog(QDialog):
             self._status_lbl.setText(t("col_phone") + " required")
             return
 
+        is_fee = self._fee_account_chk.isChecked()
         try:
             if self._account:
                 self._api.update_account(self._account["id"], {
                     "service_type_id": st_id,
                     "account_name": name,
                     "phone_number": phone,
+                    "is_fee_account": is_fee,
                 })
             else:
-                self._api.create_account(st_id, name, phone, float(self._balance_spin.value()))
+                self._api.create_account(st_id, name, phone, float(self._balance_spin.value()), is_fee)
             self.accept()
         except Exception as e:
             self._status_lbl.setText(str(e))
@@ -806,7 +813,8 @@ class AccountsPage(QWidget):
         # ── Table ──
         self._table = make_table([
             t("col_id"), t("col_company"), t("col_name"), t("col_phone"),
-            t("col_service_type"), t("col_balance"), t("col_active"), t("col_action"),
+            t("col_service_type"), t("col_balance"), t("col_active"),
+            t("col_fee_account"), t("col_action"),
         ], 400)
         layout.addWidget(self._table)
         layout.addStretch()
@@ -892,6 +900,7 @@ class AccountsPage(QWidget):
                 self._st_name_map.get(stid, str(stid)),
                 f"{float(acc.get('balance', 0)):,.0f}",
                 t("status_active") if acc.get("is_active") else t("status_inactive"),
+                "✓" if acc.get("is_fee_account") else "—",
             ]
             for col, text in enumerate(items):
                 item = QTableWidgetItem(text)
@@ -901,6 +910,9 @@ class AccountsPage(QWidget):
                     item.setForeground(QColor(ACCENT_GREEN if v >= 0 else ACCENT_RED))
                 if col == 6:
                     c = ACCENT_GREEN if acc.get("is_active") else ACCENT_RED
+                    item.setForeground(QColor(c))
+                if col == 7:
+                    c = ACCENT_TEAL if acc.get("is_fee_account") else TEXT_SECONDARY
                     item.setForeground(QColor(c))
                 self._table.setItem(row, col, item)
 
@@ -922,6 +934,13 @@ class AccountsPage(QWidget):
                 adj_btn.clicked.connect(lambda _, a=acc: self._on_adjust_balance(a))
                 al.addWidget(adj_btn)
 
+                is_fee = bool(acc.get("is_fee_account"))
+                fee_text = t("btn_unset_fee") if is_fee else t("btn_set_fee")
+                fee_color = ACCENT_TEAL if is_fee else "#45475a"
+                fee_btn = _action_btn(fee_text, fee_color)
+                fee_btn.clicked.connect(lambda _, a=acc, cur=is_fee: self._on_toggle_fee(a, cur))
+                al.addWidget(fee_btn)
+
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.VLine)
                 sep.setFixedSize(2, 32)
@@ -941,7 +960,7 @@ class AccountsPage(QWidget):
 
             al.addStretch()
             self._table.setRowHeight(row, 58)
-            self._table.setCellWidget(row, 7, action_widget)
+            self._table.setCellWidget(row, 8, action_widget)
 
     def _show_status(self, msg: str, error: bool = False) -> None:
         color = ACCENT_RED if error else ACCENT_GREEN
@@ -972,6 +991,20 @@ class AccountsPage(QWidget):
             self._api.update_account(account_id, {"is_active": not currently_active})
             self._show_status(
                 t("status_inactive") if currently_active else t("status_active")
+            )
+            self.load_data()
+        except Exception as e:
+            self._show_status(str(e), error=True)
+
+    def _on_toggle_fee(self, account: dict, currently_fee: bool) -> None:
+        try:
+            self._api.update_account(account["id"], {
+                "account_name": account.get("account_name", ""),
+                "phone_number": account.get("phone_number", ""),
+                "is_fee_account": not currently_fee,
+            })
+            self._show_status(
+                t("btn_set_fee") if not currently_fee else t("btn_unset_fee")
             )
             self.load_data()
         except Exception as e:

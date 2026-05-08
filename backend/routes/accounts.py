@@ -26,13 +26,16 @@ class AccountCreate(BaseModel):
     account_name: str
     phone_number: str
     balance: float = 0.0
+    is_fee_account: bool = False
 
 
 class AccountUpdate(BaseModel):
+    service_type_id: Optional[int] = None
     account_name: Optional[str] = None
     phone_number: Optional[str] = None
     balance: Optional[float] = None
     is_active: Optional[bool] = None
+    is_fee_account: Optional[bool] = None
 
 
 _account_vm = AccountViewModel()
@@ -43,10 +46,12 @@ _account_repo = AccountRepository()
 def get_accounts(
     company_id: Optional[int] = None,
     service_type_id: Optional[int] = None,
+    fee_only: bool = False,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
-    if service_type_id is not None:
-        # service_type already implies company; use service_type filter
+    if fee_only:
+        accounts = _account_repo.get_fee_accounts()
+    elif service_type_id is not None:
         accounts = _account_vm.get_accounts_by_service_type(service_type_id)
     elif company_id is not None:
         accounts = _account_vm.get_accounts_by_company(company_id)
@@ -78,6 +83,7 @@ def create_account(
         "account_name": body.account_name,
         "phone_number": body.phone_number,
         "balance": body.balance,
+        "is_fee_account": int(body.is_fee_account),
     })
     return {"message": "Account created", "account_id": account_id}
 
@@ -92,7 +98,11 @@ def update_account(
         raise HTTPException(status_code=403, detail="Owner only")
     data = body.model_dump(exclude_none=True)
     if not data:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        return {"message": "No changes", "account_id": account_id}
+    if "is_fee_account" in data:
+        data["is_fee_account"] = int(data["is_fee_account"])
+    if "is_active" in data:
+        data["is_active"] = int(data["is_active"])
     _account_repo.update(account_id, data)
     return {"message": "Account updated", "account_id": account_id}
 
@@ -139,7 +149,7 @@ def adjust_balance(
             "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
             "VALUES (?, ?, ?, ?, ?)",
             (
-                current_user["id"],
+                current_user["user_id"],
                 "balance_adjust",
                 "account",
                 account_id,

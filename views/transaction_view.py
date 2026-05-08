@@ -434,7 +434,7 @@ class TransactionFormPage(QWidget):
         self._screenshot_path: Optional[str] = None
         self._accounts_cache: list[dict] = []
         self._to_accounts_cache: list[dict] = []
-        self._all_accounts_cache: list[dict] = []
+        self._fee_accounts_cache: list[dict] = []
         self._all_companies_cache: list[dict] = []
         self._init_ui()
 
@@ -845,8 +845,8 @@ class TransactionFormPage(QWidget):
         if idx <= 0:
             return None
         acc_idx = idx - 1
-        if acc_idx < len(self._all_accounts_cache):
-            acc_id = self._all_accounts_cache[acc_idx].get("id")
+        if acc_idx < len(self._fee_accounts_cache):
+            acc_id = self._fee_accounts_cache[acc_idx].get("id")
             return acc_id if acc_id != 0 else None
         return None
 
@@ -916,14 +916,26 @@ class TransactionFormPage(QWidget):
 
     def _load_fee_accounts(self) -> None:
         try:
-            self._all_accounts_cache = [FEE_CASH_ITEM] + self._api.get_accounts()
-            self._fee_account_combo.clear()
-            self._fee_account_combo.addItem(t("select_placeholder"))
-            for a in self._all_accounts_cache:
-                label = f"{a.get('account_name', '')} | {a.get('phone_number', '')}" if a.get("phone_number") else a.get("account_name", "")
-                self._fee_account_combo.addItem(label)
-        except Exception:
-            self._all_accounts_cache = [FEE_CASH_ITEM]
+            all_accounts = self._api.get_accounts()
+            fee_accs = [
+                a for a in all_accounts
+                if int(a.get("is_fee_account") or 0) == 1
+            ]
+            self._fee_accounts_cache = [FEE_CASH_ITEM] + fee_accs
+        except Exception as e:
+            print(f"[fee_accounts] load error: {e}")
+            self._fee_accounts_cache = [FEE_CASH_ITEM]
+
+        self._fee_account_combo.clear()
+        self._fee_account_combo.addItem(t("select_placeholder"))
+        # index 0 = placeholder, index 1 = Cash, index 2+ = fee accounts (is_fee_account=1)
+        for a in self._fee_accounts_cache:
+            label = (
+                f"{a.get('account_name', '')} | {a.get('phone_number', '')}"
+                if a.get("phone_number")
+                else a.get("account_name", "")
+            )
+            self._fee_account_combo.addItem(label)
 
     def _on_company_changed(self, company_id: int) -> None:
         try:
@@ -1156,7 +1168,7 @@ class TransactionFormPage(QWidget):
         for acc in self._accounts_cache:
             if acc.get("id") == account_id:
                 return acc
-        for acc in self._all_accounts_cache:
+        for acc in self._fee_accounts_cache:
             if acc.get("id") == account_id:
                 return acc
         return None

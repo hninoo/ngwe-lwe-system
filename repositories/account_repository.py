@@ -21,6 +21,7 @@ class AccountRepository(BaseRepository):
             balance=float(row["balance"]),
             commission_rate=float(row["commission_rate"]),
             is_active=bool(row["is_active"]),
+            is_fee_account=bool(row.get("is_fee_account", 0)),
         )
 
     def get_all_active(self) -> list[Account]:
@@ -67,6 +68,17 @@ class AccountRepository(BaseRepository):
                 "JOIN service_types st ON a.service_type_id = st.id "
                 "WHERE st.company_id = ? AND a.is_active = 1",
                 (company_id,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
+    def get_fee_accounts(self) -> list[Account]:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT a.*, st.company_id "
+                "FROM accounts a "
+                "JOIN service_types st ON a.service_type_id = st.id "
+                "WHERE a.is_fee_account = 1 AND a.is_active = 1"
             )
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]
