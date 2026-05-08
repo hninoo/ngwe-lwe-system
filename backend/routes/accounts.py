@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
+from backend.database import get_cursor
 from repositories.account_repository import AccountRepository
 from viewmodels.account_viewmodel import AccountViewModel
 
@@ -13,6 +14,11 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 class BalanceUpdate(BaseModel):
     balance: float
+
+
+class BalanceAdjust(BaseModel):
+    amount: float
+    remark: str = ""
 
 
 class AccountCreate(BaseModel):
@@ -112,3 +118,37 @@ def update_balance(
         raise HTTPException(status_code=403, detail="Owner only")
     _account_vm.update_balance(account_id, body.balance)
     return {"message": "Balance updated", "account_id": account_id}
+
+
+@router.post("/{account_id}/balance-adjust")
+def adjust_balance(
+    account_id: int,
+    body: BalanceAdjust,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    account = _account_repo.get_by_id(account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    old_balance = account.balance
+    new_balance = old_balance + body.amount
+    _account_repo.update_balance(account_id, new_balance)
+    with get_cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                current_user["id"],
+                "balance_adjust",
+                "account",
+                account_id,
+                f"amount={body.amount:+.2f} old={old_balance:.2f} new={new_balance:.2f} remark={body.remark}",
+            ),
+        )
+    return {
+        "message": "Balance adjusted",
+        "account_id": account_id,
+        "old_balance": old_balance,
+        "new_balance": new_balance,
+    }

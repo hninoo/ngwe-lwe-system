@@ -160,6 +160,12 @@ class ApiClient:
     def update_account(self, account_id: int, data: dict) -> dict:
         return self._patch(f"/accounts/{account_id}", data)
 
+    def adjust_account_balance(self, account_id: int, amount: float, remark: str) -> dict:
+        return self._post(f"/accounts/{account_id}/balance-adjust", {
+            "amount": amount,
+            "remark": remark,
+        })
+
     def delete_account(self, account_id: int) -> dict:
         resp = requests.delete(
             f"{BASE_URL}/accounts/{account_id}",

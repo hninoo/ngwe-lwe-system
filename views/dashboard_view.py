@@ -20,9 +20,13 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QDoubleSpinBox,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QTextEdit,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -32,6 +36,7 @@ from PyQt6.QtWidgets import (
 
 from services.api_client import ApiClient
 from i18n import t, on_change
+from views.widgets.company_selector import CompanySelector, ServiceTypeSelector
 from views.admin_page import ExchangeRateSubView, CommissionTierSubView, PasswordSubView
 from views.settings.company_settings_view import CompanySettingsView
 from views.settings.service_type_settings_view import ServiceTypeSettingsView
@@ -528,18 +533,274 @@ class TransactionsPage(QWidget):
 
 
 # ════════════════════════════════════════════
+# Accounts CRUD dialogs
+# ════════════════════════════════════════════
+def _ghost_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background: transparent; color: {color}; "
+        f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; }}"
+        f"QPushButton:hover {{ background: {BG_CARD}; }}"
+    )
+    return btn
+
+
+class _AccountDialog(QDialog):
+    """Shared base for Add / Edit account dialogs."""
+
+    def __init__(self, api: ApiClient, parent=None, account: dict | None = None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._account = account
+        self._companies: list[dict] = []
+        self._service_types: list[dict] = []
+        self.setWindowTitle(t("edit_account") if account else t("add_account"))
+        self.setMinimumWidth(400)
+        self._build_ui()
+        self._load_companies()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self._company_combo = CompanySelector()
+        self._st_combo = ServiceTypeSelector()
+        self._name_edit = QLineEdit()
+        self._phone_edit = QLineEdit()
+        self._balance_spin = QSpinBox()
+        self._balance_spin.setRange(0, 999_999_999)
+        self._balance_spin.setSingleStep(1000)
+
+        for w in (self._company_combo, self._st_combo, self._name_edit,
+                  self._phone_edit, self._balance_spin):
+            w.setStyleSheet(
+                f"background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+                f"border: 1px solid {INPUT_BORDER}; border-radius: 6px; padding: 6px 10px;"
+            )
+
+        form.addRow(t("col_company") + ":", self._company_combo)
+        form.addRow(t("col_service_type") + ":", self._st_combo)
+        form.addRow(t("col_name") + ":", self._name_edit)
+        form.addRow(t("col_phone") + ":", self._phone_edit)
+        if not self._account:
+            form.addRow(t("col_balance") + ":", self._balance_spin)
+        layout.addLayout(form)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(f"color: {ACCENT_RED}; font-size: 11px;")
+        layout.addWidget(self._status_lbl)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+        self._company_combo.company_changed.connect(self._on_company_changed)
+
+    def _load_companies(self) -> None:
+        try:
+            self._companies = self._api.get_companies()
+        except Exception:
+            self._companies = []
+        self._company_combo.populate(self._companies, self._api)
+
+        if self._account:
+            cid = self._account.get("company_id")
+            for i in range(self._company_combo.count()):
+                if self._company_combo.itemData(i) == cid:
+                    self._company_combo.setCurrentIndex(i)
+                    break
+        if self._company_combo.count():
+            self._on_company_changed(self._company_combo.currentData() or 0)
+
+        if self._account:
+            self._name_edit.setText(self._account.get("account_name", ""))
+            self._phone_edit.setText(self._account.get("phone_number", ""))
+
+    def _on_company_changed(self, company_id: int) -> None:
+        try:
+            self._service_types = self._api.get_service_types(company_id)
+        except Exception:
+            self._service_types = []
+        self._st_combo.populate(self._service_types)
+        if self._account:
+            stid = self._account.get("service_type_id")
+            for i in range(self._st_combo.count()):
+                if self._st_combo.itemData(i) == stid:
+                    self._st_combo.setCurrentIndex(i)
+                    break
+
+    def _on_accept(self) -> None:
+        st_id = self._st_combo.selected_service_type_id()
+        name = self._name_edit.text().strip()
+        phone = self._phone_edit.text().strip()
+
+        if not st_id:
+            self._status_lbl.setText(t("col_service_type") + " required")
+            return
+        if not name:
+            self._status_lbl.setText(t("col_name") + " required")
+            return
+        if not phone:
+            self._status_lbl.setText(t("col_phone") + " required")
+            return
+
+        try:
+            if self._account:
+                self._api.update_account(self._account["id"], {
+                    "service_type_id": st_id,
+                    "account_name": name,
+                    "phone_number": phone,
+                })
+            else:
+                self._api.create_account(st_id, name, phone, float(self._balance_spin.value()))
+            self.accept()
+        except Exception as e:
+            self._status_lbl.setText(str(e))
+
+
+class _BalanceAdjustDialog(QDialog):
+    def __init__(self, api: ApiClient, account: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._account = account
+        self.setWindowTitle(t("adjust_balance"))
+        self.setMinimumWidth(380)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        current_balance = float(self._account.get("balance", 0))
+        cur_lbl = QLabel(f"{current_balance:,.2f}")
+        cur_lbl.setStyleSheet(f"color: {ACCENT_GREEN}; font-weight: bold; font-size: 14px;")
+        form.addRow(t("lbl_current_balance") + ":", cur_lbl)
+
+        self._amount_spin = QDoubleSpinBox()
+        self._amount_spin.setRange(-999_999_999.0, 999_999_999.0)
+        self._amount_spin.setDecimals(2)
+        self._amount_spin.setSingleStep(1000.0)
+        self._amount_spin.setPrefix("+/- ")
+        self._amount_spin.setStyleSheet(
+            f"background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {INPUT_BORDER}; border-radius: 6px; padding: 6px 10px;"
+        )
+        form.addRow(t("lbl_adjustment") + ":", self._amount_spin)
+
+        self._remark_edit = QTextEdit()
+        self._remark_edit.setFixedHeight(72)
+        self._remark_edit.setStyleSheet(
+            f"background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {INPUT_BORDER}; border-radius: 6px; padding: 6px 10px;"
+        )
+        form.addRow(t("lbl_remark") + ":", self._remark_edit)
+        layout.addLayout(form)
+
+        self._preview_lbl = QLabel("")
+        self._preview_lbl.setStyleSheet(f"color: {ACCENT_YELLOW}; font-size: 12px;")
+        layout.addWidget(self._preview_lbl)
+        self._amount_spin.valueChanged.connect(self._update_preview)
+        self._update_preview(0.0)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(f"color: {ACCENT_RED}; font-size: 11px;")
+        layout.addWidget(self._status_lbl)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def _update_preview(self, _: float = 0.0) -> None:
+        current = float(self._account.get("balance", 0))
+        new_bal = current + self._amount_spin.value()
+        color = ACCENT_GREEN if new_bal >= 0 else ACCENT_RED
+        self._preview_lbl.setText(
+            f"{current:,.2f}  →  "
+            f"<span style='color:{color}; font-weight:bold'>{new_bal:,.2f}</span>"
+        )
+        self._preview_lbl.setTextFormat(Qt.TextFormat.RichText)
+
+    def _on_accept(self) -> None:
+        amount = self._amount_spin.value()
+        remark = self._remark_edit.toPlainText().strip()
+        if amount == 0.0:
+            self._status_lbl.setText(t("lbl_adjustment") + " cannot be 0")
+            return
+        if not remark:
+            self._status_lbl.setText(t("lbl_remark") + " required")
+            return
+        try:
+            self._api.adjust_account_balance(self._account["id"], amount, remark)
+            self.accept()
+        except Exception as e:
+            self._status_lbl.setText(str(e))
+
+
+# ════════════════════════════════════════════
 # Page 2: Accounts management
 # ════════════════════════════════════════════
 class AccountsPage(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
         self._api = api
+        self._company_name_map: dict[int, str] = {}
+        self._st_name_map: dict[int, str] = {}
+        self._companies: list[dict] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
         scroll, layout = scrollable_page()
+
+        # ── Header row ──
+        header_row = QHBoxLayout()
         self._title_label = section_label(t("accounts_title"))
-        layout.addWidget(self._title_label)
+        header_row.addWidget(self._title_label)
+        header_row.addStretch()
+        self._add_btn = accent_btn(t("add_account"), ACCENT_BLUE)
+        self._add_btn.clicked.connect(self._on_add)
+        header_row.addWidget(self._add_btn)
+        refresh_btn = accent_btn(t("refresh"), ACCENT_MAUVE)
+        refresh_btn.clicked.connect(self.load_data)
+        header_row.addWidget(refresh_btn)
+        layout.addLayout(header_row)
+
+        # ── Filter row ──
+        filter_row = QHBoxLayout()
+        self._company_filter = CompanySelector()
+        self._company_filter.setMinimumWidth(160)
+        self._st_filter = ServiceTypeSelector()
+        self._st_filter.setMinimumWidth(160)
+        self._company_filter.company_changed.connect(self._on_filter_company_changed)
+        self._st_filter.service_type_changed.connect(self._on_filter_st_changed)
+        filter_row.addWidget(QLabel(t("col_company") + ":"))
+        filter_row.addWidget(self._company_filter)
+        filter_row.addWidget(QLabel(t("col_service_type") + ":"))
+        filter_row.addWidget(self._st_filter)
+        load_all_btn = accent_btn(t("refresh"), ACCENT_TEAL)
+        load_all_btn.clicked.connect(self.load_data)
+        filter_row.addWidget(load_all_btn)
+        filter_row.addStretch()
+        layout.addLayout(filter_row)
+
+        # ── Status label ──
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 12px;")
+        layout.addWidget(self._status_lbl)
+
+        # ── Table ──
         self._table = make_table([
             t("col_id"), t("col_company"), t("col_name"), t("col_phone"),
             t("col_service_type"), t("col_balance"), t("col_active"), t("col_action"),
@@ -553,20 +814,79 @@ class AccountsPage(QWidget):
 
     def load_data(self) -> None:
         try:
-            accounts = self._api.get_accounts()
+            self._companies = self._api.get_companies()
+        except Exception:
+            self._companies = []
+
+        self._company_name_map = {c["id"]: c.get("name", "") for c in self._companies}
+        self._st_name_map = {}
+        for company in self._companies:
+            try:
+                sts = self._api.get_service_types(company["id"])
+                for st in sts:
+                    self._st_name_map[st["id"]] = st.get("name", "")
+            except Exception:
+                pass
+
+        # Rebuild company filter while keeping current selection
+        selected_cid = self._company_filter.selected_company_id()
+        self._company_filter.blockSignals(True)
+        self._company_filter.populate(self._companies, self._api)
+        if selected_cid is not None:
+            for i in range(self._company_filter.count()):
+                if self._company_filter.itemData(i) == selected_cid:
+                    self._company_filter.setCurrentIndex(i)
+                    break
+        self._company_filter.blockSignals(False)
+
+        cid = self._company_filter.selected_company_id()
+        stid = self._st_filter.selected_service_type_id()
+
+        try:
+            if stid:
+                accounts = self._api.get_accounts(service_type_id=stid)
+            elif cid:
+                accounts = self._api.get_accounts(company_id=cid)
+            else:
+                accounts = self._api.get_accounts()
+            self._populate(accounts)
+        except Exception:
+            pass
+
+        is_owner = (self._api.user or {}).get("role") == "owner"
+        self._add_btn.setVisible(is_owner)
+
+    def _on_filter_company_changed(self, company_id: int) -> None:
+        try:
+            sts = self._api.get_service_types(company_id)
+        except Exception:
+            sts = []
+        self._st_filter.populate(sts)
+        try:
+            accounts = self._api.get_accounts(company_id=company_id)
+            self._populate(accounts)
+        except Exception:
+            pass
+
+    def _on_filter_st_changed(self, st_id: int) -> None:
+        try:
+            accounts = self._api.get_accounts(service_type_id=st_id)
             self._populate(accounts)
         except Exception:
             pass
 
     def _populate(self, accounts: list[dict]) -> None:
+        is_owner = (self._api.user or {}).get("role") == "owner"
         self._table.setRowCount(len(accounts))
         for row, acc in enumerate(accounts):
+            cid = acc.get("company_id", "")
+            stid = acc.get("service_type_id", "")
             items = [
                 str(acc.get("id", "")),
-                str(acc.get("company_id", "")),
+                self._company_name_map.get(cid, str(cid)),
                 acc.get("account_name", ""),
                 acc.get("phone_number", ""),
-                str(acc.get("service_type_id", "")),
+                self._st_name_map.get(stid, str(stid)),
                 f"{float(acc.get('balance', 0)):,.0f}",
                 t("status_active") if acc.get("is_active") else t("status_inactive"),
             ]
@@ -581,13 +901,90 @@ class AccountsPage(QWidget):
                     item.setForeground(QColor(c))
                 self._table.setItem(row, col, item)
 
-            toggle_text = t("btn_deactivate") if acc.get("is_active") else t("btn_activate")
-            toggle_btn = QPushButton(toggle_text)
-            toggle_btn.setStyleSheet(
-                f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_YELLOW}; "
-                f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}"
+            acc_id = acc.get("id")
+            name = acc.get("account_name", "")
+            active = bool(acc.get("is_active"))
+
+            action_widget = QWidget()
+            al = QHBoxLayout(action_widget)
+            al.setContentsMargins(4, 2, 4, 2)
+            al.setSpacing(4)
+
+            if is_owner:
+                edit_btn = _ghost_btn(t("edit"), ACCENT_BLUE)
+                edit_btn.clicked.connect(lambda _, a=acc: self._on_edit(a))
+                al.addWidget(edit_btn)
+
+                adj_btn = _ghost_btn(t("adjust_balance"), ACCENT_YELLOW)
+                adj_btn.clicked.connect(lambda _, a=acc: self._on_adjust_balance(a))
+                al.addWidget(adj_btn)
+
+            toggle_color = ACCENT_RED if active else ACCENT_GREEN
+            toggle_text = t("btn_deactivate") if active else t("btn_activate")
+            toggle_btn = _ghost_btn(toggle_text, toggle_color)
+            toggle_btn.clicked.connect(lambda _, aid=acc_id, cur=active: self._on_toggle(aid, cur))
+            al.addWidget(toggle_btn)
+
+            if is_owner:
+                del_btn = _ghost_btn(t("delete"), ACCENT_RED)
+                del_btn.clicked.connect(lambda _, aid=acc_id, n=name: self._on_delete(aid, n))
+                al.addWidget(del_btn)
+
+            self._table.setCellWidget(row, 7, action_widget)
+
+    def _show_status(self, msg: str, error: bool = False) -> None:
+        color = ACCENT_RED if error else ACCENT_GREEN
+        self._status_lbl.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self._status_lbl.setText(msg)
+        QTimer.singleShot(4000, lambda: self._status_lbl.setText(""))
+
+    def _on_add(self) -> None:
+        dlg = _AccountDialog(self._api, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._show_status(t("account_created"))
+            self.load_data()
+
+    def _on_edit(self, account: dict) -> None:
+        dlg = _AccountDialog(self._api, parent=self, account=account)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._show_status(t("account_updated"))
+            self.load_data()
+
+    def _on_adjust_balance(self, account: dict) -> None:
+        dlg = _BalanceAdjustDialog(self._api, account, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._show_status(t("balance_adjusted"))
+            self.load_data()
+
+    def _on_toggle(self, account_id: int, currently_active: bool) -> None:
+        try:
+            self._api.update_account(account_id, {"is_active": not currently_active})
+            self._show_status(
+                t("status_inactive") if currently_active else t("status_active")
             )
-            self._table.setCellWidget(row, 7, toggle_btn)
+            self.load_data()
+        except Exception as e:
+            self._show_status(str(e), error=True)
+
+    def _on_delete(self, account_id: int, account_name: str) -> None:
+        reply = QMessageBox.warning(
+            self,
+            t("delete_account"),
+            f"{t('confirm_delete_account')}\n\n"
+            f"{t('col_name')}: {account_name}\n"
+            f"ID: {account_id}\n\n"
+            f"{t('action_cannot_be_undone')}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._api.delete_account(account_id)
+            self._show_status(t("account_deleted"))
+            self.load_data()
+        except Exception as e:
+            self._show_status(str(e), error=True)
 
 
 # ════════════════════════════════════════════
