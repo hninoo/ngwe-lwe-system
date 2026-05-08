@@ -404,6 +404,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "server_stopped":         {"mm": "ဆာဗာ ရပ်တန့်သွားသည်။",     "en": "Server stopped."},
     "server_error_title":     {"mm": "ဆာဗာ အမှား",                "en": "Server Error"},
 
+    # ── Startup choice (main.py) ──────────────────────────────
+    "startup_choice_sub":     {"mm": "ဤ Device ကို ဘယ်လိုသုံးမလဲ ရွေးချယ်ပါ",
+                               "en": "Choose how to start this session"},
+    "choice_host_btn":        {"mm": "▶  ဆာဗာ Host & App ဖွင့်မည်",
+                               "en": "▶  Host Server & Open App"},
+    "choice_host_desc":       {"mm": "Backend ကို ဤ machine ပေါ်တွင် start ပြီး App ဖွင့်မည်",
+                               "en": "Start the backend on this machine, then open the app"},
+    "choice_join_btn":        {"mm": "⚡  LAN ဆာဗာသို့ ချိတ်ဆက်မည်",
+                               "en": "⚡  Join LAN Server"},
+    "choice_join_desc":       {"mm": "LAN ပေါ်ရှိ ဆာဗာ IP ထည့်ပြီး App ဖွင့်မည်",
+                               "en": "Enter a server IP on your LAN, then open the app"},
+    "server_starting_msg":    {"mm": "ဆာဗာ စတင်နေသည်...",         "en": "Starting server…"},
+    "server_ready_msg":       {"mm": "ဆာဗာ အသင့်ဖြစ်ပြီ!",        "en": "Server is ready!"},
+    "server_start_failed":    {"mm": "ဆာဗာ မစတင်နိုင်ပါ။ Port 8000 ကို စစ်ဆေးပါ။",
+                               "en": "Server failed to start. Check that port 8000 is free."},
+
     # ── Company / ServiceType settings ───────────────────────
     "settings_companies":     {"mm": "ကုမ္ပဏီများ",               "en": "Companies"},
     "settings_service_types": {"mm": "ဝန်ဆောင်မှုအမျိုးအစားများ","en": "Service Types"},
