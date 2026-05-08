@@ -235,6 +235,7 @@ class CommissionTierSubView(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
         self._api = api
+        self._tiers_data: list[dict] = []
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -375,6 +376,7 @@ class CommissionTierSubView(QWidget):
             return
         try:
             tiers = self._api.get_commission_tiers(st_id)
+            self._tiers_data = tiers
             self._table.setRowCount(len(tiers))
             for row, tier in enumerate(tiers):
                 af = tier.get("amount_from")
@@ -413,11 +415,36 @@ class CommissionTierSubView(QWidget):
         if st_id is None:
             _set_err(self._status, t("err_select_service_type"))
             return
+        # Client-side range validation
+        af_text = self._new_from.text().strip()
+        at_text = self._new_to.text().strip()
+        if not af_text or float(af_text) == 0:
+            _set_err(self._status, t("err_tier_from_required"))
+            return
+        if not at_text or float(at_text) == 0:
+            _set_err(self._status, t("err_tier_to_required"))
+            return
+        af_val = float(af_text)
+        at_val = float(at_text)
+        if at_val <= af_val:
+            _set_err(self._status, t("err_tier_range_order"))
+            return
+        for tier in self._tiers_data:
+            ef = tier.get("amount_from")
+            et = tier.get("amount_to")
+            if ef is None or et is None:
+                continue
+            if af_val < float(et) and at_val > float(ef):
+                _set_err(self._status, t("err_tier_overlap").format(
+                    af=f"{af_val:,.0f}", at=f"{at_val:,.0f}",
+                    ef=f"{float(ef):,.0f}", et=f"{float(et):,.0f}",
+                ))
+                return
         try:
             data = {
                 "service_type_id": st_id,
-                "amount_from": float(self._new_from.text()) if self._new_from.text() else None,
-                "amount_to":   float(self._new_to.text())   if self._new_to.text()   else None,
+                "amount_from": af_val,
+                "amount_to":   at_val,
                 "fee_amount_type":     self._new_fee_type.currentText(),
                 "fee_amount_deposit":  float(self._new_fee.text()   or 0),
                 "fee_amount_withdraw": float(self._new_fee_w.text()  or 0),

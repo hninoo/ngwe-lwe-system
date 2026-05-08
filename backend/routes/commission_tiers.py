@@ -58,6 +58,9 @@ def create_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    err = _tier_repo.check_overlap(body.service_type_id, body.amount_from, body.amount_to)
+    if err:
+        raise HTTPException(status_code=422, detail=err)
     tier_id = _tier_repo.create({
         "service_type_id": body.service_type_id,
         "amount_from": body.amount_from,
@@ -83,6 +86,9 @@ def update_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    err = _tier_repo.check_overlap(body.service_type_id, body.amount_from, body.amount_to, exclude_id=tier_id)
+    if err:
+        raise HTTPException(status_code=422, detail=err)
     _tier_repo.update(tier_id, {
         "service_type_id": body.service_type_id,
         "amount_from": body.amount_from,
