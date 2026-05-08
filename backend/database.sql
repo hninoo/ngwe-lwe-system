@@ -271,21 +271,15 @@ INSERT OR IGNORE INTO companies (name, category, is_active) VALUES
 ('KBZ Bank',     'Bank', 1),
 ('AYA Bank',     'Bank', 1),
 ('CB Bank',      'Bank', 1),
-('MPT Pay',      'Pay',  1),
-('OK Dollar',    'Pay',  1),
-('One Pay',      'Pay',  1),
 ('AYA Pay',      'Pay',  1),
-('Yoma Pay',     'Pay',  1),
-('City Express', 'Pay',  1),
-('KBZ Express',  'Pay',  1),
 ('Thai Bank',    'Bank', 1);
 
 -- Service types per company (Pay: WST + Pay_To_Pay / Bank: Transfer + Exchange)
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
-SELECT id, 'WST',       'All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','MPT Pay','OK Dollar','One Pay','AYA Pay','Yoma Pay','City Express','KBZ Express');
+SELECT id, 'WST',       'All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
-SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','MPT Pay','OK Dollar','One Pay','AYA Pay','Yoma Pay','City Express','KBZ Express');
+SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'Transfer',  'Transfer' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');

@@ -535,13 +535,16 @@ class TransactionsPage(QWidget):
 # ════════════════════════════════════════════
 # Accounts CRUD dialogs
 # ════════════════════════════════════════════
-def _ghost_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:
+def _action_btn(text: str, bg: str, fg: str = BG_DARK) -> QPushButton:
     btn = QPushButton(text)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setFixedHeight(48)
     btn.setStyleSheet(
-        f"QPushButton {{ background: transparent; color: {color}; "
-        f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; }}"
-        f"QPushButton:hover {{ background: {BG_CARD}; }}"
+        f"QPushButton {{ background-color: {bg}; color: {fg}; "
+        f"border: none; border-radius: 6px; padding: 6px 14px; "
+        f"font-size: 13px; font-weight: 600; }}"
+        f"QPushButton:hover {{ background-color: {bg}bb; }}"
+        f"QPushButton:pressed {{ background-color: {bg}88; }}"
     )
     return btn
 
@@ -907,29 +910,37 @@ class AccountsPage(QWidget):
 
             action_widget = QWidget()
             al = QHBoxLayout(action_widget)
-            al.setContentsMargins(4, 2, 4, 2)
+            al.setContentsMargins(6, 2, 6, 2)
             al.setSpacing(4)
 
             if is_owner:
-                edit_btn = _ghost_btn(t("edit"), ACCENT_BLUE)
+                edit_btn = _action_btn(t("edit"), ACCENT_BLUE)
                 edit_btn.clicked.connect(lambda _, a=acc: self._on_edit(a))
                 al.addWidget(edit_btn)
 
-                adj_btn = _ghost_btn(t("adjust_balance"), ACCENT_YELLOW)
+                adj_btn = _action_btn(t("adjust_balance"), ACCENT_YELLOW)
                 adj_btn.clicked.connect(lambda _, a=acc: self._on_adjust_balance(a))
                 al.addWidget(adj_btn)
 
-            toggle_color = ACCENT_RED if active else ACCENT_GREEN
+                sep = QFrame()
+                sep.setFrameShape(QFrame.Shape.VLine)
+                sep.setFixedSize(2, 32)
+                sep.setStyleSheet(f"background-color: {BORDER_COLOR}; border: none;")
+                al.addWidget(sep)
+
+            toggle_bg = ACCENT_RED if active else ACCENT_GREEN
             toggle_text = t("btn_deactivate") if active else t("btn_activate")
-            toggle_btn = _ghost_btn(toggle_text, toggle_color)
+            toggle_btn = _action_btn(toggle_text, toggle_bg)
             toggle_btn.clicked.connect(lambda _, aid=acc_id, cur=active: self._on_toggle(aid, cur))
             al.addWidget(toggle_btn)
 
             if is_owner:
-                del_btn = _ghost_btn(t("delete"), ACCENT_RED)
+                del_btn = _action_btn(t("delete"), "#45475a", ACCENT_RED)
                 del_btn.clicked.connect(lambda _, aid=acc_id, n=name: self._on_delete(aid, n))
                 al.addWidget(del_btn)
 
+            al.addStretch()
+            self._table.setRowHeight(row, 58)
             self._table.setCellWidget(row, 7, action_widget)
 
     def _show_status(self, msg: str, error: bool = False) -> None:
