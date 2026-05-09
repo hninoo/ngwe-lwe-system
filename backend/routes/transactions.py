@@ -8,7 +8,7 @@ from backend.auth import get_current_user
 from backend.websocket_manager import ConnectionManager
 from repositories.cash_float_repository import CashFloatRepository
 from viewmodels.account_viewmodel import AccountViewModel
-from viewmodels.transaction_viewmodel import TransactionViewModel, InsufficientFloatError
+from viewmodels.transaction_viewmodel import TransactionViewModel, InsufficientFloatError, InsufficientDenominationError
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -42,6 +42,7 @@ class WithdrawRequest(BaseModel):
     additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
+    denominations: Optional[dict[str, int]] = None
 
 
 class TransferRequest(BaseModel):
@@ -53,6 +54,7 @@ class TransferRequest(BaseModel):
     additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
+    denominations: Optional[dict[str, int]] = None
 
 
 class ExchangeRequest(BaseModel):
@@ -64,6 +66,7 @@ class ExchangeRequest(BaseModel):
     additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
+    denominations: Optional[dict[str, int]] = None
 
 
 _txn_repo_direct = None  # lazy import to avoid circular
@@ -95,18 +98,21 @@ async def create_deposit(
 ) -> dict:
     if current_user["role"] == "cashier":
         raise HTTPException(403, "Cashiers cannot record transactions")
-    txn = _txn_vm.create_deposit(
-        account_id=body.account_id,
-        amount=body.amount,
-        customer_name=body.customer_name,
-        customer_phone=body.customer_phone,
-        screenshot_path=body.screenshot_path,
-        created_by=current_user["user_id"],
-        customer_fee=body.customer_fee,
-        additional_fee_amount=body.additional_fee_amount,
-        fee_account_id=body.fee_account_id,
-        note=body.note,
-    )
+    try:
+        txn = _txn_vm.create_deposit(
+            account_id=body.account_id,
+            amount=body.amount,
+            customer_name=body.customer_name,
+            customer_phone=body.customer_phone,
+            screenshot_path=body.screenshot_path,
+            created_by=current_user["user_id"],
+            customer_fee=body.customer_fee,
+            additional_fee_amount=body.additional_fee_amount,
+            fee_account_id=body.fee_account_id,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
@@ -124,6 +130,8 @@ async def create_withdraw(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
+        if body.denominations is None:
+            raise HTTPException(422, "Employees must provide denomination breakdown for withdrawals.")
     employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
     try:
         txn = _txn_vm.create_withdraw(
@@ -138,9 +146,12 @@ async def create_withdraw(
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
+            denominations=body.denominations,
         )
-    except InsufficientFloatError as exc:
+    except (InsufficientFloatError, InsufficientDenominationError) as exc:
         raise HTTPException(422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
@@ -158,6 +169,8 @@ async def create_transfer(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
+        if body.denominations is None:
+            raise HTTPException(422, "Employees must provide denomination breakdown for transfers.")
     employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
     try:
         txn = _txn_vm.create_transfer(
@@ -171,9 +184,12 @@ async def create_transfer(
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
+            denominations=body.denominations,
         )
-    except InsufficientFloatError as exc:
+    except (InsufficientFloatError, InsufficientDenominationError) as exc:
         raise HTTPException(422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
@@ -191,6 +207,8 @@ async def create_exchange(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
+        if body.denominations is None:
+            raise HTTPException(422, "Employees must provide denomination breakdown for exchanges.")
     employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
     try:
         txn = _txn_vm.create_exchange(
@@ -204,9 +222,12 @@ async def create_exchange(
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
+            denominations=body.denominations,
         )
-    except InsufficientFloatError as exc:
+    except (InsufficientFloatError, InsufficientDenominationError) as exc:
         raise HTTPException(422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
     await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)

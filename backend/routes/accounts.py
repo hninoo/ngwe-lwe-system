@@ -4,8 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import json
+
 from backend.auth import get_current_user
-from backend.database import get_cursor
+from backend.database import atomic, get_cursor
 from repositories.account_repository import AccountRepository
 from viewmodels.account_viewmodel import AccountViewModel
 
@@ -142,20 +144,25 @@ def adjust_balance(
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     old_balance = account.balance
-    new_balance = old_balance + body.amount
-    _account_repo.update_balance(account_id, new_balance)
-    with get_cursor(commit=True) as cursor:
-        cursor.execute(
-            "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                current_user["user_id"],
-                "balance_adjust",
-                "account",
-                account_id,
-                f"amount={body.amount:+.2f} old={old_balance:.2f} new={new_balance:.2f} remark={body.remark}",
-            ),
-        )
+    new_balance = round(old_balance + body.amount, 2)
+    with atomic():
+        _account_repo.increment_balance(account_id, body.amount)
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
+                "VALUES (?, ?, 'account', ?, ?)",
+                (
+                    current_user["user_id"],
+                    "balance_adjust",
+                    account_id,
+                    json.dumps({
+                        "amount": body.amount,
+                        "old_balance": old_balance,
+                        "new_balance": new_balance,
+                        "remark": body.remark,
+                    }),
+                ),
+            )
     return {
         "message": "Balance adjusted",
         "account_id": account_id,

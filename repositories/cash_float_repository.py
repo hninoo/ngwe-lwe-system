@@ -298,47 +298,11 @@ class CashFloatRepository:
 
         return self.get_float(float_id)
 
-    def close_float(
-        self,
-        float_id: int,
-        closing_denominations: dict[int, int],
-        denom_repo: CashDenominationRepository,
-        note: Optional[str] = None,
-    ) -> CashFloat:
-        """Set status=CLOSED, closed_at=now, closing_total=sum, record float_returned."""
-        cash_float = self.get_float(float_id)
-        if cash_float is None:
-            raise ValueError(f"Float {float_id} not found")
-        if cash_float.status not in ("ACTIVE", "PENDING", "PENDING_RECEIPT", "PENDING_RECONCILIATION"):
-            raise ValueError(f"Float {float_id} cannot be closed (status={cash_float.status})")
-
-        closing_total = sum(
-            denom * qty for denom, qty in closing_denominations.items() if qty > 0
+    def close_float(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "close_float() is removed. Use VaultService.confirm_return() "
+            "(employee initiate-return → cashier confirm-return with PIN)."
         )
-
-        with get_cursor(commit=True) as cursor:
-            cursor.execute(
-                """UPDATE cash_float_assignments
-                   SET status = 'CLOSED',
-                       closed_at = datetime('now'),
-                       closing_total = ?,
-                       note = COALESCE(?, note)
-                   WHERE id = ?""",
-                (closing_total, note, float_id),
-            )
-
-        # Record float_returned for denominations being returned
-        returned = {d: q for d, q in closing_denominations.items() if q > 0}
-        if returned:
-            denom_repo.record_bulk_entry(
-                entry_type="float_returned",
-                denominations=returned,
-                created_by=cash_float.employee_id,
-                float_id=float_id,
-                note=note or f"Float #{float_id} closed",
-            )
-
-        return self.get_float(float_id)
 
     # ── Convenience wrappers called by the cashier route ─────────────────────
 

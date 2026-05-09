@@ -112,18 +112,10 @@ class CashierViewModel:
             raise ValueError("Invalid PIN")
         return self._float_repo.activate_float(float_id, self._denom_repo)
 
-    def close_float(
-        self,
-        float_id: int,
-        closing_denominations: dict[int, int],
-        note: Optional[str] = None,
-    ) -> CashFloat:
-        """Close a float with denomination return."""
-        return self._float_repo.close_float(
-            float_id=float_id,
-            closing_denominations=closing_denominations,
-            denom_repo=self._denom_repo,
-            note=note,
+    def close_float(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "close_float() is removed. Use VaultService.confirm_return() "
+            "(employee initiate-return → cashier confirm-return with PIN)."
         )
 
     def get_vault_logs(self, limit: int = 100) -> list[CashDenominationLog]:
