@@ -327,6 +327,10 @@ class ApiClient:
     def get_users(self) -> list[dict]:
         return self._get("/users/")
 
+    def get_employees(self) -> list[dict]:
+        """Return active employees. Usable by cashier and owner tokens."""
+        return self._get("/users/employees")
+
     def create_user(
         self,
         username: str,

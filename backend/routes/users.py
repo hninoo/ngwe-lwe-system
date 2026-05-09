@@ -50,6 +50,17 @@ def get_users(current_user: dict = Depends(get_current_user)) -> list[dict]:
     return [asdict(u) for u in users]
 
 
+@router.get("/employees")
+def list_employees(current_user: dict = Depends(get_current_user)) -> list[dict]:
+    """Return active employees. Accessible to cashiers (needed for float issuance)."""
+    if current_user["role"] not in ("owner", "cashier"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return [
+        {"id": u.id, "full_name": u.full_name, "username": u.username}
+        for u in _user_repo.get_employees()
+    ]
+
+
 @router.post("/")
 def create_user(
     body: CreateUserRequest,

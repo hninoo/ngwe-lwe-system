@@ -753,8 +753,7 @@ class IssueFloatPage(QWidget):
 
     def load_data(self) -> None:
         try:
-            users = self._api.get_users()
-            self._employees = [u for u in users if u.get("role") == "employee" and u.get("is_active")]
+            self._employees = self._api.get_employees()
             if self._employee_combo:
                 self._employee_combo.clear()
                 for u in self._employees:
