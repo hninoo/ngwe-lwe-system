@@ -101,7 +101,6 @@ STYLESHEET = f"""
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
         border: 1px solid {ACCENT_BLUE};
     }}
-    QComboBox::drop-down {{ border: none; }}
     QComboBox QAbstractItemView {{
         background-color: {BG_INPUT}; color: {TEXT_PRIMARY};
         selection-background-color: {BG_CARD};
@@ -270,9 +269,9 @@ class VaultEntryDialog(QDialog):
             denom_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
 
             spin = QSpinBox()
-            spin.setRange(0, 9999)
+            spin.setRange(0, 99_999_999)
             spin.setValue(0)
-            spin.setFixedWidth(90)
+            spin.setFixedWidth(130)
             self._spinboxes[denom] = spin
 
             val_lbl = QLabel("0")
@@ -650,7 +649,18 @@ class IssueFloatPage(QWidget):
         emp_row.addWidget(QLabel(t("employee_label")))
         self._employee_combo = QComboBox()
         self._employee_combo.setFixedWidth(280)
+        self._employee_combo.setMinimumHeight(34)
+        # Minimal explicit colours — no ::drop-down subcontrol so Fusion still
+        # renders the dropdown button natively (subcontrols trigger CSS-mode).
+        self._employee_combo.setStyleSheet(
+            f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {INPUT_BORDER}; padding: 4px 8px; }}"
+        )
         emp_row.addWidget(self._employee_combo)
+        refresh_emp_btn = _accent_btn(t("refresh"), ACCENT_BLUE)
+        refresh_emp_btn.setFixedWidth(80)
+        refresh_emp_btn.clicked.connect(self.load_data)
+        emp_row.addWidget(refresh_emp_btn)
         emp_row.addStretch()
         layout.addLayout(emp_row)
 
@@ -680,9 +690,9 @@ class IssueFloatPage(QWidget):
             d_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
 
             spin = QSpinBox()
-            spin.setRange(0, 9999)
+            spin.setRange(0, 99_999_999)
             spin.setValue(0)
-            spin.setFixedWidth(100)
+            spin.setFixedWidth(130)
             self._spinboxes[denom] = spin
 
             val_lbl = QLabel("0")
@@ -754,12 +764,25 @@ class IssueFloatPage(QWidget):
     def load_data(self) -> None:
         try:
             self._employees = self._api.get_employees()
-            if self._employee_combo:
+            if self._employee_combo is not None:
                 self._employee_combo.clear()
                 for u in self._employees:
-                    self._employee_combo.addItem(u.get("full_name", u.get("username", "")), u.get("id"))
-        except Exception:
-            pass
+                    name = (
+                        (u.get("full_name") or "").strip()
+                        or (u.get("username") or "").strip()
+                        or f"Employee #{u.get('id', '?')}"
+                    )
+                    self._employee_combo.addItem(name, u.get("id"))
+                if self._employees:
+                    self._employee_combo.setCurrentIndex(0)
+                self._employee_combo.update()
+            count = len(self._employees)
+            if count == 0:
+                self._show_status("No active employees found in database.", is_error=True)
+            else:
+                self._show_status(f"{count} employee(s) loaded.", is_error=False)
+        except Exception as e:
+            self._show_status(f"Failed to load employees: {e}", is_error=True)
 
     def _on_issue(self) -> None:
         if not self._employee_combo or self._employee_combo.count() == 0:
@@ -796,6 +819,9 @@ class IssueFloatPage(QWidget):
             self._issue_btn.setText(t("issue_float_btn"))
 
     def _show_status(self, message: str, is_error: bool = True) -> None:
+        if not message:
+            self._status_label.setVisible(False)
+            return
         color = ACCENT_RED if is_error else ACCENT_GREEN
         self._status_label.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
         self._status_label.setText(message)
@@ -976,9 +1002,9 @@ class CashApprovalDialog(QDialog):
             d_lbl.setStyleSheet(f"color: {TEXT_SECONDARY};")
 
             spin = QSpinBox()
-            spin.setRange(0, 9999)
+            spin.setRange(0, 99_999_999)
             spin.setValue(0)
-            spin.setFixedWidth(90)
+            spin.setFixedWidth(130)
             self._spinboxes[denom] = spin
 
             val_lbl = QLabel("0")

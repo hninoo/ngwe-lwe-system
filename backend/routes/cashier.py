@@ -63,6 +63,17 @@ class ReceivedCashRequest(BaseModel):
     note: Optional[str] = None
 
 
+# ── Employees (cashier-accessible) ──
+
+@router.get("/employees")
+def list_employees(current_user: dict = Depends(get_current_user)) -> list[dict]:
+    """Active employees visible to cashier for float issuance."""
+    return [
+        {"id": u.id, "full_name": u.full_name, "username": u.username}
+        for u in _user_repo.get_employees()
+    ]
+
+
 # ── Helpers ──
 
 def _parse_denominations(raw: dict[str, int]) -> dict[int, int]:

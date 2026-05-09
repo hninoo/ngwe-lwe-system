@@ -57,7 +57,7 @@ os.environ.setdefault("WS_URL",       "ws://127.0.0.1:8000/ws")
 import requests
 import uvicorn
 from PyQt6.QtCore    import Qt, QThread, QTimer, QObject, pyqtSignal
-from PyQt6.QtGui     import QFont, QIcon
+from PyQt6.QtGui     import QColor, QFont, QIcon, QPalette
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QWidget,
     QVBoxLayout, QFormLayout, QGroupBox,
@@ -508,6 +508,26 @@ def _open_login(
 # ──────────────────────────────────────────────────────────
 def main() -> None:
     app = QApplication(sys.argv)
+
+    # Fusion + dark palette: Fusion respects QPalette for rendering internals
+    # (combo box display-area text, spin box buttons, etc.) whereas the Windows 11
+    # native renderer ignores stylesheet colours entirely.
+    app.setStyle("Fusion")
+    _dark = QPalette()
+    _dark.setColor(QPalette.ColorRole.Window,          QColor("#1e1e2e"))
+    _dark.setColor(QPalette.ColorRole.WindowText,      QColor("#cdd6f4"))
+    _dark.setColor(QPalette.ColorRole.Base,            QColor("#313244"))
+    _dark.setColor(QPalette.ColorRole.AlternateBase,   QColor("#2a2a3e"))
+    _dark.setColor(QPalette.ColorRole.Text,            QColor("#cdd6f4"))
+    _dark.setColor(QPalette.ColorRole.BrightText,      QColor("#cdd6f4"))
+    _dark.setColor(QPalette.ColorRole.Button,          QColor("#313244"))
+    _dark.setColor(QPalette.ColorRole.ButtonText,      QColor("#cdd6f4"))
+    _dark.setColor(QPalette.ColorRole.Highlight,       QColor("#89b4fa"))
+    _dark.setColor(QPalette.ColorRole.HighlightedText, QColor("#1e1e2e"))
+    _dark.setColor(QPalette.ColorRole.ToolTipBase,     QColor("#2a2a3e"))
+    _dark.setColor(QPalette.ColorRole.ToolTipText,     QColor("#cdd6f4"))
+    _dark.setColor(QPalette.ColorRole.PlaceholderText, QColor("#6c7086"))
+    app.setPalette(_dark)
 
     # Set the app icon once — all windows and dialogs in this process inherit it
     _icon = QIcon(_ICON_PATH)

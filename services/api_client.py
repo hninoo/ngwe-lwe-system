@@ -33,20 +33,36 @@ class ApiClient:
             return {}
         return {"Authorization": f"Bearer {self._token}"}
 
+    @staticmethod
+    def _raise_for_status(resp: requests.Response) -> None:
+        """Raise HTTPError with the backend's JSON detail message, not just the status line."""
+        if resp.ok:
+            return
+        try:
+            detail = resp.json().get("detail") or resp.text
+            if isinstance(detail, dict):
+                detail = detail.get("message", str(detail))
+        except Exception:
+            detail = resp.text or resp.reason
+        raise requests.HTTPError(
+            f"{resp.status_code} {resp.reason}: {detail}",
+            response=resp,
+        )
+
     def _get(self, path: str, params: Optional[dict] = None) -> Any:
         resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), params=params, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     def _get_raw(self, path: str) -> bytes:
         """Return raw response bytes (for logo/binary endpoints)."""
         resp = requests.get(f"{BASE_URL}{path}", headers=self._headers(), timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.content
 
     def _post(self, path: str, data: Optional[dict] = None) -> Any:
         resp = requests.post(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     def _post_multipart(self, path: str, file_bytes: bytes, mime_type: str, field: str = "file") -> Any:
@@ -57,12 +73,12 @@ class ApiClient:
             files={field: ("logo", file_bytes, mime_type)},
             timeout=REQUEST_TIMEOUT,
         )
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     def _patch(self, path: str, data: Optional[dict] = None) -> Any:
         resp = requests.patch(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        self._raise_for_status(resp)
         return resp.json()
 
     # ── Auth ──
@@ -328,8 +344,8 @@ class ApiClient:
         return self._get("/users/")
 
     def get_employees(self) -> list[dict]:
-        """Return active employees. Usable by cashier and owner tokens."""
-        return self._get("/users/employees")
+        """Return active employees. Uses the cashier-domain endpoint so cashier tokens work."""
+        return self._get("/cashier/employees")
 
     def create_user(
         self,
