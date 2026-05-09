@@ -205,7 +205,12 @@ class ReceiveFloatDialog(QDialog):
 
         try:
             float_id = self._float_data["id"]
-            self._api.receive_float(float_id, pin)
+            denoms = {
+                str(d["denomination"]): int(d["quantity"])
+                for d in self._float_data.get("denominations", [])
+                if int(d.get("quantity", 0)) > 0
+            }
+            self._api.receive_float(float_id, pin, denoms)
             self.accept()
         except Exception as e:
             error_text = str(e)

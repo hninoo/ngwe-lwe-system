@@ -378,20 +378,6 @@ class CashFloatRepository:
             rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
-    def close_all_active_end_of_day(self) -> int:
-        """Close all ACTIVE and PENDING_RECONCILIATION floats at end of day."""
-        with get_cursor(commit=True) as cursor:
-            cursor.execute(
-                """UPDATE cash_float_assignments
-                   SET status = 'CLOSED',
-                       closed_at = datetime('now'),
-                       closing_total = current_balance,
-                       current_balance = 0,
-                       note = COALESCE(note || ' | EOD auto-close', 'EOD auto-close')
-                   WHERE status IN ('ACTIVE','PENDING_RECONCILIATION')""",
-            )
-            return cursor.rowcount
-
     # ─────────────────────────────────────────────────────────────────────────
 
     def get_float_denominations(self, float_id: int) -> list[CashFloatDenomination]:

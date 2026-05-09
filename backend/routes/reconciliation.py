@@ -49,6 +49,16 @@ def close_day(
     if current_user["role"] != "owner":
         raise HTTPException(403, "Owner only")
 
+    open_floats = _float_repo.get_active_employee_float_summaries()
+    if open_floats:
+        names = ", ".join(f["employee_name"] for f in open_floats)
+        raise HTTPException(
+            400,
+            f"Cannot close day while there are active or pending floats. "
+            f"All floats must be returned and confirmed via PIN handover. "
+            f"Outstanding float holders: {names}",
+        )
+
     snapshot = _build_snapshot()
 
     recon_id = _recon_repo.save({
@@ -70,9 +80,6 @@ def close_day(
         "vault_snapshot": json.dumps(snapshot["vault_denominations"]),
         "notes": body.notes,
     })
-
-    # Close all active employee floats — end of day
-    _float_repo.close_all_active_end_of_day()
 
     # Automated backup after successful day close
     try:
