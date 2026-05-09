@@ -73,11 +73,7 @@ class TransactionViewModel:
     def _update_fee_account(self, fee_account_id: Optional[int], fee: float) -> None:
         if fee_account_id is None or fee <= 0:
             return
-        acc = self._account_repo.get_by_id(fee_account_id)
-        if acc is None:
-            return
-        new_balance = (acc.balance or 0.0) + fee
-        self._account_repo.update_balance(fee_account_id, new_balance)
+        self._account_repo.increment_balance(fee_account_id, fee)
 
     def create_deposit(
         self,
@@ -99,8 +95,7 @@ class TransactionViewModel:
         from_company_id = self._get_company_id(account.service_type_id)
 
         with atomic():
-            new_balance = (account.balance or 0.0) + amount
-            self._account_repo.update_balance(account_id, new_balance)
+            self._account_repo.increment_balance(account_id, amount)
             self._update_fee_account(fee_account_id, customer_fee)
             data = {
                 "transaction_type": "deposit",
@@ -166,8 +161,7 @@ class TransactionViewModel:
 
         # ── Writes (validation passed) ─────────────────────────────────────────
         with atomic():
-            new_balance = (account.balance or 0.0) - amount
-            self._account_repo.update_balance(account_id, new_balance)
+            self._account_repo.increment_balance(account_id, -amount)
 
             data = {
                 "transaction_type": "withdraw",
@@ -247,11 +241,8 @@ class TransactionViewModel:
 
         # ── Writes ─────────────────────────────────────────────────────────────
         with atomic():
-            from_balance = (from_account.balance or 0.0) - balance_change
-            self._account_repo.update_balance(from_account_id, from_balance)
-
-            to_balance = (to_account.balance or 0.0) + amount
-            self._account_repo.update_balance(to_account_id, to_balance)
+            self._account_repo.increment_balance(from_account_id, -balance_change)
+            self._account_repo.increment_balance(to_account_id, amount)
 
             data = {
                 "transaction_type": "transfer",
@@ -338,8 +329,7 @@ class TransactionViewModel:
 
         # ── Writes ─────────────────────────────────────────────────────────────
         with atomic():
-            new_balance = (account.balance or 0.0) + balance_change
-            self._account_repo.update_balance(account_id, new_balance)
+            self._account_repo.increment_balance(account_id, balance_change)
 
             data = {
                 "transaction_type": "exchange",

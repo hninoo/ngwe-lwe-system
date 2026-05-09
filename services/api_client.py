@@ -67,6 +67,10 @@ class ApiClient:
 
     # ── Auth ──
 
+    def get_ws_ticket(self) -> str:
+        """Request a one-time WebSocket auth ticket from the server."""
+        return self._post("/ws-ticket")["ticket"]
+
     def login(self, username: str, password: str) -> dict:
         result = self._post("/auth/login", {"username": username, "password": password})
         self._token = result["token"]

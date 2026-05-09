@@ -118,15 +118,18 @@ STYLESHEET = f"""
 class WebSocketThread(QThread):
     message_received = pyqtSignal(str)
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, ticket_fn=None) -> None:
         super().__init__()
-        self._url = url
+        self._base_url = url
+        self._ticket_fn = ticket_fn
         self._running = True
 
     def run(self) -> None:
         try:
             import websockets.sync.client as ws_client
-            with ws_client.connect(self._url) as ws:
+            ticket = self._ticket_fn() if self._ticket_fn else ""
+            connect_url = f"{self._base_url}?ticket={ticket}" if ticket else self._base_url
+            with ws_client.connect(connect_url) as ws:
                 while self._running:
                     try:
                         msg = ws.recv(timeout=5)
@@ -1425,7 +1428,12 @@ class CashierView(QMainWindow):
         self._load_current_page()
 
     def _start_websocket(self) -> None:
-        self._ws_thread = WebSocketThread(WS_URL)
+        def _get_ticket() -> str:
+            try:
+                return self._api.get_ws_ticket()
+            except Exception:
+                return ""
+        self._ws_thread = WebSocketThread(WS_URL, ticket_fn=_get_ticket)
         self._ws_thread.message_received.connect(self._on_ws_message)
         self._ws_thread.start()
 

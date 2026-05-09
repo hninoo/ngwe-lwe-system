@@ -39,8 +39,12 @@ def _get_or_create_app_secret() -> str:
     try:
         with open(secret_file, "w") as f:
             f.write(secret)
-    except Exception:
-        pass
+    except Exception as exc:
+        raise RuntimeError(
+            f"Cannot write app secret to {secret_file}. "
+            "All active sessions will be invalidated on restart. "
+            f"Fix the file permissions or LOCALAPPDATA path. Underlying error: {exc}"
+        ) from exc
     return secret
 
 

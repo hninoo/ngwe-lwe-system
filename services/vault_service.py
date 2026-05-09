@@ -16,6 +16,7 @@ from typing import Optional
 
 import bcrypt
 
+from backend.database import atomic
 from models.cash_float import CashFloat
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository, InsufficientFloatError
@@ -105,30 +106,36 @@ class VaultService:
             raise ValueError("Denomination breakdown must not be empty.")
         total = self._total(denoms)
 
-        float_id = self._float_repo.create_float(
-            employee_id=employee_id,
-            issued_by=cashier_id,
-            denominations=denoms,
-            total_amount=total,
-            note=note,
-        )
+        with atomic():
+            available = self._denom_repo.get_vault_balance()
+            for denom, qty in denoms.items():
+                if qty > available.get(denom, 0):
+                    raise InsufficientDenominationError(denom, available.get(denom, 0), qty)
 
-        # Main vault debited immediately at issuance
-        self._denom_repo.record_bulk_entry(
-            entry_type="vault_out",
-            denominations=denoms,
-            created_by=cashier_id,
-            float_id=float_id,
-            note=note or f"Float #{float_id} issued to employee #{employee_id}",
-        )
+            float_id = self._float_repo.create_float(
+                employee_id=employee_id,
+                issued_by=cashier_id,
+                denominations=denoms,
+                total_amount=total,
+                note=note,
+            )
 
-        self._vault_txn_repo.record_bulk(
-            txn_type="float_issue",
-            float_id=float_id,
-            denominations=denoms,
-            performed_by=cashier_id,
-            note=note,
-        )
+            # Main vault debited immediately at issuance
+            self._denom_repo.record_bulk_entry(
+                entry_type="vault_out",
+                denominations=denoms,
+                created_by=cashier_id,
+                float_id=float_id,
+                note=note or f"Float #{float_id} issued to employee #{employee_id}",
+            )
+
+            self._vault_txn_repo.record_bulk(
+                txn_type="float_issue",
+                float_id=float_id,
+                denominations=denoms,
+                performed_by=cashier_id,
+                note=note,
+            )
 
         return self._float_repo.get_float(float_id)
 

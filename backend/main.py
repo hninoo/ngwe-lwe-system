@@ -3,12 +3,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.auth import decode_token
+from backend.auth import get_current_user
 from backend.database import init_db
-from backend.websocket_manager import ConnectionManager
+from backend.websocket_manager import ConnectionManager, TicketStore
 from backend.routes import auth, accounts, transactions, dashboard, users, exchange_rates, reports, commission_tiers
 from backend.routes import cashier, reconciliation
 from backend.routes import companies, service_types, activity_logs
@@ -43,6 +43,7 @@ app.add_middleware(
 )
 
 ws_manager = ConnectionManager()
+ticket_store = TicketStore(ttl=30)
 
 # Inject ws_manager into transactions route
 transactions.ws_manager = ws_manager
@@ -62,15 +63,16 @@ app.include_router(cashier.router)
 app.include_router(reconciliation.router)
 
 
+@app.post("/ws-ticket")
+def get_ws_ticket(current_user: dict = Depends(get_current_user)) -> dict:
+    """Issue a short-lived one-time ticket for WebSocket auth (avoids JWT in logs)."""
+    return {"ticket": ticket_store.issue()}
+
+
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
-    if not token:
-        await websocket.close(code=1008, reason="Missing token")
-        return
-    try:
-        decode_token(token)
-    except Exception:
-        await websocket.close(code=1008, reason="Invalid or expired token")
+async def websocket_endpoint(websocket: WebSocket, ticket: str = "") -> None:
+    if not ticket or not ticket_store.consume(ticket):
+        await websocket.close(code=1008, reason="Invalid or expired ticket")
         return
     await ws_manager.connect(websocket)
     try:

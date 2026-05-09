@@ -27,7 +27,7 @@ class BackupService:
     def create_backup(self) -> Path:
         """Online-copy the live DB to the backups directory, then prune stale files."""
         self._backup_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         dest = self._backup_dir / f"ngwelwe_backup_{timestamp}.db"
 
         src = sqlite3.connect(str(self._db_path))
@@ -37,6 +37,16 @@ class BackupService:
         finally:
             dst.close()
             src.close()
+
+        check = sqlite3.connect(str(dest))
+        try:
+            results = check.execute("PRAGMA integrity_check").fetchall()
+        finally:
+            check.close()
+
+        if not results or results[0][0] != "ok":
+            dest.unlink(missing_ok=True)
+            raise RuntimeError(f"Backup integrity check failed: {results}")
 
         logger.info("Backup created: %s", dest)
         self._prune()

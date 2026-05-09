@@ -1,7 +1,31 @@
 import json
+import secrets
+import time
 from typing import Any
 
 from fastapi import WebSocket
+
+
+class TicketStore:
+    """One-time use tickets for WebSocket auth so JWTs never appear in server logs."""
+
+    def __init__(self, ttl: int = 30) -> None:
+        self._tickets: dict[str, float] = {}
+        self._ttl = ttl
+
+    def issue(self) -> str:
+        self._cleanup()
+        ticket = secrets.token_hex(32)
+        self._tickets[ticket] = time.time() + self._ttl
+        return ticket
+
+    def consume(self, ticket: str) -> bool:
+        expiry = self._tickets.pop(ticket, None)
+        return expiry is not None and time.time() < expiry
+
+    def _cleanup(self) -> None:
+        now = time.time()
+        self._tickets = {t: e for t, e in self._tickets.items() if e > now}
 
 
 class ConnectionManager:

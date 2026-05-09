@@ -85,3 +85,12 @@ class AccountRepository(BaseRepository):
 
     def update_balance(self, account_id: int, new_balance: float) -> bool:
         return self.update(account_id, {"balance": new_balance})
+
+    def increment_balance(self, account_id: int, delta: float) -> bool:
+        """Atomically apply delta (positive or negative) to account balance."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "UPDATE accounts SET balance = balance + ? WHERE id = ?",
+                (delta, account_id),
+            )
+            return cursor.rowcount > 0

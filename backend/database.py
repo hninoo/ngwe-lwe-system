@@ -20,6 +20,15 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _connect_immediate() -> sqlite3.Connection:
+    """Open a connection in manual-transaction mode for BEGIN IMMEDIATE locking."""
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, isolation_level=None)
+    conn.row_factory = lambda cur, row: dict(zip([col[0] for col in cur.description], row))
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
 @contextmanager
 def get_connection():
     conn = _connect()
@@ -35,18 +44,23 @@ _atomic_conn: ContextVar[sqlite3.Connection | None] = ContextVar("_atomic_conn",
 @contextmanager
 def atomic():
     """Wrap multiple get_cursor() calls in a single atomic DB transaction.
+    Uses BEGIN IMMEDIATE to serialize concurrent writers and prevent TOCTOU races.
     All writes commit together on exit; any exception rolls back everything."""
     existing = _atomic_conn.get()
     if existing is not None:
         yield existing
         return
-    conn = _connect()
+    conn = _connect_immediate()
     token = _atomic_conn.set(conn)
     try:
+        conn.execute("BEGIN IMMEDIATE")
         yield conn
-        conn.commit()
+        conn.execute("COMMIT")
     except Exception:
-        conn.rollback()
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
         raise
     finally:
         _atomic_conn.reset(token)

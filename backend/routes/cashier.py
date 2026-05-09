@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
+from backend.database import atomic
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.transaction_repository import TransactionRepository
@@ -302,26 +303,29 @@ def close_float(
     body: CloseFloatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Legacy close endpoint — still supported for backwards compatibility."""
+    """Emergency close — owner-only with mandatory audit note.
+    Normal path: employee initiate-return → cashier confirm-return."""
+    if current_user["role"] != "owner":
+        raise HTTPException(
+            403,
+            "Emergency close is owner-only. "
+            "Use initiate-return and confirm-return for the normal float closure flow."
+        )
+    if not body.note or not body.note.strip():
+        raise HTTPException(400, "Emergency close requires an audit reason in the note field.")
+
     cash_float = _float_repo.get_float(float_id)
     if cash_float is None:
         raise HTTPException(404, "Float not found")
 
-    role = current_user["role"]
-    if role == "employee":
-        if cash_float.employee_id != current_user["user_id"]:
-            raise HTTPException(403, "This float is not assigned to you")
-    elif role != "cashier":
-        raise HTTPException(403, "Access denied")
-
+    if cash_float.status == "CLOSED":
+        raise HTTPException(409, "Float is already closed.")
     if cash_float.status == "PENDING_RECONCILIATION":
         raise HTTPException(
             409,
             "Float is awaiting reconciliation. Use the confirm-return endpoint "
             "(cashier PIN required) to close it."
         )
-    if cash_float.status not in ("ACTIVE", "PENDING_RECEIPT"):
-        raise HTTPException(409, f"Float cannot be closed (status={cash_float.status})")
 
     closing_denoms = _parse_denominations(body.closing_denominations)
     updated = _float_repo.close_float(
@@ -348,8 +352,6 @@ def approve_transaction(
     txn = txn_repo.get_by_id(txn_id)
     if txn is None:
         raise HTTPException(404, "Transaction not found")
-    if txn.cash_approved_by is not None:
-        raise HTTPException(409, "Transaction already approved")
 
     denoms = _parse_denominations(body.denominations)
     entered_total = sum(d * q for d, q in denoms.items())
@@ -369,12 +371,16 @@ def approve_transaction(
 
     entry_type = "vault_in" if txn.transaction_type == "deposit" else "vault_out"
     note = body.note or f"Txn #{txn_id} ({txn.transaction_type})"
-    _denom_repo.record_bulk_entry(
-        entry_type=entry_type,
-        denominations=denoms,
-        created_by=current_user["user_id"],
-        note=note,
-    )
 
-    updated = txn_repo.approve(txn_id, current_user["user_id"])
+    with atomic():
+        updated = txn_repo.approve_if_pending(txn_id, current_user["user_id"])
+        if updated is None:
+            raise HTTPException(409, "Transaction already approved")
+        _denom_repo.record_bulk_entry(
+            entry_type=entry_type,
+            denominations=denoms,
+            created_by=current_user["user_id"],
+            note=note,
+        )
+
     return asdict(updated)

@@ -144,3 +144,17 @@ class TransactionRepository(BaseRepository):
             cursor.execute("SELECT * FROM transactions WHERE id=?", (txn_id,))
             row = cursor.fetchone()
         return self._row_to_model(row) if row else None
+
+    def approve_if_pending(self, txn_id: int, approved_by: int) -> Optional[Transaction]:
+        """Conditionally approve — returns None if already approved (idempotent-safe)."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "UPDATE transactions SET cash_approved_by=?, cash_approved_at=datetime('now') "
+                "WHERE id=? AND cash_approved_by IS NULL",
+                (approved_by, txn_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+            cursor.execute("SELECT * FROM transactions WHERE id=?", (txn_id,))
+            row = cursor.fetchone()
+        return self._row_to_model(row) if row else None
