@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,8 +29,40 @@ def get_connection():
         conn.close()
 
 
+_atomic_conn: ContextVar[sqlite3.Connection | None] = ContextVar("_atomic_conn", default=None)
+
+
+@contextmanager
+def atomic():
+    """Wrap multiple get_cursor() calls in a single atomic DB transaction.
+    All writes commit together on exit; any exception rolls back everything."""
+    existing = _atomic_conn.get()
+    if existing is not None:
+        yield existing
+        return
+    conn = _connect()
+    token = _atomic_conn.set(conn)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _atomic_conn.reset(token)
+        conn.close()
+
+
 @contextmanager
 def get_cursor(commit: bool = False):
+    conn = _atomic_conn.get()
+    if conn is not None:
+        cursor = conn.cursor()
+        try:
+            yield cursor
+        finally:
+            cursor.close()
+        return
     with get_connection() as conn:
         cursor = conn.cursor()
         try:

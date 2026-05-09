@@ -10,6 +10,7 @@ Startup logic:
 import os
 import sys
 import json
+import secrets
 import socket
 import time
 
@@ -21,9 +22,31 @@ else:
     _BASE   = os.path.dirname(os.path.abspath(__file__))
     _BUNDLE = _BASE
 
+def _get_or_create_app_secret() -> str:
+    """Read or generate a per-install secret stored in the app config directory."""
+    config_dir = os.path.join(os.environ.get("LOCALAPPDATA", _BASE), "NgweLweSystem")
+    os.makedirs(config_dir, exist_ok=True)
+    secret_file = os.path.join(config_dir, "app_secret.key")
+    if os.path.isfile(secret_file):
+        try:
+            with open(secret_file) as f:
+                secret = f.read().strip()
+            if len(secret) >= 32:
+                return secret
+        except Exception:
+            pass
+    secret = secrets.token_hex(32)
+    try:
+        with open(secret_file, "w") as f:
+            f.write(secret)
+    except Exception:
+        pass
+    return secret
+
+
 # ── Set env vars BEFORE any backend imports ──
 os.environ.setdefault("DB_PATH",      os.path.join(_BASE, "ngwe_lwe.db"))
-os.environ.setdefault("APP_SECRET",   "NgweLwe-Secret-Key-2024")
+os.environ.setdefault("APP_SECRET",   _get_or_create_app_secret())
 os.environ.setdefault("API_BASE_URL", "http://127.0.0.1:8000")
 os.environ.setdefault("WS_URL",       "ws://127.0.0.1:8000/ws")
 

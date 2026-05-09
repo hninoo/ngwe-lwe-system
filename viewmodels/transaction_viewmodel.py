@@ -10,6 +10,7 @@ from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_type_repository import ServiceTypeRepository
 from repositories.transaction_repository import TransactionRepository
 from services.vault_service import InsufficientDenominationError, VaultService
+from backend.database import atomic
 
 # Re-export so routes can import from one place
 __all__ = [
@@ -91,32 +92,34 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> Transaction:
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount, "send")
         from_company_id = self._get_company_id(account.service_type_id)
 
-        new_balance = (account.balance or 0.0) + amount
-        self._account_repo.update_balance(account_id, new_balance)
-        self._update_fee_account(fee_account_id, customer_fee)
-
-        data = {
-            "transaction_type": "deposit",
-            "account_id": account_id,
-            "customer_name": customer_name,
-            "customer_phone": customer_phone,
-            "amount": amount,
-            "commission_amount": commission,
-            "customer_fee": customer_fee,
-            "additional_fee_amount": additional_fee_amount,
-            "balance_change": amount,
-            "currency": "MMK",
-            "fee_account_id": fee_account_id,
-            "screenshot_path": screenshot_path,
-            "note": note,
-            "created_by": created_by,
-            "from_company_id": from_company_id,
-        }
-        txn_id = self._txn_repo.create(data)
+        with atomic():
+            new_balance = (account.balance or 0.0) + amount
+            self._account_repo.update_balance(account_id, new_balance)
+            self._update_fee_account(fee_account_id, customer_fee)
+            data = {
+                "transaction_type": "deposit",
+                "account_id": account_id,
+                "customer_name": customer_name,
+                "customer_phone": customer_phone,
+                "amount": amount,
+                "commission_amount": commission,
+                "customer_fee": customer_fee,
+                "additional_fee_amount": additional_fee_amount,
+                "balance_change": amount,
+                "currency": "MMK",
+                "fee_account_id": fee_account_id,
+                "screenshot_path": screenshot_path,
+                "note": note,
+                "created_by": created_by,
+                "from_company_id": from_company_id,
+            }
+            txn_id = self._txn_repo.create(data)
         return self._txn_repo.get_by_id(txn_id)
 
     def create_withdraw(
@@ -134,6 +137,8 @@ class TransactionViewModel:
         employee_id: Optional[int] = None,
         denominations: Optional[dict] = None,
     ) -> Transaction:
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount, "receive")
         from_company_id = self._get_company_id(account.service_type_id)
@@ -160,40 +165,41 @@ class TransactionViewModel:
                     raise InsufficientFloatError(available=cur, required=amount)
 
         # ── Writes (validation passed) ─────────────────────────────────────────
-        new_balance = (account.balance or 0.0) - amount
-        self._account_repo.update_balance(account_id, new_balance)
+        with atomic():
+            new_balance = (account.balance or 0.0) - amount
+            self._account_repo.update_balance(account_id, new_balance)
 
-        data = {
-            "transaction_type": "withdraw",
-            "account_id": account_id,
-            "customer_name": customer_name,
-            "customer_phone": customer_phone,
-            "amount": amount,
-            "commission_amount": commission,
-            "customer_fee": customer_fee,
-            "additional_fee_amount": additional_fee_amount,
-            "balance_change": -amount,
-            "currency": "MMK",
-            "fee_account_id": fee_account_id,
-            "screenshot_path": screenshot_path,
-            "note": note,
-            "created_by": created_by,
-            "from_company_id": from_company_id,
-        }
-        txn_id = self._txn_repo.create(data)
+            data = {
+                "transaction_type": "withdraw",
+                "account_id": account_id,
+                "customer_name": customer_name,
+                "customer_phone": customer_phone,
+                "amount": amount,
+                "commission_amount": commission,
+                "customer_fee": customer_fee,
+                "additional_fee_amount": additional_fee_amount,
+                "balance_change": -amount,
+                "currency": "MMK",
+                "fee_account_id": fee_account_id,
+                "screenshot_path": screenshot_path,
+                "note": note,
+                "created_by": created_by,
+                "from_company_id": from_company_id,
+            }
+            txn_id = self._txn_repo.create(data)
 
-        if employee_id is not None:
-            if denominations and active_float:
-                self._vault_service.process_withdrawal(
-                    float_id=active_float.id,
-                    employee_id=employee_id,
-                    denominations=denominations,
-                    transaction_id=txn_id,
-                )
-            else:
-                self._float_repo.deduct_float_balance(employee_id, amount)
+            if employee_id is not None:
+                if denominations and active_float:
+                    self._vault_service.process_withdrawal(
+                        float_id=active_float.id,
+                        employee_id=employee_id,
+                        denominations=denominations,
+                        transaction_id=txn_id,
+                    )
+                else:
+                    self._float_repo.deduct_float_balance(employee_id, amount)
 
-        self._update_fee_account(fee_account_id, customer_fee)
+            self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)
 
     def create_transfer(
@@ -210,6 +216,8 @@ class TransactionViewModel:
         employee_id: Optional[int] = None,
         denominations: Optional[dict] = None,
     ) -> Transaction:
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
         from_account = self._account_repo.get_by_id(from_account_id)
         to_account = self._account_repo.get_by_id(to_account_id)
         commission = self._calc_commission(from_account, amount, "send")
@@ -238,43 +246,44 @@ class TransactionViewModel:
                     raise InsufficientFloatError(available=cur, required=amount)
 
         # ── Writes ─────────────────────────────────────────────────────────────
-        from_balance = (from_account.balance or 0.0) - balance_change
-        self._account_repo.update_balance(from_account_id, from_balance)
+        with atomic():
+            from_balance = (from_account.balance or 0.0) - balance_change
+            self._account_repo.update_balance(from_account_id, from_balance)
 
-        to_balance = (to_account.balance or 0.0) + amount
-        self._account_repo.update_balance(to_account_id, to_balance)
+            to_balance = (to_account.balance or 0.0) + amount
+            self._account_repo.update_balance(to_account_id, to_balance)
 
-        data = {
-            "transaction_type": "transfer",
-            "account_id": from_account_id,
-            "to_account_id": to_account_id,
-            "amount": amount,
-            "commission_amount": commission,
-            "customer_fee": customer_fee,
-            "additional_fee_amount": additional_fee_amount,
-            "balance_change": -balance_change,
-            "currency": "MMK",
-            "fee_account_id": fee_account_id,
-            "screenshot_path": screenshot_path,
-            "note": note,
-            "created_by": created_by,
-            "from_company_id": from_company_id,
-            "to_company_id": to_company_id,
-        }
-        txn_id = self._txn_repo.create(data)
+            data = {
+                "transaction_type": "transfer",
+                "account_id": from_account_id,
+                "to_account_id": to_account_id,
+                "amount": amount,
+                "commission_amount": commission,
+                "customer_fee": customer_fee,
+                "additional_fee_amount": additional_fee_amount,
+                "balance_change": -balance_change,
+                "currency": "MMK",
+                "fee_account_id": fee_account_id,
+                "screenshot_path": screenshot_path,
+                "note": note,
+                "created_by": created_by,
+                "from_company_id": from_company_id,
+                "to_company_id": to_company_id,
+            }
+            txn_id = self._txn_repo.create(data)
 
-        if employee_id is not None:
-            if denominations and active_float:
-                self._vault_service.process_withdrawal(
-                    float_id=active_float.id,
-                    employee_id=employee_id,
-                    denominations=denominations,
-                    transaction_id=txn_id,
-                )
-            else:
-                self._float_repo.deduct_float_balance(employee_id, amount)
+            if employee_id is not None:
+                if denominations and active_float:
+                    self._vault_service.process_withdrawal(
+                        float_id=active_float.id,
+                        employee_id=employee_id,
+                        denominations=denominations,
+                        transaction_id=txn_id,
+                    )
+                else:
+                    self._float_repo.deduct_float_balance(employee_id, amount)
 
-        self._update_fee_account(fee_account_id, customer_fee)
+            self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)
 
     def create_exchange(
@@ -291,6 +300,8 @@ class TransactionViewModel:
         employee_id: Optional[int] = None,
         denominations: Optional[dict] = None,
     ) -> Transaction:
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
         rate = self._rate_repo.get_latest("THB", "MMK")
         if rate is None:
             raise ValueError("Exchange rate not set for THB/MMK")
@@ -325,37 +336,39 @@ class TransactionViewModel:
                     from repositories.cash_float_repository import InsufficientFloatError
                     raise InsufficientFloatError(available=cur, required=amount)
 
-        new_balance = (account.balance or 0.0) + balance_change
-        self._account_repo.update_balance(account_id, new_balance)
+        # ── Writes ─────────────────────────────────────────────────────────────
+        with atomic():
+            new_balance = (account.balance or 0.0) + balance_change
+            self._account_repo.update_balance(account_id, new_balance)
 
-        data = {
-            "transaction_type": "exchange",
-            "account_id": account_id,
-            "amount": amount,
-            "commission_amount": commission,
-            "customer_fee": customer_fee,
-            "additional_fee_amount": additional_fee_amount,
-            "balance_change": balance_change,
-            "currency": currency,
-            "exchange_rate": exchange_rate,
-            "fee_account_id": fee_account_id,
-            "screenshot_path": screenshot_path,
-            "note": note,
-            "created_by": created_by,
-            "from_company_id": from_company_id,
-        }
-        txn_id = self._txn_repo.create(data)
+            data = {
+                "transaction_type": "exchange",
+                "account_id": account_id,
+                "amount": amount,
+                "commission_amount": commission,
+                "customer_fee": customer_fee,
+                "additional_fee_amount": additional_fee_amount,
+                "balance_change": balance_change,
+                "currency": currency,
+                "exchange_rate": exchange_rate,
+                "fee_account_id": fee_account_id,
+                "screenshot_path": screenshot_path,
+                "note": note,
+                "created_by": created_by,
+                "from_company_id": from_company_id,
+            }
+            txn_id = self._txn_repo.create(data)
 
-        if employee_id is not None:
-            if denominations and active_float:
-                self._vault_service.process_withdrawal(
-                    float_id=active_float.id,
-                    employee_id=employee_id,
-                    denominations=denominations,
-                    transaction_id=txn_id,
-                )
-            else:
-                self._float_repo.deduct_float_balance(employee_id, amount)
+            if employee_id is not None:
+                if denominations and active_float:
+                    self._vault_service.process_withdrawal(
+                        float_id=active_float.id,
+                        employee_id=employee_id,
+                        denominations=denominations,
+                        transaction_id=txn_id,
+                    )
+                else:
+                    self._float_repo.deduct_float_balance(employee_id, amount)
 
-        self._update_fee_account(fee_account_id, customer_fee)
+            self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)

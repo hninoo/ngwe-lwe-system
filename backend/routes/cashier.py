@@ -201,6 +201,8 @@ def get_float(
     cash_float = _float_repo.get_float(float_id)
     if cash_float is None:
         raise HTTPException(404, "Float not found")
+    if current_user["role"] == "employee" and cash_float.employee_id != current_user["user_id"]:
+        raise HTTPException(403, "Access denied")
     return asdict(cash_float)
 
 
@@ -213,6 +215,8 @@ def get_float_denomination_balance(
     cash_float = _float_repo.get_float(float_id)
     if cash_float is None:
         raise HTTPException(404, "Float not found")
+    if current_user["role"] == "employee" and cash_float.employee_id != current_user["user_id"]:
+        raise HTTPException(403, "Access denied")
     balance = _vault_service.get_float_denomination_balance(float_id)
     total = sum(d * q for d, q in balance.items())
     return {

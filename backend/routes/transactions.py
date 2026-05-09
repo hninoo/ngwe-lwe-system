@@ -2,7 +2,7 @@ from dataclasses import asdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.auth import get_current_user
 from backend.websocket_manager import ConnectionManager
@@ -22,24 +22,24 @@ ws_manager: Optional[ConnectionManager] = None
 
 class DepositRequest(BaseModel):
     account_id: int
-    amount: float
+    amount: float = Field(gt=0)
     customer_name: str
     customer_phone: str
     screenshot_path: Optional[str] = None
-    customer_fee: float = 0.0
-    additional_fee_amount: float = 0.0
+    customer_fee: float = Field(default=0.0, ge=0)
+    additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
 class WithdrawRequest(BaseModel):
     account_id: int
-    amount: float
+    amount: float = Field(gt=0)
     customer_name: str
     customer_phone: str
     screenshot_path: Optional[str] = None
-    customer_fee: float = 0.0
-    additional_fee_amount: float = 0.0
+    customer_fee: float = Field(default=0.0, ge=0)
+    additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -47,21 +47,21 @@ class WithdrawRequest(BaseModel):
 class TransferRequest(BaseModel):
     from_account_id: int
     to_account_id: int
-    amount: float
+    amount: float = Field(gt=0)
     screenshot_path: Optional[str] = None
-    customer_fee: float = 0.0
-    additional_fee_amount: float = 0.0
+    customer_fee: float = Field(default=0.0, ge=0)
+    additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
 
 class ExchangeRequest(BaseModel):
     account_id: int
-    amount: float
+    amount: float = Field(gt=0)
     currency: str
     screenshot_path: Optional[str] = None
-    customer_fee: float = 0.0
-    additional_fee_amount: float = 0.0
+    customer_fee: float = Field(default=0.0, ge=0)
+    additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
 
@@ -269,7 +269,11 @@ def get_by_date(
     date: str,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
-    """Return all transactions for a given date (YYYY-MM-DD)."""
+    """Return transactions for a given date. Owner/cashier see all; employees see their own."""
     from repositories.transaction_repository import TransactionRepository
-    txns = TransactionRepository().get_by_date(date)
+    repo = TransactionRepository()
+    if current_user["role"] == "employee":
+        txns = repo.get_by_date_for_user(date, current_user["user_id"])
+    else:
+        txns = repo.get_by_date(date)
     return [asdict(t) for t in txns]

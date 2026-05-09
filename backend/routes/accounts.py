@@ -144,7 +144,7 @@ def adjust_balance(
     old_balance = account.balance
     new_balance = old_balance + body.amount
     _account_repo.update_balance(account_id, new_balance)
-    with get_cursor() as cursor:
+    with get_cursor(commit=True) as cursor:
         cursor.execute(
             "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
             "VALUES (?, ?, ?, ?, ?)",

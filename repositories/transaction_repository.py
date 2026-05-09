@@ -121,6 +121,18 @@ class TransactionRepository(BaseRepository):
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]
 
+    def get_by_date_for_user(self, date_str: str, user_id: int) -> list[Transaction]:
+        """Return transactions for a given date created by a specific user."""
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM transactions "
+                "WHERE date(created_at) = ? AND created_by = ? "
+                "ORDER BY created_at DESC",
+                (date_str, user_id),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(r) for r in rows]
+
     def approve(self, txn_id: int, approved_by: int) -> Optional[Transaction]:
         """Mark a transaction as cash-approved."""
         with get_cursor(commit=True) as cursor:
