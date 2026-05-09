@@ -1336,6 +1336,7 @@ class DashboardView(QMainWindow):
         self._pages: list = []
 
         # Pages — indices must match _SIDEBAR_GROUPS page_idx values above
+        self._daily_closing_view = DailyClosingView(self._api)
         for page in [
             DashboardPage(self._api),            # 0  Dashboard
             TransactionsPage(self._api),         # 1  All Transactions
@@ -1350,7 +1351,7 @@ class DashboardView(QMainWindow):
             CashFloatAdminView(self._api),       # 10 Cash Floats
             ServerInfoSubView(),                 # 11 Server Connection
             PasswordSubView(self._api),          # 12 Change Password
-            (self._daily_closing_view := DailyClosingView(self._api)),  # 13 Daily Closing
+            self._daily_closing_view,            # 13 Daily Closing
         ]:
             self._stack.addWidget(page)
             self._pages.append(page)
