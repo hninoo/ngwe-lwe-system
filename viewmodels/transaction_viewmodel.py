@@ -101,6 +101,8 @@ class TransactionViewModel:
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
         account = self._account_repo.get_by_id(account_id)
+        if account is None:
+            raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "send")
         from_company_id = self._get_company_id(account.service_type_id)
 
@@ -149,6 +151,8 @@ class TransactionViewModel:
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
         account = self._account_repo.get_by_id(account_id)
+        if account is None:
+            raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "receive")
         from_company_id = self._get_company_id(account.service_type_id)
 
@@ -231,7 +235,11 @@ class TransactionViewModel:
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
         from_account = self._account_repo.get_by_id(from_account_id)
+        if from_account is None:
+            raise ValueError(f"Account #{from_account_id} not found.")
         to_account = self._account_repo.get_by_id(to_account_id)
+        if to_account is None:
+            raise ValueError(f"Account #{to_account_id} not found.")
         commission = self._calc_commission(from_account, amount, "send")
         balance_change = self._calc_balance_change(from_account, amount, commission)
 
@@ -327,6 +335,8 @@ class TransactionViewModel:
             exchange_rate = rate.buy_rate / base_amount
 
         account = self._account_repo.get_by_id(account_id)
+        if account is None:
+            raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "send")
         balance_change = self._calc_balance_change(account, amount, commission)
         from_company_id = self._get_company_id(account.service_type_id)

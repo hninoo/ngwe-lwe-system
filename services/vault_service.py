@@ -288,20 +288,20 @@ class VaultService:
             if qty > available:
                 raise InsufficientDenominationError(denom, available, qty)
 
-        self._float_repo.set_pending_reconciliation(
-            float_id=float_id,
-            return_denominations_json=json.dumps(
-                {str(d): q for d, q in denoms.items()}
-            ),
-        )
-
-        self._vault_txn_repo.record_bulk(
-            txn_type="return_initiate",
-            float_id=float_id,
-            denominations=denoms,
-            performed_by=employee_id,
-            note=note or f"Return initiated for float #{float_id}",
-        )
+        with atomic():
+            self._float_repo.set_pending_reconciliation(
+                float_id=float_id,
+                return_denominations_json=json.dumps(
+                    {str(d): q for d, q in denoms.items()}
+                ),
+            )
+            self._vault_txn_repo.record_bulk(
+                txn_type="return_initiate",
+                float_id=float_id,
+                denominations=denoms,
+                performed_by=employee_id,
+                note=note or f"Return initiated for float #{float_id}",
+            )
 
         return self._float_repo.get_float(float_id)
 
@@ -316,6 +316,8 @@ class VaultService:
         """
         Cashier counts physical cash received, enters their PIN.
         Main vault is credited.  Status: PENDING_RECONCILIATION → CLOSED.
+        PIN verification and pre-validation run before the atomic block to
+        avoid holding the write lock for I/O-bound checks.
         """
         cash_float = self._float_repo.get_float(float_id)
         if cash_float is None:
@@ -341,29 +343,30 @@ class VaultService:
 
         closing_total = self._total(return_denoms)
 
-        # Credit main vault
-        self._denom_repo.record_bulk_entry(
-            entry_type="float_returned",
-            denominations=return_denoms,
-            created_by=cashier_id,
-            float_id=float_id,
-            note=f"Float #{float_id} return confirmed by cashier",
-        )
-
-        self._float_repo.close_after_return(
-            float_id=float_id,
-            closing_total=closing_total,
-            verified_by=cashier_id,
-        )
-
-        self._vault_txn_repo.record_bulk(
-            txn_type="return_confirm",
-            float_id=float_id,
-            denominations=return_denoms,
-            performed_by=cashier_id,
-            verified_by=cashier_id,
-            note=f"Float #{float_id} return confirmed",
-        )
+        with atomic():
+            # Close the float first — rowcount=0 means a concurrent request
+            # already closed it; the atomic() rollback prevents double-crediting.
+            self._float_repo.close_after_return(
+                float_id=float_id,
+                closing_total=closing_total,
+                verified_by=cashier_id,
+            )
+            # Credit main vault inside the same transaction
+            self._denom_repo.record_bulk_entry(
+                entry_type="float_returned",
+                denominations=return_denoms,
+                created_by=cashier_id,
+                float_id=float_id,
+                note=f"Float #{float_id} return confirmed by cashier",
+            )
+            self._vault_txn_repo.record_bulk(
+                txn_type="return_confirm",
+                float_id=float_id,
+                denominations=return_denoms,
+                performed_by=cashier_id,
+                verified_by=cashier_id,
+                note=f"Float #{float_id} return confirmed",
+            )
 
         return self._float_repo.get_float(float_id)
 

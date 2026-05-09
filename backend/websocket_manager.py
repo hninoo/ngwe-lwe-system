@@ -1,5 +1,6 @@
 import json
 import secrets
+import threading
 import time
 from typing import Any
 
@@ -7,23 +8,29 @@ from fastapi import WebSocket
 
 
 class TicketStore:
-    """One-time use tickets for WebSocket auth so JWTs never appear in server logs."""
+    """One-time use tickets for WebSocket auth so JWTs never appear in server logs.
+    Thread-safe: FastAPI threadpool (issue/consume) and the asyncio event loop
+    may access this concurrently, so all mutations hold a Lock."""
 
     def __init__(self, ttl: int = 30) -> None:
         self._tickets: dict[str, float] = {}
         self._ttl = ttl
+        self._lock = threading.Lock()
 
     def issue(self) -> str:
-        self._cleanup()
-        ticket = secrets.token_hex(32)
-        self._tickets[ticket] = time.time() + self._ttl
-        return ticket
+        with self._lock:
+            self._cleanup_locked()
+            ticket = secrets.token_hex(32)
+            self._tickets[ticket] = time.time() + self._ttl
+            return ticket
 
     def consume(self, ticket: str) -> bool:
-        expiry = self._tickets.pop(ticket, None)
-        return expiry is not None and time.time() < expiry
+        with self._lock:
+            expiry = self._tickets.pop(ticket, None)
+            return expiry is not None and time.time() < expiry
 
-    def _cleanup(self) -> None:
+    def _cleanup_locked(self) -> None:
+        """Prune expired tickets. Must be called while holding self._lock."""
         now = time.time()
         self._tickets = {t: e for t, e in self._tickets.items() if e > now}
 
