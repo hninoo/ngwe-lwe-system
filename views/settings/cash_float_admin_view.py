@@ -37,8 +37,10 @@ BORDER_COLOR = "#313244"
 INPUT_BORDER = "#585b70"
 
 STATUS_COLORS = {
-    "PENDING": ACCENT_YELLOW,
+    "PENDING": ACCENT_YELLOW,          # legacy — maps to PENDING_RECEIPT after migration
+    "PENDING_RECEIPT": ACCENT_YELLOW,
     "ACTIVE": ACCENT_GREEN,
+    "PENDING_RECONCILIATION": ACCENT_MAUVE,
     "CLOSED": TEXT_SECONDARY,
 }
 
@@ -127,7 +129,7 @@ class _FloatDetailDialog(QDialog):
 
 
 class CashFloatAdminView(QWidget):
-    """Owner-only read-only panel for cash float assignments."""
+    """Cashier/owner panel for cash float assignments."""
 
     COLS = [
         "id", t("col_employee"), t("float_issued_by"),
@@ -145,9 +147,10 @@ class CashFloatAdminView(QWidget):
     COL_NOTE = 8
     COL_ACTIONS = 9
 
-    def __init__(self, api: ApiClient, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, api: ApiClient, role: str = "owner", parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._api = api
+        self._role = role
         self._floats: list[dict] = []
         self._init_ui()
 
@@ -232,10 +235,38 @@ class CashFloatAdminView(QWidget):
                     item.setForeground(QColor(STATUS_COLORS.get(status, TEXT_SECONDARY)))
                 self._table.setItem(row, col, item)
 
+            action_widget = QWidget()
+            action_layout = QHBoxLayout(action_widget)
+            action_layout.setContentsMargins(4, 2, 4, 2)
+            action_layout.setSpacing(4)
+
             view_btn = _ghost_btn(t("view"), ACCENT_BLUE)
             view_btn.clicked.connect(lambda _, f=fl: self._on_view(f))
-            self._table.setCellWidget(row, self.COL_ACTIONS, view_btn)
+            action_layout.addWidget(view_btn)
+
+            if self._role == "cashier" and status == "PENDING_RECONCILIATION":
+                confirm_btn = _ghost_btn(t("btn_confirm_return"), ACCENT_GREEN)
+                confirm_btn.clicked.connect(lambda _, fid=float_id: self._on_confirm_return(fid))
+                action_layout.addWidget(confirm_btn)
+
+            self._table.setCellWidget(row, self.COL_ACTIONS, action_widget)
 
     def _on_view(self, float_data: dict) -> None:
         dlg = _FloatDetailDialog(float_data, self)
         dlg.exec()
+
+    def _on_confirm_return(self, float_id: int) -> None:
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        pin, ok = QInputDialog.getText(
+            self,
+            t("btn_confirm_return"),
+            t("enter_cashier_pin"),
+            echo=QInputDialog.EchoMode.Password if hasattr(QInputDialog, "EchoMode") else 0,
+        )
+        if not ok or not pin:
+            return
+        try:
+            self._api.confirm_float_return(float_id, pin)
+            self.load_data()
+        except Exception as e:
+            QMessageBox.warning(self, t("error"), str(e))

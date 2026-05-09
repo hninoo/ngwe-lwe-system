@@ -208,8 +208,21 @@ class DailyClosingView(QWidget):
         self._float_table = _make_table([
             t("col_employee"), t("col_float_balance"),
             t("col_opening_bal"),  # = total_amount (original float issued)
+            t("float_status"),
         ])
         phys_lo.addWidget(self._float_table)
+
+        # Denomination inventory header
+        inv_hdr = QLabel(t("closing_vault_inventory"))
+        inv_hdr.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; font-weight: bold;")
+        phys_lo.addWidget(inv_hdr)
+
+        self._inventory_table = _make_table(
+            [t("col_employee")] + [f"{d:,}" for d in (50, 100, 200, 500, 1000, 5000, 10000)] + ["Total"]
+        )
+        self._inventory_table.setMaximumHeight(160)
+        phys_lo.addWidget(self._inventory_table)
+
         self._layout.addWidget(physical_card)
 
         # ── Pending Deposits ──────────────────────────────────────────────────
@@ -301,19 +314,53 @@ class DailyClosingView(QWidget):
         floats = snap.get("employee_floats", [])
         self._float_table.setRowCount(len(floats))
         for row, f in enumerate(floats):
-            cur_bal    = float(f.get("current_balance", 0))
-            total_amt  = float(f.get("total_amount", 0))
+            cur_bal   = float(f.get("current_balance", 0))
+            total_amt = float(f.get("total_amount", 0))
+            status    = f.get("status", "")
             cells = [
                 f.get("employee_name", ""),
                 f"{cur_bal:,.0f}",
                 f"{total_amt:,.0f}",
+                status,
             ]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 1:
                     item.setForeground(QColor(ACCENT_YELLOW))
+                elif col == 3:
+                    color = {
+                        "ACTIVE": ACCENT_GREEN,
+                        "PENDING_RECONCILIATION": ACCENT_MAUVE,
+                    }.get(status, ACCENT_YELLOW)
+                    item.setForeground(QColor(color))
                 self._float_table.setItem(row, col, item)
+
+        # ── Denomination inventory table ──────────────────────────────────────
+        inventory = snap.get("denomination_inventory", {})
+        emp_inventory = inventory.get("employee_floats", [])
+        denoms_order = (50, 100, 200, 500, 1000, 5000, 10000)
+        rows_inv = []
+        main_vault_denoms = inventory.get("main_vault", {})
+        if main_vault_denoms:
+            rows_inv.append(("Main Vault", main_vault_denoms))
+        for emp in emp_inventory:
+            rows_inv.append((emp.get("employee_name", ""), emp.get("denomination_balance", {})))
+        self._inventory_table.setRowCount(len(rows_inv))
+        for row, (name, denom_dict) in enumerate(rows_inv):
+            total = 0
+            cells = [name]
+            for d in denoms_order:
+                qty = int(denom_dict.get(str(d), denom_dict.get(d, 0)))
+                total += d * qty
+                cells.append(str(qty) if qty else "—")
+            cells.append(f"{total:,.0f}")
+            for col, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 0:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                self._inventory_table.setItem(row, col, item)
 
         # ── Pending deposits table ────────────────────────────────────────────
         pending = snap.get("pending_deposits", [])

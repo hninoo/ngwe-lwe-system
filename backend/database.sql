@@ -202,17 +202,19 @@ CREATE INDEX IF NOT EXISTS idx_log_created ON activity_logs(created_at);
 -- 10. cash_float_assignments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_float_assignments (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_id     INTEGER NOT NULL,
-    issued_by       INTEGER NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACTIVE','CLOSED')),
-    total_amount    REAL NOT NULL DEFAULT 0.00,
-    current_balance REAL NOT NULL DEFAULT 0,
-    received_at     TEXT,
-    closed_at       TEXT,
-    closing_total   REAL,
-    note            TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id               INTEGER NOT NULL,
+    issued_by                 INTEGER NOT NULL,
+    status                    TEXT NOT NULL DEFAULT 'PENDING_RECEIPT'
+                              CHECK(status IN ('PENDING_RECEIPT','ACTIVE','PENDING_RECONCILIATION','CLOSED')),
+    total_amount              REAL NOT NULL DEFAULT 0.00,
+    current_balance           REAL NOT NULL DEFAULT 0,
+    return_denominations_json TEXT,
+    received_at               TEXT,
+    closed_at                 TEXT,
+    closing_total             REAL,
+    note                      TEXT,
+    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (employee_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (issued_by)   REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
@@ -248,7 +250,31 @@ CREATE TABLE IF NOT EXISTS cash_float_denominations (
 CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(float_id);
 
 -- ============================================================
--- 13. daily_reconciliation_logs
+-- 13. vault_transactions (immutable audit trail)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS vault_transactions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    txn_type       TEXT NOT NULL CHECK(txn_type IN (
+                       'float_issue','float_receipt','withdrawal',
+                       'return_initiate','return_confirm','adjustment'
+                   )),
+    float_id       INTEGER,
+    denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+    quantity       INTEGER NOT NULL CHECK(quantity > 0),
+    transaction_id INTEGER,
+    performed_by   INTEGER NOT NULL,
+    verified_by    INTEGER,
+    note           TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (float_id)       REFERENCES cash_float_assignments(id),
+    FOREIGN KEY (performed_by)   REFERENCES users(id),
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_vault_txn_float   ON vault_transactions(float_id);
+CREATE INDEX IF NOT EXISTS idx_vault_txn_created ON vault_transactions(created_at);
+
+-- ============================================================
+-- 14. daily_reconciliation_logs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS daily_reconciliation_logs (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,7 +311,8 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (3, 'Add cash approval fields to transactions'),
 (4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions'),
 (5, 'Add is_fee_account flag to accounts'),
-(6, 'Add current_balance to floats; create daily_reconciliation_logs');
+(6, 'Add current_balance to floats; create daily_reconciliation_logs'),
+(7, 'Rebuild cash_float_assignments with new statuses; create vault_transactions');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123

@@ -8,23 +8,29 @@ from pydantic import BaseModel
 from backend.auth import get_current_user
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository
+from repositories.transaction_repository import TransactionRepository
 from repositories.user_repository import UserRepository
+from services.vault_service import (
+    DenominationMismatchError,
+    FloatStateError,
+    InsufficientDenominationError,
+    VaultService,
+)
 
 router = APIRouter(prefix="/cashier", tags=["cashier"])
 
-# Maximum allowed mismatch between denomination total and transaction amount (MMK).
-# Within tolerance the approval proceeds; beyond it the request is rejected.
 CASH_TOLERANCE_MMK: int = 100
 
 _denom_repo = CashDenominationRepository()
 _float_repo = CashFloatRepository()
 _user_repo = UserRepository()
+_vault_service = VaultService(float_repo=_float_repo, denom_repo=_denom_repo)
 
 
 # ── Pydantic request models ──
 
 class VaultEntryRequest(BaseModel):
-    entry_type: str  # vault_in | adjustment
+    entry_type: str
     denominations: dict[str, int]
     note: Optional[str] = None
 
@@ -36,6 +42,16 @@ class IssueFloatRequest(BaseModel):
 
 
 class ReceiveFloatRequest(BaseModel):
+    pin: str
+    denominations: dict[str, int]
+
+
+class InitiateReturnRequest(BaseModel):
+    denominations: dict[str, int]
+    note: Optional[str] = None
+
+
+class ConfirmReturnRequest(BaseModel):
     pin: str
 
 
@@ -52,7 +68,6 @@ class ReceivedCashRequest(BaseModel):
 # ── Helpers ──
 
 def _parse_denominations(raw: dict[str, int]) -> dict[int, int]:
-    """Convert string-keyed denomination dict to int-keyed, validating keys."""
     result: dict[int, int] = {}
     for k, v in raw.items():
         try:
@@ -75,11 +90,20 @@ def _vault_summary(balance: dict[int, int]) -> dict:
     }
 
 
+def _service_error(e: Exception) -> HTTPException:
+    if isinstance(e, InsufficientDenominationError):
+        return HTTPException(409, str(e))
+    if isinstance(e, DenominationMismatchError):
+        return HTTPException(422, str(e))
+    if isinstance(e, FloatStateError):
+        return HTTPException(409, str(e))
+    return HTTPException(400, str(e))
+
+
 # ── Vault endpoints ──
 
 @router.get("/vault")
 def get_vault(current_user: dict = Depends(get_current_user)) -> dict:
-    """Cashier-only: current vault balance."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
     balance = _denom_repo.get_vault_balance()
@@ -91,7 +115,6 @@ def record_vault_entry(
     body: VaultEntryRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Cashier-only: record a vault_in or adjustment entry."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
     if body.entry_type not in ("vault_in", "adjustment"):
@@ -112,18 +135,24 @@ def record_vault_entry(
 
 @router.get("/vault/logs")
 def get_vault_logs(current_user: dict = Depends(get_current_user)) -> list[dict]:
-    """Cashier-only: recent denomination log entries."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
     logs = _denom_repo.get_logs(limit=100)
     return [asdict(log) for log in logs]
 
 
+@router.get("/vault/inventory")
+def get_vault_inventory(current_user: dict = Depends(get_current_user)) -> dict:
+    """Full denomination inventory across main vault and all active employee floats."""
+    if current_user["role"] not in ("cashier", "owner"):
+        raise HTTPException(403, "Cashier or owner access only")
+    return _vault_service.get_denomination_inventory()
+
+
 # ── Float endpoints ──
 
 @router.get("/floats")
 def get_floats(current_user: dict = Depends(get_current_user)) -> list[dict]:
-    """Cashier/owner sees all floats; employee sees their own."""
     role = current_user["role"]
     if role in ("cashier", "owner"):
         floats = _float_repo.get_all_floats()
@@ -139,26 +168,23 @@ def issue_float(
     body: IssueFloatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Cashier-only: issue a float to an employee."""
+    """Cashier issues float — main vault debited immediately."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
-    denoms = _parse_denominations(body.denominations)
-    total = sum(d * q for d, q in denoms.items())
-    if total == 0:
-        raise HTTPException(400, "Float total must be greater than zero")
-    cash_float = _float_repo.issue_float(
-        employee_id=body.employee_id,
-        issued_by=current_user["user_id"],
-        denominations=denoms,
-        denom_repo=_denom_repo,
-        note=body.note,
-    )
+    try:
+        cash_float = _vault_service.issue_float(
+            cashier_id=current_user["user_id"],
+            employee_id=body.employee_id,
+            denominations=body.denominations,
+            note=body.note,
+        )
+    except Exception as e:
+        raise _service_error(e)
     return asdict(cash_float)
 
 
 @router.get("/floats/my-pending")
 def get_my_pending_float(current_user: dict = Depends(get_current_user)) -> dict:
-    """Employee: get their own PENDING float (if any)."""
     if current_user["role"] not in ("employee",):
         raise HTTPException(403, "Employee access only")
     cash_float = _float_repo.get_pending_float_for_employee(current_user["user_id"])
@@ -178,31 +204,91 @@ def get_float(
     return asdict(cash_float)
 
 
+@router.get("/floats/{float_id}/denominations")
+def get_float_denomination_balance(
+    float_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Return current per-denomination balance for a float."""
+    cash_float = _float_repo.get_float(float_id)
+    if cash_float is None:
+        raise HTTPException(404, "Float not found")
+    balance = _vault_service.get_float_denomination_balance(float_id)
+    total = sum(d * q for d, q in balance.items())
+    return {
+        "float_id": float_id,
+        "denominations": {str(d): balance.get(d, 0) for d in DENOMINATIONS},
+        "total": total,
+    }
+
+
 @router.post("/floats/{float_id}/receive")
 def receive_float(
     float_id: int,
     body: ReceiveFloatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Employee confirms receipt of float with PIN."""
+    """Employee confirms receipt with PIN + denomination count verification."""
     if current_user["role"] != "employee":
         raise HTTPException(403, "Employee access only")
-    cash_float = _float_repo.get_float(float_id)
-    if cash_float is None:
-        raise HTTPException(404, "Float not found")
-    if cash_float.employee_id != current_user["user_id"]:
-        raise HTTPException(403, "This float is not assigned to you")
-    if cash_float.status != "PENDING":
-        raise HTTPException(409, f"Float is not pending (status={cash_float.status})")
+    try:
+        updated = _vault_service.confirm_receipt(
+            float_id=float_id,
+            employee_id=current_user["user_id"],
+            employee_pin=body.pin,
+            verified_denominations=body.denominations,
+        )
+    except ValueError as e:
+        msg = str(e)
+        status = 401 if "Incorrect PIN" in msg else 400
+        raise HTTPException(status, msg)
+    except (DenominationMismatchError, FloatStateError) as e:
+        raise HTTPException(422, str(e))
+    return asdict(updated)
 
-    # Verify PIN
-    user = _user_repo.get_by_id(current_user["user_id"])
-    if user is None or user.pin_hash is None:
-        raise HTTPException(400, "No PIN set. Ask your cashier to set your PIN first.")
-    if not bcrypt.checkpw(body.pin.encode(), user.pin_hash.encode()):
-        raise HTTPException(401, "Incorrect PIN")
 
-    updated = _float_repo.activate_float(float_id, denom_repo=_denom_repo)
+@router.post("/floats/{float_id}/initiate-return")
+def initiate_float_return(
+    float_id: int,
+    body: InitiateReturnRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Employee declares remaining denominations to return."""
+    if current_user["role"] != "employee":
+        raise HTTPException(403, "Employee access only")
+    try:
+        updated = _vault_service.initiate_return(
+            float_id=float_id,
+            employee_id=current_user["user_id"],
+            return_denominations=body.denominations,
+            note=body.note,
+        )
+    except Exception as e:
+        raise _service_error(e)
+    return asdict(updated)
+
+
+@router.post("/floats/{float_id}/confirm-return")
+def confirm_float_return(
+    float_id: int,
+    body: ConfirmReturnRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Cashier verifies returned cash with PIN — credits main vault."""
+    if current_user["role"] != "cashier":
+        raise HTTPException(403, "Cashier access only")
+    try:
+        updated = _vault_service.confirm_return(
+            float_id=float_id,
+            cashier_id=current_user["user_id"],
+            cashier_pin=body.pin,
+        )
+    except ValueError as e:
+        msg = str(e)
+        status = 401 if "Incorrect PIN" in msg else 400
+        raise HTTPException(status, msg)
+    except FloatStateError as e:
+        raise HTTPException(409, str(e))
     return asdict(updated)
 
 
@@ -212,7 +298,7 @@ def close_float(
     body: CloseFloatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Employee or cashier: close a float by returning denominations."""
+    """Legacy close endpoint — still supported for backwards compatibility."""
     cash_float = _float_repo.get_float(float_id)
     if cash_float is None:
         raise HTTPException(404, "Float not found")
@@ -224,11 +310,10 @@ def close_float(
     elif role != "cashier":
         raise HTTPException(403, "Access denied")
 
-    if cash_float.status not in ("ACTIVE", "PENDING"):
+    if cash_float.status not in ("ACTIVE", "PENDING_RECEIPT", "PENDING_RECONCILIATION"):
         raise HTTPException(409, f"Float cannot be closed (status={cash_float.status})")
 
     closing_denoms = _parse_denominations(body.closing_denominations)
-
     updated = _float_repo.close_float(
         float_id=float_id,
         closing_denominations=closing_denoms,
@@ -246,11 +331,9 @@ def approve_transaction(
     body: ReceivedCashRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Cashier approves cash for a transaction with denomination breakdown."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Only cashiers can approve cash for transactions")
 
-    from repositories.transaction_repository import TransactionRepository
     txn_repo = TransactionRepository()
     txn = txn_repo.get_by_id(txn_id)
     if txn is None:
@@ -263,7 +346,6 @@ def approve_transaction(
     if entered_total == 0:
         raise HTTPException(400, "Denomination total must be greater than zero")
 
-    # Validate denomination total against transaction amount
     expected = int(txn.amount)
     diff = entered_total - expected
     if abs(diff) > CASH_TOLERANCE_MMK:
@@ -275,10 +357,7 @@ def approve_transaction(
             "tolerance": CASH_TOLERANCE_MMK,
         })
 
-    # Deposits: cash comes in from customer (vault_in)
-    # Withdrawals / exchanges: cash goes out to customer (vault_out)
     entry_type = "vault_in" if txn.transaction_type == "deposit" else "vault_out"
-    total = entered_total  # alias used below
     note = body.note or f"Txn #{txn_id} ({txn.transaction_type})"
     _denom_repo.record_bulk_entry(
         entry_type=entry_type,

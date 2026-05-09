@@ -9,9 +9,14 @@ from repositories.commission_tier_repository import CommissionTierRepository
 from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_type_repository import ServiceTypeRepository
 from repositories.transaction_repository import TransactionRepository
+from services.vault_service import InsufficientDenominationError, VaultService
 
 # Re-export so routes can import from one place
-__all__ = ["TransactionViewModel", "InsufficientFloatError"]
+__all__ = [
+    "TransactionViewModel",
+    "InsufficientFloatError",
+    "InsufficientDenominationError",
+]
 
 
 class TransactionViewModel:
@@ -24,6 +29,7 @@ class TransactionViewModel:
         commission_tier_repo: Optional[CommissionTierRepository] = None,
         service_type_repo: Optional[ServiceTypeRepository] = None,
         float_repo: Optional[CashFloatRepository] = None,
+        vault_service: Optional[VaultService] = None,
     ) -> None:
         self._txn_repo = transaction_repo or TransactionRepository()
         self._account_repo = account_repo or AccountRepository()
@@ -31,6 +37,7 @@ class TransactionViewModel:
         self._tier_repo = commission_tier_repo or CommissionTierRepository()
         self._service_type_repo = service_type_repo or ServiceTypeRepository()
         self._float_repo = float_repo or CashFloatRepository()
+        self._vault_service = vault_service or VaultService(float_repo=self._float_repo)
 
     def _get_company_id(self, service_type_id: Optional[int]) -> Optional[int]:
         """Resolve service_type_id → company_id via ServiceTypeRepository."""
@@ -125,20 +132,16 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        denominations: Optional[dict] = None,
     ) -> Transaction:
         account = self._account_repo.get_by_id(account_id)
         commission = self._calc_commission(account, amount, "receive")
         from_company_id = self._get_company_id(account.service_type_id)
 
-        # Deduct from employee mini-vault before touching account balance.
-        # Raises InsufficientFloatError if float balance is too low.
-        if employee_id is not None:
-            self._float_repo.deduct_float_balance(employee_id, amount)
-
         new_balance = (account.balance or 0.0) - amount
         self._account_repo.update_balance(account_id, new_balance)
-        self._update_fee_account(fee_account_id, customer_fee)
 
+        # Create transaction record first so we have a txn_id for the vault audit trail
         data = {
             "transaction_type": "withdraw",
             "account_id": account_id,
@@ -157,6 +160,21 @@ class TransactionViewModel:
             "from_company_id": from_company_id,
         }
         txn_id = self._txn_repo.create(data)
+
+        # Deduct from employee float — with denomination tracking if provided
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.process_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    transaction_id=txn_id,
+                )
+            else:
+                self._float_repo.deduct_float_balance(employee_id, amount)
+
+        self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)
 
     def create_transfer(
@@ -171,6 +189,7 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        denominations: Optional[dict] = None,
     ) -> Transaction:
         from_account = self._account_repo.get_by_id(from_account_id)
         to_account = self._account_repo.get_by_id(to_account_id)
@@ -180,15 +199,11 @@ class TransactionViewModel:
         from_company_id = self._get_company_id(from_account.service_type_id)
         to_company_id = self._get_company_id(to_account.service_type_id)
 
-        if employee_id is not None:
-            self._float_repo.deduct_float_balance(employee_id, amount)
-
         from_balance = (from_account.balance or 0.0) - balance_change
         self._account_repo.update_balance(from_account_id, from_balance)
 
         to_balance = (to_account.balance or 0.0) + amount
         self._account_repo.update_balance(to_account_id, to_balance)
-        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "transfer",
@@ -208,6 +223,20 @@ class TransactionViewModel:
             "to_company_id": to_company_id,
         }
         txn_id = self._txn_repo.create(data)
+
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.process_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    transaction_id=txn_id,
+                )
+            else:
+                self._float_repo.deduct_float_balance(employee_id, amount)
+
+        self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)
 
     def create_exchange(
@@ -222,6 +251,7 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        denominations: Optional[dict] = None,
     ) -> Transaction:
         rate = self._rate_repo.get_latest("THB", "MMK")
         if rate is None:
@@ -238,12 +268,8 @@ class TransactionViewModel:
         balance_change = self._calc_balance_change(account, amount, commission)
         from_company_id = self._get_company_id(account.service_type_id)
 
-        if employee_id is not None:
-            self._float_repo.deduct_float_balance(employee_id, amount)
-
         new_balance = (account.balance or 0.0) + balance_change
         self._account_repo.update_balance(account_id, new_balance)
-        self._update_fee_account(fee_account_id, customer_fee)
 
         data = {
             "transaction_type": "exchange",
@@ -262,4 +288,18 @@ class TransactionViewModel:
             "from_company_id": from_company_id,
         }
         txn_id = self._txn_repo.create(data)
+
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.process_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    transaction_id=txn_id,
+                )
+            else:
+                self._float_repo.deduct_float_balance(employee_id, amount)
+
+        self._update_fee_account(fee_account_id, customer_fee)
         return self._txn_repo.get_by_id(txn_id)

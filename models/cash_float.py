@@ -17,7 +17,9 @@ class CashFloat:
     employee_name: Optional[str] = None
     issued_by: Optional[int] = None
     issued_by_name: Optional[str] = None
-    status: Optional[str] = None  # PENDING|ACTIVE|CLOSED
+    status: Optional[str] = None  # PENDING_RECEIPT|ACTIVE|PENDING_RECONCILIATION|CLOSED
+    current_balance: Optional[float] = None
+    return_denominations_json: Optional[str] = None
     total_amount: Optional[float] = None
     received_at: Optional[str] = None
     closed_at: Optional[str] = None

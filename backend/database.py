@@ -620,6 +620,89 @@ def _migrate_006(conn):
     conn.commit()
 
 
+def _migrate_007(conn):
+    """
+    Rebuild cash_float_assignments with new statuses + return_denominations_json column.
+    Create vault_transactions audit table.
+    """
+    conn.execute("PRAGMA foreign_keys = OFF")
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cash_float_assignments_v7 (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id             INTEGER NOT NULL,
+            issued_by               INTEGER NOT NULL,
+            status                  TEXT NOT NULL DEFAULT 'PENDING_RECEIPT'
+                                    CHECK(status IN (
+                                        'PENDING_RECEIPT','ACTIVE',
+                                        'PENDING_RECONCILIATION','CLOSED'
+                                    )),
+            total_amount            REAL NOT NULL DEFAULT 0.00,
+            current_balance         REAL NOT NULL DEFAULT 0,
+            return_denominations_json TEXT,
+            received_at             TEXT,
+            closed_at               TEXT,
+            closing_total           REAL,
+            note                    TEXT,
+            created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (employee_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (issued_by)   REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+        );
+    """)
+
+    conn.execute("""
+        INSERT INTO cash_float_assignments_v7
+            (id, employee_id, issued_by, status, total_amount, current_balance,
+             received_at, closed_at, closing_total, note, created_at)
+        SELECT
+            id, employee_id, issued_by,
+            CASE status
+                WHEN 'PENDING' THEN 'PENDING_RECEIPT'
+                ELSE status
+            END,
+            total_amount,
+            COALESCE(current_balance, 0),
+            received_at, closed_at, closing_total, note, created_at
+        FROM cash_float_assignments
+    """)
+    conn.commit()
+
+    conn.executescript("""
+        DROP TABLE cash_float_assignments;
+        ALTER TABLE cash_float_assignments_v7 RENAME TO cash_float_assignments;
+        DROP INDEX IF EXISTS idx_float_employee;
+        CREATE INDEX idx_float_employee ON cash_float_assignments(employee_id, status);
+    """)
+    conn.commit()
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS vault_transactions (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            txn_type       TEXT NOT NULL CHECK(txn_type IN (
+                               'float_issue','float_receipt','withdrawal',
+                               'return_initiate','return_confirm','adjustment'
+                           )),
+            float_id       INTEGER,
+            denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+            quantity       INTEGER NOT NULL CHECK(quantity > 0),
+            transaction_id INTEGER,
+            performed_by   INTEGER NOT NULL,
+            verified_by    INTEGER,
+            note           TEXT,
+            created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (float_id)       REFERENCES cash_float_assignments(id),
+            FOREIGN KEY (performed_by)   REFERENCES users(id),
+            FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vault_txn_float   ON vault_transactions(float_id);
+        CREATE INDEX IF NOT EXISTS idx_vault_txn_created ON vault_transactions(created_at);
+    """)
+    conn.commit()
+
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -634,6 +717,7 @@ def _run_migrations(conn):
         (4, "Add companies, service_types; migrate accounts, commission_tiers, and transactions", _migrate_004),
         (5, "Add is_fee_account flag to accounts", _migrate_005),
         (6, "Add current_balance to floats; create daily_reconciliation_logs", _migrate_006),
+        (7, "Rebuild cash_float_assignments with new statuses; create vault_transactions", _migrate_007),
     ]:
         if version not in applied:
             fn(conn)

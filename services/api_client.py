@@ -500,9 +500,36 @@ class ApiClient:
         """Get a specific float by ID."""
         return self._get(f"/cashier/floats/{float_id}")
 
-    def receive_float(self, float_id: int, pin: str) -> dict:
-        """Employee confirms receipt of float with PIN."""
-        return self._post(f"/cashier/floats/{float_id}/receive", {"pin": pin})
+    def receive_float(self, float_id: int, pin: str, denominations: dict[str, int]) -> dict:
+        """Employee confirms receipt of float with PIN + denomination count verification."""
+        return self._post(f"/cashier/floats/{float_id}/receive", {
+            "pin": pin,
+            "denominations": denominations,
+        })
+
+    def get_float_denomination_balance(self, float_id: int) -> dict:
+        """Get current per-denomination balance for a float."""
+        return self._get(f"/cashier/floats/{float_id}/denominations")
+
+    def initiate_float_return(
+        self,
+        float_id: int,
+        denominations: dict[str, int],
+        note: Optional[str] = None,
+    ) -> dict:
+        """Employee initiates float return with denomination breakdown."""
+        return self._post(f"/cashier/floats/{float_id}/initiate-return", {
+            "denominations": denominations,
+            "note": note,
+        })
+
+    def confirm_float_return(self, float_id: int, cashier_pin: str) -> dict:
+        """Cashier confirms float return with PIN — credits main vault."""
+        return self._post(f"/cashier/floats/{float_id}/confirm-return", {"pin": cashier_pin})
+
+    def get_vault_inventory(self) -> dict:
+        """Full denomination inventory across main vault and all employee floats."""
+        return self._get("/cashier/vault/inventory")
 
     def close_float(
         self,
@@ -510,7 +537,7 @@ class ApiClient:
         closing_denominations: dict[str, int],
         note: Optional[str] = None,
     ) -> dict:
-        """Close a float with denomination return."""
+        """Close a float with denomination return (legacy endpoint)."""
         return self._post(f"/cashier/floats/{float_id}/close", {
             "closing_denominations": closing_denominations,
             "note": note,

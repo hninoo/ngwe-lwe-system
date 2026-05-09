@@ -26,6 +26,8 @@ class CashFloatRepository:
             issued_by_name=row.get("issued_by_name"),
             status=row["status"],
             total_amount=row["total_amount"],
+            current_balance=row.get("current_balance"),
+            return_denominations_json=row.get("return_denominations_json"),
             received_at=row.get("received_at"),
             closed_at=row.get("closed_at"),
             closing_total=row.get("closing_total"),
@@ -46,12 +48,12 @@ class CashFloatRepository:
         total_amount: float,
         note: Optional[str] = None,
     ) -> int:
-        """Insert cash_float_assignments (PENDING) + cash_float_denominations. Returns float_id."""
+        """Insert cash_float_assignments (PENDING_RECEIPT) + cash_float_denominations. Returns float_id."""
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 """INSERT INTO cash_float_assignments
                    (employee_id, issued_by, status, total_amount, note)
-                   VALUES (?, ?, 'PENDING', ?, ?)""",
+                   VALUES (?, ?, 'PENDING_RECEIPT', ?, ?)""",
                 (employee_id, issued_by, total_amount, note),
             )
             float_id = cursor.lastrowid
@@ -149,7 +151,7 @@ class CashFloatRepository:
                    FROM cash_float_assignments cfa
                    JOIN users e ON e.id = cfa.employee_id
                    JOIN users i ON i.id = cfa.issued_by
-                   WHERE cfa.employee_id = ? AND cfa.status = 'PENDING'
+                   WHERE cfa.employee_id = ? AND cfa.status = 'PENDING_RECEIPT'
                    ORDER BY cfa.created_at DESC LIMIT 1""",
                 (employee_id,),
             )
@@ -157,6 +159,81 @@ class CashFloatRepository:
         if row is None:
             return None
         return self._attach_denominations(self._row_to_float(row))
+
+    def activate_float_v2(self, float_id: int) -> CashFloat:
+        """PENDING_RECEIPT → ACTIVE without logging vault_out (vault was debited at issuance)."""
+        cash_float = self.get_float(float_id)
+        if cash_float is None:
+            raise ValueError(f"Float {float_id} not found")
+        if cash_float.status != "PENDING_RECEIPT":
+            raise ValueError(f"Float {float_id} is not PENDING_RECEIPT (status={cash_float.status})")
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """UPDATE cash_float_assignments
+                   SET status = 'ACTIVE', received_at = datetime('now'),
+                       current_balance = total_amount
+                   WHERE id = ?""",
+                (float_id,),
+            )
+        return self.get_float(float_id)
+
+    def deduct_denominations(self, float_id: int, denominations: dict[int, int]) -> None:
+        """Deduct denomination quantities from cash_float_denominations."""
+        with get_cursor(commit=True) as cursor:
+            for denom, qty in denominations.items():
+                if qty > 0:
+                    cursor.execute(
+                        """UPDATE cash_float_denominations
+                           SET quantity = quantity - ?
+                           WHERE float_id = ? AND denomination = ?""",
+                        (qty, float_id, denom),
+                    )
+
+    def get_denomination_balance(self, float_id: int) -> dict[int, int]:
+        """Return current per-denomination quantities for a float."""
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT denomination, quantity FROM cash_float_denominations WHERE float_id = ?",
+                (float_id,),
+            )
+            return {row["denomination"]: row["quantity"] for row in cursor.fetchall()}
+
+    def set_pending_reconciliation(
+        self, float_id: int, return_denominations_json: str
+    ) -> None:
+        """ACTIVE → PENDING_RECONCILIATION; store return denomination JSON."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """UPDATE cash_float_assignments
+                   SET status = 'PENDING_RECONCILIATION',
+                       return_denominations_json = ?
+                   WHERE id = ?""",
+                (return_denominations_json, float_id),
+            )
+
+    def get_return_denominations_json(self, float_id: int) -> Optional[str]:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT return_denominations_json FROM cash_float_assignments WHERE id = ?",
+                (float_id,),
+            )
+            row = cursor.fetchone()
+        return row["return_denominations_json"] if row else None
+
+    def close_after_return(
+        self, float_id: int, closing_total: float, verified_by: int
+    ) -> None:
+        """PENDING_RECONCILIATION → CLOSED."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """UPDATE cash_float_assignments
+                   SET status = 'CLOSED',
+                       closed_at = datetime('now'),
+                       closing_total = ?,
+                       current_balance = 0
+                   WHERE id = ?""",
+                (closing_total, float_id),
+            )
 
     def activate_float(
         self,
@@ -167,8 +244,8 @@ class CashFloatRepository:
         cash_float = self.get_float(float_id)
         if cash_float is None:
             raise ValueError(f"Float {float_id} not found")
-        if cash_float.status != "PENDING":
-            raise ValueError(f"Float {float_id} is not PENDING (status={cash_float.status})")
+        if cash_float.status not in ("PENDING", "PENDING_RECEIPT"):
+            raise ValueError(f"Float {float_id} is not pending (status={cash_float.status})")
 
         # Build denomination dict from float denominations
         denom_dict: dict[int, int] = {
@@ -209,7 +286,7 @@ class CashFloatRepository:
         cash_float = self.get_float(float_id)
         if cash_float is None:
             raise ValueError(f"Float {float_id} not found")
-        if cash_float.status not in ("ACTIVE", "PENDING"):
+        if cash_float.status not in ("ACTIVE", "PENDING", "PENDING_RECEIPT", "PENDING_RECONCILIATION"):
             raise ValueError(f"Float {float_id} cannot be closed (status={cash_float.status})")
 
         closing_total = sum(
@@ -290,22 +367,23 @@ class CashFloatRepository:
         return new_balance
 
     def get_active_employee_float_summaries(self) -> list[dict]:
-        """Return all ACTIVE floats with employee name and current_balance."""
+        """Return ACTIVE and PENDING_RECONCILIATION floats (both still hold employee cash)."""
         with get_cursor() as cursor:
             cursor.execute(
                 """SELECT cfa.id AS float_id, cfa.employee_id,
                           u.full_name AS employee_name,
-                          cfa.current_balance, cfa.total_amount, cfa.created_at
+                          cfa.current_balance, cfa.total_amount, cfa.created_at,
+                          cfa.status
                    FROM cash_float_assignments cfa
                    JOIN users u ON u.id = cfa.employee_id
-                   WHERE cfa.status = 'ACTIVE'
+                   WHERE cfa.status IN ('ACTIVE','PENDING_RECONCILIATION')
                    ORDER BY u.full_name""",
             )
             rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
     def close_all_active_end_of_day(self) -> int:
-        """Close all ACTIVE floats at end of day. Returns count of closed floats."""
+        """Close all ACTIVE and PENDING_RECONCILIATION floats at end of day."""
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 """UPDATE cash_float_assignments
@@ -314,7 +392,7 @@ class CashFloatRepository:
                        closing_total = current_balance,
                        current_balance = 0,
                        note = COALESCE(note || ' | EOD auto-close', 'EOD auto-close')
-                   WHERE status = 'ACTIVE'""",
+                   WHERE status IN ('ACTIVE','PENDING_RECONCILIATION')""",
             )
             return cursor.rowcount
 

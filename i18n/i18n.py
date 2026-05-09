@@ -609,6 +609,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "closing_loading":         {"mm": "ဒေတာ ဆွဲယူနေသည်...",           "en": "Loading data..."},
     "closing_no_floats":       {"mm": "ACTIVE Float မရှိပါ",           "en": "No active employee floats"},
     "closing_no_pending":      {"mm": "Pending အပ်ငွေ မရှိပါ",         "en": "No pending deposits"},
+
+    # Multi-vault bidirectional flow
+    "float_status_pending_receipt": {"mm": "လက်ခံဆဲ",                  "en": "Pending Receipt"},
+    "float_status_pending_recon":   {"mm": "စစ်ဆေးဆဲ",                 "en": "Pending Reconciliation"},
+    "btn_initiate_return":          {"mm": "ငွေပြန်အပ်မည်",             "en": "Initiate Return"},
+    "btn_confirm_return":           {"mm": "ပြန်အပ်မှု အတည်ပြု",       "en": "Confirm Return"},
+    "err_denomination_mismatch":    {"mm": "ငွေတန်ဖိုး မကိုက်ညီပါ",    "en": "Denomination count mismatch"},
+    "err_insufficient_denomination":{"mm": "ငွေတန်ဖိုး မလုံလောက်ပါ",   "en": "Insufficient denomination"},
+    "float_denomination_balance":   {"mm": "လက်ကျန် (တန်ဖိုးအလိုက်)",  "en": "Denomination Balance"},
+    "vault_inventory":              {"mm": "ငွေသေတ္တာ ကြောင်းစာ",       "en": "Vault Inventory"},
+    "enter_cashier_pin":            {"mm": "Cashier PIN ထည့်ပါ",        "en": "Enter Cashier PIN"},
+    "enter_employee_pin":           {"mm": "PIN ထည့်ပါ",                "en": "Enter your PIN"},
+    "denomination_breakdown":       {"mm": "ငွေတန်ဖိုး ခွဲခြမ်း",       "en": "Denomination Breakdown"},
+    "closing_vault_inventory":      {"mm": "ငွေသေတ္တာ ကြောင်းစာ (တန်ဖိုးအလိုက်)", "en": "Vault Inventory (By Denomination)"},
 }
 
 

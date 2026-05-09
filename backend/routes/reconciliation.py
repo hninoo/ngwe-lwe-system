@@ -13,6 +13,7 @@ from repositories.cash_denomination_repository import CashDenominationRepository
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.daily_reconciliation_repository import DailyReconciliationRepository
 from repositories.transaction_repository import TransactionRepository
+from services.vault_service import VaultService
 from viewmodels.dashboard_viewmodel import DashboardViewModel, MMT
 
 router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
@@ -23,6 +24,7 @@ _float_repo = CashFloatRepository()
 _denom_repo = CashDenominationRepository()
 _recon_repo = DailyReconciliationRepository()
 _dashboard_vm = DashboardViewModel()
+_vault_service = VaultService(float_repo=_float_repo, denom_repo=_denom_repo)
 
 
 class CloseDayRequest(BaseModel):
@@ -117,6 +119,9 @@ def _build_snapshot() -> dict:
     float_summaries = _float_repo.get_active_employee_float_summaries()
     employee_floats_total = sum(f["current_balance"] for f in float_summaries)
 
+    # Full denomination inventory for the Closing Dashboard
+    denomination_inventory = _vault_service.get_denomination_inventory()
+
     pending_deposits = [
         {
             "id": t.id,
@@ -141,6 +146,7 @@ def _build_snapshot() -> dict:
         "vault_denominations": {str(d): q for d, q in vault.items()},
         "employee_floats": float_summaries,
         "employee_floats_total": employee_floats_total,
+        "denomination_inventory": denomination_inventory,
         "pending_deposits": pending_deposits,
         "total_cash": total_cash,
         "total_digital": total_digital,
