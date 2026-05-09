@@ -74,7 +74,9 @@ async def _broadcast_balances() -> None:
         return
     accounts = _account_vm.get_all_active()
     payload = {
-        "type": "balance_update",
+        "type": "balance_update",   # handled by DashboardPage.update_from_ws
+        "event": "balance_update",  # handled by DailyClosingView.handle_ws_event
+        "source": "transaction",
         "accounts": [asdict(a) for a in accounts],
     }
     await ws_manager.broadcast(payload)

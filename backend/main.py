@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.auth import decode_token
 from backend.database import init_db
 from backend.websocket_manager import ConnectionManager
 from backend.routes import auth, accounts, transactions, dashboard, users, exchange_rates, reports, commission_tiers
@@ -62,7 +63,15 @@ app.include_router(reconciliation.router)
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def websocket_endpoint(websocket: WebSocket, token: str = "") -> None:
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+    try:
+        decode_token(token)
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid or expired token")
+        return
     await ws_manager.connect(websocket)
     try:
         while True:

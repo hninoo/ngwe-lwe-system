@@ -157,9 +157,13 @@ STYLESHEET = f"""
 class WebSocketThread(QThread):
     message_received = pyqtSignal(str)
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, token: str = "") -> None:
         super().__init__()
-        self._url = url
+        if token:
+            from urllib.parse import quote
+            self._url = f"{url}?token={quote(token)}"
+        else:
+            self._url = url
         self._running = True
 
     def run(self) -> None:
@@ -1288,6 +1292,7 @@ class DashboardView(QMainWindow):
         super().__init__()
         self._api = api_client
         self._ws_thread: Optional[WebSocketThread] = None
+        self._daily_closing_view: Optional[DailyClosingView] = None
         # idx → QPushButton
         self._nav_buttons: dict[int, QPushButton] = {}
         # idx → (i18n_key, icon_char) — used for retranslation
@@ -1346,7 +1351,7 @@ class DashboardView(QMainWindow):
             CashFloatAdminView(self._api),       # 10 Cash Floats
             ServerInfoSubView(),                 # 11 Server Connection
             PasswordSubView(self._api),          # 12 Change Password
-            DailyClosingView(self._api),         # 13 Daily Closing
+            (self._daily_closing_view := DailyClosingView(self._api)),  # 13 Daily Closing
         ]:
             self._stack.addWidget(page)
             self._pages.append(page)
@@ -1557,17 +1562,22 @@ class DashboardView(QMainWindow):
     # ── WebSocket ──
 
     def _start_websocket(self) -> None:
-        self._ws_thread = WebSocketThread(WS_URL)
+        token = self._api.token or ""
+        self._ws_thread = WebSocketThread(WS_URL, token=token)
         self._ws_thread.message_received.connect(self._on_ws_message)
         self._ws_thread.start()
 
     def _on_ws_message(self, raw: str) -> None:
         try:
             data = json.loads(raw)
+            # Update DashboardPage balance cards inline
             if data.get("type") == "balance_update":
                 accounts = data.get("accounts", [])
                 if self._current_page == 0:
                     self._pages[0].update_from_ws(accounts)
+            # Trigger debounced DailyClosingView refresh
+            if data.get("event") == "balance_update" and self._daily_closing_view:
+                self._daily_closing_view.handle_ws_event("balance_update")
         except Exception:
             pass
 

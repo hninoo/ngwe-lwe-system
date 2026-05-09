@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
@@ -7,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
+
+logger = logging.getLogger(__name__)
 from backend.database import get_cursor
 from repositories.account_repository import AccountRepository
 from repositories.cash_denomination_repository import CashDenominationRepository
@@ -70,6 +73,14 @@ def close_day(
 
     # Close all active employee floats — end of day
     _float_repo.close_all_active_end_of_day()
+
+    # Automated backup after successful day close
+    try:
+        from services.backup_service import BackupService
+        backup_path = BackupService().create_backup()
+        logger.info("Close-day backup: %s", backup_path)
+    except Exception as exc:
+        logger.warning("Close-day backup failed (non-fatal): %s", exc)
 
     return {"message": "Day closed successfully", "reconciliation_id": recon_id, **snapshot}
 

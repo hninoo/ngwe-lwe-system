@@ -122,6 +122,10 @@ class DailyClosingView(QWidget):
         super().__init__()
         self._api = api
         self._snapshot: dict = {}
+        # Debounce timer: refresh 2 s after the last WS balance_update event
+        self._ws_refresh_timer = QTimer(self)
+        self._ws_refresh_timer.setSingleShot(True)
+        self._ws_refresh_timer.timeout.connect(self.load_data)
         self._init_ui()
 
     # ── Build UI ─────────────────────────────────────────────────────────────
@@ -392,6 +396,14 @@ class DailyClosingView(QWidget):
         _set_card(self._card_cash,    float(snap.get("total_cash", 0)))
         _set_card(self._card_digital, float(snap.get("total_digital", 0)))
         _set_card(self._card_grand,   float(snap.get("grand_total", 0)))
+
+    # ── WebSocket Live Refresh ────────────────────────────────────────────────
+
+    def handle_ws_event(self, event: str) -> None:
+        """Receive a WS balance_update event and schedule a debounced refresh.
+        Multiple events arriving within 2 s are coalesced into one reload."""
+        if event == "balance_update":
+            self._ws_refresh_timer.start(2000)
 
     # ── Close Day Handler ─────────────────────────────────────────────────────
 
