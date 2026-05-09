@@ -10,7 +10,7 @@
 
 ## Summary
 
-This plan restructures the Ngwe Lwe System's data model from a flat `services` table into a formal three-level hierarchy: **Company → ServiceType → Account/CommissionTier**. It adds company logo support (upload, storage, REST delivery, client-side display with fallback), restructures the commission tier lookup key from a free-text string to a proper foreign key, updates all layers of the stack (SQLite migration, repositories, viewmodels, REST routes, PyQt views), and ensures zero data loss for existing transactions and accounts.
+This plan restructures the Ngwe Lwe's data model from a flat `services` table into a formal three-level hierarchy: **Company → ServiceType → Account/CommissionTier**. It adds company logo support (upload, storage, REST delivery, client-side display with fallback), restructures the commission tier lookup key from a free-text string to a proper foreign key, updates all layers of the stack (SQLite migration, repositories, viewmodels, REST routes, PyQt views), and ensures zero data loss for existing transactions and accounts.
 
 ---
 

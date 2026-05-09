@@ -1,5 +1,5 @@
 """
-Shared pytest fixtures for Ngwe Lwe System tests.
+Shared pytest fixtures for Ngwe Lwe tests.
 
 Provides:
   - tmp_db:    fresh in-memory SQLite, full schema (pre-migration_004 state)

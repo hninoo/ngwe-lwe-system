@@ -1,4 +1,4 @@
-# 📊 Ngwe Lwe System — Tables (Markdown)
+# 📊 Ngwe Lwe — Tables (Markdown)
 
 ## schema_version
 

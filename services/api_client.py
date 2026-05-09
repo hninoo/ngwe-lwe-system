@@ -534,15 +534,3 @@ class ApiClient:
     def get_vault_inventory(self) -> dict:
         """Full denomination inventory across main vault and all employee floats."""
         return self._get("/cashier/vault/inventory")
-
-    def close_float(
-        self,
-        float_id: int,
-        closing_denominations: dict[str, int],
-        note: Optional[str] = None,
-    ) -> dict:
-        """Close a float with denomination return (legacy endpoint)."""
-        return self._post(f"/cashier/floats/{float_id}/close", {
-            "closing_denominations": closing_denominations,
-            "note": note,
-        })

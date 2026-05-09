@@ -1,4 +1,4 @@
-# Ngwe Lwe System (ငွေလွှဲ)
+# Ngwe Lwe (ငွေလွှဲ)
 
 Myanmar Money Transfer Business Management System — a desktop application for managing money transfer operations with real-time owner monitoring, employee transaction handling, and cashier cash float management.
 

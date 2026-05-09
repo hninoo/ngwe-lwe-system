@@ -1244,7 +1244,8 @@ class TransactionsReadOnlyPage(QWidget):
             cash_item.setForeground(QColor(ACCENT_GREEN if approved else ACCENT_YELLOW))
             self._table.setItem(row, 7, cash_item)
 
-            # Approve button (only for unapproved, non-transfer transactions)
+            # Backend rejects employee withdraw/exchange (float already debited).
+            # Owner-initiated cash-outs still require cashier approval here.
             if not approved and txn_type in ("deposit", "withdraw", "exchange"):
                 btn = QPushButton(t("confirm_receipt_btn"))
                 btn.setStyleSheet(

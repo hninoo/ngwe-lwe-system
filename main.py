@@ -1,5 +1,5 @@
 """
-Ngwe Lwe System — unified launcher  (v1.0.0-beta)
+Ngwe Lwe — unified launcher  (v1.0.0-beta)
 
 Startup logic:
   1. Check %LOCALAPPDATA%/NgweLweSystem/app_config.json

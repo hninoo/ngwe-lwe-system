@@ -1,5 +1,5 @@
 """
-Lightweight dict-based i18n module for Ngwe Lwe System.
+Lightweight dict-based i18n module for Ngwe Lwe.
 Supports Myanmar (mm, default) and English (en).
 
 Usage:
@@ -24,7 +24,7 @@ from PyQt6.QtGui import QFont
 # ─────────────────────────────────────────────────────────
 TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── General ──────────────────────────────────────────
-    "app_title":              {"mm": "ငွေလွှဲ System",              "en": "Ngwe Lwe System"},
+    "app_title":              {"mm": "ငွေလွှဲ System",              "en": "Ngwe Lwe"},
     "logout":                 {"mm": "ထွက်မည်",                    "en": "Logout"},
     "refresh":                {"mm": "ပြန်ဆွဲမည်",                 "en": "Refresh"},
     "cancel":                 {"mm": "မလုပ်ပါ",                    "en": "Cancel"},
@@ -47,7 +47,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "note_optional":          {"mm": "မှတ်ချက် (မဖြစ်မနေမဟုတ်):", "en": "Note (optional):"},
 
     # ── Login ────────────────────────────────────────────
-    "login_title":            {"mm": "ငွေလွှဲ System",             "en": "Ngwe Lwe System"},
+    "login_title":            {"mm": "ငွေလွှဲ System",             "en": "Ngwe Lwe"},
     "username_placeholder":   {"mm": "အသုံးပြုသူအမည်",            "en": "Username"},
     "password_placeholder":   {"mm": "စကားဝှက်",                  "en": "Password"},
     "sign_in":                {"mm": "ဝင်မည်",                     "en": "Sign In"},

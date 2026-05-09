@@ -26,6 +26,7 @@ class TicketStore:
 
     def consume(self, ticket: str) -> bool:
         with self._lock:
+            self._cleanup_locked()
             expiry = self._tickets.pop(ticket, None)
             return expiry is not None and time.time() < expiry
 

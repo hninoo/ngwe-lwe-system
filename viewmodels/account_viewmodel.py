@@ -21,5 +21,8 @@ class AccountViewModel:
     def get_accounts_by_service_type(self, service_type_id: int) -> list[Account]:
         return self._account_repo.get_by_service_type(service_type_id)
 
-    def update_balance(self, account_id: int, new_balance: float) -> bool:
-        return self._account_repo.update_balance(account_id, new_balance)
+    def update_balance(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "update_balance() is removed. Use POST /accounts/{id}/balance-adjust "
+            "for all audited balance mutations."
+        )

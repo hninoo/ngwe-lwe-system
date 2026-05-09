@@ -2,7 +2,7 @@ from typing import Optional
 
 from models.cash_float import CashFloat
 from models.cash_denomination_log import CashDenominationLog
-from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
+from repositories.cash_denomination_repository import CashDenominationRepository
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.user_repository import UserRepository
 
@@ -50,45 +50,11 @@ class CashierViewModel:
             note=note,
         )
 
-    def issue_float(
-        self,
-        employee_id: int,
-        cashier_id: int,
-        denominations: dict[int, int],
-        note: Optional[str] = None,
-    ) -> CashFloat:
-        """Issue a float to an employee. Returns the created CashFloat."""
-        total = sum(d * q for d, q in denominations.items() if q > 0)
-        if total == 0:
-            raise ValueError("Float total must be greater than zero")
-
-        employee = self._user_repo.get_by_id(employee_id)
-        if employee is None or employee.role != "employee":
-            raise ValueError("Employee not found")
-
-        # Max 1 open float check
-        existing_pending = self._float_repo.get_pending_float_for_employee(employee_id)
-        existing_active = self._float_repo.get_active_float_for_employee(employee_id)
-        if existing_pending is not None or existing_active is not None:
-            raise ValueError("Employee already has an open float (PENDING or ACTIVE)")
-
-        # Vault sufficiency check
-        available = self._denom_repo.get_available_balance()
-        for denom, qty in denominations.items():
-            if qty > 0 and available.get(denom, 0) < qty:
-                raise ValueError(
-                    f"Insufficient vault balance for {denom} MMK: "
-                    f"requested {qty}, available {available.get(denom, 0)}"
-                )
-
-        float_id = self._float_repo.create_float(
-            employee_id=employee_id,
-            issued_by=cashier_id,
-            denominations=denominations,
-            total_amount=total,
-            note=note,
+    def issue_float(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "issue_float() is removed. Use VaultService.issue_float() via the "
+            "/cashier/floats/issue HTTP route."
         )
-        return self._float_repo.get_float(float_id)
 
     def get_all_floats(
         self,
@@ -102,15 +68,11 @@ class CashierViewModel:
         """Return users with role=employee."""
         return self._user_repo.get_employees()
 
-    def receive_float(self, float_id: int, employee_id: int, pin: str) -> CashFloat:
-        """Activate float after PIN verification."""
-        import bcrypt
-        stored_pin_hash = self._user_repo.get_pin_hash(employee_id)
-        if stored_pin_hash is None:
-            raise ValueError("PIN not set. Please ask your cashier to set your PIN.")
-        if not bcrypt.checkpw(pin.encode(), stored_pin_hash.encode()):
-            raise ValueError("Invalid PIN")
-        return self._float_repo.activate_float(float_id, self._denom_repo)
+    def receive_float(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "receive_float() is removed. Use VaultService.receive_float() via the "
+            "/cashier/floats/{id}/receive HTTP route."
+        )
 
     def close_float(self, *args, **kwargs) -> None:
         raise NotImplementedError(

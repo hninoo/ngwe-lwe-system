@@ -49,14 +49,14 @@ def close_day(
     if current_user["role"] != "owner":
         raise HTTPException(403, "Owner only")
 
-    open_floats = _float_repo.get_active_employee_float_summaries()
+    open_floats = _float_repo.get_open_employee_float_summaries()
     if open_floats:
         names = ", ".join(f["employee_name"] for f in open_floats)
         raise HTTPException(
             400,
-            f"Cannot close day while there are active or pending floats. "
-            f"All floats must be returned and confirmed via PIN handover. "
-            f"Outstanding float holders: {names}",
+            f"Cannot close day while floats are still open (PENDING_RECEIPT, ACTIVE, or "
+            f"PENDING_RECONCILIATION). All floats must be received and returned via PIN "
+            f"handover before closing. Outstanding float holders: {names}",
         )
 
     snapshot = _build_snapshot()
@@ -134,8 +134,13 @@ def _build_snapshot() -> dict:
     vault = _denom_repo.get_vault_balance()
     vault_total = sum(d * q for d, q in vault.items())
 
-    float_summaries = _float_repo.get_active_employee_float_summaries()
-    employee_floats_total = sum(f["current_balance"] for f in float_summaries)
+    float_summaries = _float_repo.get_open_employee_float_summaries()
+    # PENDING_RECEIPT floats have current_balance=0 (denominations not yet confirmed),
+    # but total_amount was already debited from the main vault and is in transit.
+    employee_floats_total = sum(
+        f["total_amount"] if f["status"] == "PENDING_RECEIPT" else f["current_balance"]
+        for f in float_summaries
+    )
 
     # Full denomination inventory for the Closing Dashboard
     denomination_inventory = _vault_service.get_denomination_inventory()

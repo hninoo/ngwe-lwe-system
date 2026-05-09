@@ -1,4 +1,4 @@
--- Ngwe Lwe System — SQLite Schema (v4)
+-- Ngwe Lwe — SQLite Schema (v4)
 
 -- ============================================================
 -- 0. schema_version (must be first)

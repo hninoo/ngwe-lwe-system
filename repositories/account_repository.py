@@ -83,8 +83,11 @@ class AccountRepository(BaseRepository):
             rows = cursor.fetchall()
         return [self._row_to_model(r) for r in rows]
 
-    def update_balance(self, account_id: int, new_balance: float) -> bool:
-        return self.update(account_id, {"balance": new_balance})
+    def update_balance(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "Absolute balance setter is decommissioned. "
+            "Use increment_balance() via the audited balance-adjust route."
+        )
 
     def increment_balance(self, account_id: int, delta: float) -> bool:
         """Atomically apply delta (positive or negative) to account balance."""

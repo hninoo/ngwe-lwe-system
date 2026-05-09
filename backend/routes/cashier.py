@@ -311,6 +311,15 @@ def approve_transaction(
     if txn is None:
         raise HTTPException(404, "Transaction not found")
 
+    if txn.transaction_type == "transfer":
+        raise HTTPException(400, "Transfers are not cash-approval transactions.")
+    creator = _user_repo.get_by_id(txn.created_by)
+    if creator and creator.role == "employee" and txn.transaction_type in ("withdraw", "exchange"):
+        raise HTTPException(
+            409,
+            "Employee cash-out transactions are already deducted from the employee float.",
+        )
+
     denoms = _parse_denominations(body.denominations)
     entered_total = sum(d * q for d, q in denoms.items())
     if entered_total == 0:
@@ -334,6 +343,15 @@ def approve_transaction(
         updated = txn_repo.approve_if_pending(txn_id, current_user["user_id"])
         if updated is None:
             raise HTTPException(409, "Transaction already approved")
+        if entry_type == "vault_out":
+            available = _denom_repo.get_vault_balance()
+            for denom, qty in denoms.items():
+                if qty > available.get(denom, 0):
+                    raise HTTPException(
+                        409,
+                        f"Insufficient main vault denomination {denom:,} MMK: "
+                        f"available {available.get(denom, 0)}, requested {qty}",
+                    )
         _denom_repo.record_bulk_entry(
             entry_type=entry_type,
             denominations=denoms,

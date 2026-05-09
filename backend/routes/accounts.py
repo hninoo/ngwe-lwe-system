@@ -14,10 +14,6 @@ from viewmodels.account_viewmodel import AccountViewModel
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
-class BalanceUpdate(BaseModel):
-    balance: float
-
-
 class BalanceAdjust(BaseModel):
     amount: float
     remark: str = ""
@@ -35,7 +31,6 @@ class AccountUpdate(BaseModel):
     service_type_id: Optional[int] = None
     account_name: Optional[str] = None
     phone_number: Optional[str] = None
-    balance: Optional[float] = None
     is_active: Optional[bool] = None
     is_fee_account: Optional[bool] = None
 
@@ -120,17 +115,6 @@ def delete_account(
     return {"message": "Account deactivated", "account_id": account_id}
 
 
-@router.patch("/{account_id}/balance")
-def update_balance(
-    account_id: int,
-    body: BalanceUpdate,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    if current_user["role"] != "owner":
-        raise HTTPException(status_code=403, detail="Owner only")
-    _account_vm.update_balance(account_id, body.balance)
-    return {"message": "Balance updated", "account_id": account_id}
-
 
 @router.post("/{account_id}/balance-adjust")
 def adjust_balance(
@@ -140,12 +124,13 @@ def adjust_balance(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    account = _account_repo.get_by_id(account_id)
-    if account is None:
+    if _account_repo.get_by_id(account_id) is None:
         raise HTTPException(status_code=404, detail="Account not found")
-    old_balance = account.balance
-    new_balance = round(old_balance + body.amount, 2)
     with atomic():
+        # Re-read inside the write lock so concurrent adjustments don't skew the audit log.
+        account = _account_repo.get_by_id(account_id)
+        old_balance = account.balance
+        new_balance = round(old_balance + body.amount, 2)
         _account_repo.increment_balance(account_id, body.amount)
         with get_cursor(commit=True) as cursor:
             cursor.execute(

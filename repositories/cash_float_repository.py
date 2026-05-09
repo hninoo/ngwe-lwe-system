@@ -362,8 +362,11 @@ class CashFloatRepository:
             row = cursor.fetchone()
         return float(row["current_balance"] or 0) if row else 0.0
 
-    def get_active_employee_float_summaries(self) -> list[dict]:
-        """Return ACTIVE and PENDING_RECONCILIATION floats (both still hold employee cash)."""
+    def get_open_employee_float_summaries(self) -> list[dict]:
+        """Return all floats whose cash has not yet returned to the main vault.
+        PENDING_RECEIPT: issued but not yet received by employee (vault already debited).
+        ACTIVE: live float in use.
+        PENDING_RECONCILIATION: employee initiated return, awaiting cashier confirmation."""
         with get_cursor() as cursor:
             cursor.execute(
                 """SELECT cfa.id AS float_id, cfa.employee_id,
@@ -372,7 +375,7 @@ class CashFloatRepository:
                           cfa.status
                    FROM cash_float_assignments cfa
                    JOIN users u ON u.id = cfa.employee_id
-                   WHERE cfa.status IN ('ACTIVE','PENDING_RECONCILIATION')
+                   WHERE cfa.status IN ('PENDING_RECEIPT','ACTIVE','PENDING_RECONCILIATION')
                    ORDER BY u.full_name""",
             )
             rows = cursor.fetchall()

@@ -178,15 +178,15 @@ class VaultService:
                     "Please recount and try again or contact the cashier."
                 )
 
-        updated = self._float_repo.activate_float_v2(float_id)
-
-        self._vault_txn_repo.record_bulk(
-            txn_type="float_receipt",
-            float_id=float_id,
-            denominations=v_denoms,
-            performed_by=employee_id,
-            note=f"Float #{float_id} receipt confirmed",
-        )
+        with atomic():
+            updated = self._float_repo.activate_float_v2(float_id)
+            self._vault_txn_repo.record_bulk(
+                txn_type="float_receipt",
+                float_id=float_id,
+                denominations=v_denoms,
+                performed_by=employee_id,
+                note=f"Float #{float_id} receipt confirmed",
+            )
 
         return updated
 
@@ -430,7 +430,7 @@ class VaultService:
         main_vault = self._denom_repo.get_vault_balance()
         vault_total = self._total(main_vault)
 
-        active_floats = self._float_repo.get_active_employee_float_summaries()
+        active_floats = self._float_repo.get_open_employee_float_summaries()
         employee_inventory = []
         for f in active_floats:
             denom_balance = self._float_repo.get_denomination_balance(f["float_id"])
