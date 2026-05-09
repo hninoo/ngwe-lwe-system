@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS commission_tiers (
     is_active                      INTEGER NOT NULL DEFAULT 1,
     created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    action      TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id   INTEGER,
+    details     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _SEED_SERVICES = """
@@ -200,6 +210,8 @@ def make_db_patch(conn):
         "repositories.transaction_repository.get_cursor",
         "repositories.exchange_rate_repository.get_cursor",
         "repositories.user_repository.get_cursor",
+        "viewmodels.transaction_viewmodel.get_cursor",
+        "backend.routes.cashier.get_cursor",
     ]
 
     @contextmanager

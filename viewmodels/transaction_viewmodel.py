@@ -1,3 +1,4 @@
+import json
 import math
 from typing import Optional
 
@@ -10,7 +11,16 @@ from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_type_repository import ServiceTypeRepository
 from repositories.transaction_repository import TransactionRepository
 from services.vault_service import InsufficientDenominationError, VaultService
-from backend.database import atomic
+from backend.database import atomic, get_cursor
+
+
+def _log(user_id: int, action: str, entity_id: int, details: dict) -> None:
+    with get_cursor(commit=True) as cur:
+        cur.execute(
+            "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
+            "VALUES (?, ?, 'transaction', ?, ?)",
+            (user_id, action, entity_id, json.dumps(details, default=str)),
+        )
 
 # Re-export so routes can import from one place
 __all__ = [
@@ -115,6 +125,10 @@ class TransactionViewModel:
                 "from_company_id": from_company_id,
             }
             txn_id = self._txn_repo.create(data)
+            _log(created_by, "transaction_created", txn_id, {
+                "type": "deposit", "account_id": account_id,
+                "amount": amount, "balance_delta": +amount,
+            })
         return self._txn_repo.get_by_id(txn_id)
 
     def create_withdraw(
@@ -194,6 +208,10 @@ class TransactionViewModel:
                     self._float_repo.deduct_float_balance(employee_id, amount)
 
             self._update_fee_account(fee_account_id, customer_fee)
+            _log(created_by, "transaction_created", txn_id, {
+                "type": "withdraw", "account_id": account_id,
+                "amount": amount, "balance_delta": -amount,
+            })
         return self._txn_repo.get_by_id(txn_id)
 
     def create_transfer(
@@ -275,6 +293,11 @@ class TransactionViewModel:
                     self._float_repo.deduct_float_balance(employee_id, amount)
 
             self._update_fee_account(fee_account_id, customer_fee)
+            _log(created_by, "transaction_created", txn_id, {
+                "type": "transfer", "from_account_id": from_account_id,
+                "to_account_id": to_account_id, "amount": amount,
+                "from_balance_delta": -balance_change, "to_balance_delta": +amount,
+            })
         return self._txn_repo.get_by_id(txn_id)
 
     def create_exchange(
@@ -361,4 +384,9 @@ class TransactionViewModel:
                     self._float_repo.deduct_float_balance(employee_id, amount)
 
             self._update_fee_account(fee_account_id, customer_fee)
+            _log(created_by, "transaction_created", txn_id, {
+                "type": "exchange", "account_id": account_id,
+                "amount": amount, "currency": currency,
+                "balance_delta": balance_change,
+            })
         return self._txn_repo.get_by_id(txn_id)

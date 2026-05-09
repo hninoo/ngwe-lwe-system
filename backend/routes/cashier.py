@@ -5,8 +5,10 @@ import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import json
+
 from backend.auth import get_current_user
-from backend.database import atomic
+from backend.database import atomic, get_cursor
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.transaction_repository import TransactionRepository
@@ -54,11 +56,6 @@ class InitiateReturnRequest(BaseModel):
 
 class ConfirmReturnRequest(BaseModel):
     pin: str
-
-
-class CloseFloatRequest(BaseModel):
-    closing_denominations: dict[str, int]
-    note: Optional[str] = None
 
 
 class ReceivedCashRequest(BaseModel):
@@ -297,45 +294,6 @@ def confirm_float_return(
     return asdict(updated)
 
 
-@router.post("/floats/{float_id}/close")
-def close_float(
-    float_id: int,
-    body: CloseFloatRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    """Emergency close — owner-only with mandatory audit note.
-    Normal path: employee initiate-return → cashier confirm-return."""
-    if current_user["role"] != "owner":
-        raise HTTPException(
-            403,
-            "Emergency close is owner-only. "
-            "Use initiate-return and confirm-return for the normal float closure flow."
-        )
-    if not body.note or not body.note.strip():
-        raise HTTPException(400, "Emergency close requires an audit reason in the note field.")
-
-    cash_float = _float_repo.get_float(float_id)
-    if cash_float is None:
-        raise HTTPException(404, "Float not found")
-
-    if cash_float.status == "CLOSED":
-        raise HTTPException(409, "Float is already closed.")
-    if cash_float.status == "PENDING_RECONCILIATION":
-        raise HTTPException(
-            409,
-            "Float is awaiting reconciliation. Use the confirm-return endpoint "
-            "(cashier PIN required) to close it."
-        )
-
-    closing_denoms = _parse_denominations(body.closing_denominations)
-    updated = _float_repo.close_float(
-        float_id=float_id,
-        closing_denominations=closing_denoms,
-        denom_repo=_denom_repo,
-        note=body.note,
-    )
-    return asdict(updated)
-
 
 # ── Transaction cash approval ──
 
@@ -382,5 +340,20 @@ def approve_transaction(
             created_by=current_user["user_id"],
             note=note,
         )
+        with get_cursor(commit=True) as cur:
+            cur.execute(
+                "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
+                "VALUES (?, 'transaction_cash_approved', 'transaction', ?, ?)",
+                (
+                    current_user["user_id"],
+                    txn_id,
+                    json.dumps({
+                        "txn_type": txn.transaction_type,
+                        "amount": txn.amount,
+                        "entered_total": entered_total,
+                        "vault_entry_type": entry_type,
+                    }),
+                ),
+            )
 
     return asdict(updated)

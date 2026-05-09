@@ -368,26 +368,35 @@ class CashFloatRepository:
         return self.get_float(float_id)
 
     def deduct_float_balance(self, employee_id: int, amount: float) -> float:
-        """Deduct amount from employee's active float current_balance. Raises InsufficientFloatError if too low."""
+        """Atomically deduct amount from employee's active float. Raises InsufficientFloatError if too low."""
         with get_cursor(commit=True) as cursor:
             cursor.execute(
-                """SELECT id, current_balance FROM cash_float_assignments
+                """UPDATE cash_float_assignments
+                   SET current_balance = current_balance - ?
+                   WHERE employee_id = ? AND status = 'ACTIVE' AND current_balance >= ?""",
+                (amount, employee_id, amount),
+            )
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    """SELECT current_balance FROM cash_float_assignments
+                       WHERE employee_id = ? AND status = 'ACTIVE'
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (employee_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError("No active float found for employee")
+                raise InsufficientFloatError(
+                    available=float(row["current_balance"] or 0), required=amount
+                )
+            cursor.execute(
+                """SELECT current_balance FROM cash_float_assignments
                    WHERE employee_id = ? AND status = 'ACTIVE'
                    ORDER BY created_at DESC LIMIT 1""",
                 (employee_id,),
             )
             row = cursor.fetchone()
-            if row is None:
-                raise ValueError("No active float found for employee")
-            current = float(row["current_balance"] or 0)
-            if amount > current:
-                raise InsufficientFloatError(available=current, required=amount)
-            new_balance = current - amount
-            cursor.execute(
-                "UPDATE cash_float_assignments SET current_balance = ? WHERE id = ?",
-                (new_balance, row["id"]),
-            )
-        return new_balance
+        return float(row["current_balance"] or 0) if row else 0.0
 
     def get_active_employee_float_summaries(self) -> list[dict]:
         """Return ACTIVE and PENDING_RECONCILIATION floats (both still hold employee cash)."""
