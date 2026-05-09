@@ -138,10 +138,31 @@ class TransactionViewModel:
         commission = self._calc_commission(account, amount, "receive")
         from_company_id = self._get_company_id(account.service_type_id)
 
+        # ── PRE-VALIDATE float/denominations BEFORE any DB writes ──────────────
+        # If validation fails here, no account balance or transaction record has
+        # been touched, so the ledger remains consistent.
+        active_float = None
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.validate_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    amount=amount,
+                )
+            elif active_float is None:
+                raise ValueError("No active float found for this employee.")
+            else:
+                cur = float(active_float.current_balance or 0)
+                if amount > cur:
+                    from repositories.cash_float_repository import InsufficientFloatError
+                    raise InsufficientFloatError(available=cur, required=amount)
+
+        # ── Writes (validation passed) ─────────────────────────────────────────
         new_balance = (account.balance or 0.0) - amount
         self._account_repo.update_balance(account_id, new_balance)
 
-        # Create transaction record first so we have a txn_id for the vault audit trail
         data = {
             "transaction_type": "withdraw",
             "account_id": account_id,
@@ -161,9 +182,7 @@ class TransactionViewModel:
         }
         txn_id = self._txn_repo.create(data)
 
-        # Deduct from employee float — with denomination tracking if provided
         if employee_id is not None:
-            active_float = self._float_repo.get_active_float_for_employee(employee_id)
             if denominations and active_float:
                 self._vault_service.process_withdrawal(
                     float_id=active_float.id,
@@ -199,6 +218,26 @@ class TransactionViewModel:
         from_company_id = self._get_company_id(from_account.service_type_id)
         to_company_id = self._get_company_id(to_account.service_type_id)
 
+        # ── PRE-VALIDATE float/denominations BEFORE any DB writes ──────────────
+        active_float = None
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.validate_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    amount=amount,
+                )
+            elif active_float is None:
+                raise ValueError("No active float found for this employee.")
+            else:
+                cur = float(active_float.current_balance or 0)
+                if amount > cur:
+                    from repositories.cash_float_repository import InsufficientFloatError
+                    raise InsufficientFloatError(available=cur, required=amount)
+
+        # ── Writes ─────────────────────────────────────────────────────────────
         from_balance = (from_account.balance or 0.0) - balance_change
         self._account_repo.update_balance(from_account_id, from_balance)
 
@@ -225,7 +264,6 @@ class TransactionViewModel:
         txn_id = self._txn_repo.create(data)
 
         if employee_id is not None:
-            active_float = self._float_repo.get_active_float_for_employee(employee_id)
             if denominations and active_float:
                 self._vault_service.process_withdrawal(
                     float_id=active_float.id,
@@ -268,6 +306,25 @@ class TransactionViewModel:
         balance_change = self._calc_balance_change(account, amount, commission)
         from_company_id = self._get_company_id(account.service_type_id)
 
+        # ── PRE-VALIDATE float/denominations BEFORE any DB writes ──────────────
+        active_float = None
+        if employee_id is not None:
+            active_float = self._float_repo.get_active_float_for_employee(employee_id)
+            if denominations and active_float:
+                self._vault_service.validate_withdrawal(
+                    float_id=active_float.id,
+                    employee_id=employee_id,
+                    denominations=denominations,
+                    amount=amount,
+                )
+            elif active_float is None:
+                raise ValueError("No active float found for this employee.")
+            else:
+                cur = float(active_float.current_balance or 0)
+                if amount > cur:
+                    from repositories.cash_float_repository import InsufficientFloatError
+                    raise InsufficientFloatError(available=cur, required=amount)
+
         new_balance = (account.balance or 0.0) + balance_change
         self._account_repo.update_balance(account_id, new_balance)
 
@@ -290,7 +347,6 @@ class TransactionViewModel:
         txn_id = self._txn_repo.create(data)
 
         if employee_id is not None:
-            active_float = self._float_repo.get_active_float_for_employee(employee_id)
             if denominations and active_float:
                 self._vault_service.process_withdrawal(
                     float_id=active_float.id,

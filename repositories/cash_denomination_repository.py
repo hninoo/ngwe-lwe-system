@@ -28,13 +28,17 @@ class CashDenominationRepository:
         return result
 
     def get_pending_reserved(self) -> dict[int, int]:
-        """Returns {denomination: qty} reserved in PENDING floats (not yet vault_out'd)."""
+        """Returns {denomination: qty} reserved in PENDING_RECEIPT floats.
+        NOTE: In the new flow vault_out is logged at issuance so PENDING_RECEIPT
+        amounts are already reflected in get_vault_balance(). This method exists
+        for backward-compatibility but should return 0 for all denoms in normal
+        operation (vault_balance already accounts for them via vault_out entries)."""
         with get_cursor() as cursor:
             cursor.execute("""
                 SELECT cfd.denomination, SUM(cfd.quantity) as total_qty
                 FROM cash_float_denominations cfd
                 JOIN cash_float_assignments cfa ON cfa.id = cfd.float_id
-                WHERE cfa.status = 'PENDING'
+                WHERE cfa.status = 'PENDING_RECEIPT'
                 GROUP BY cfd.denomination
             """)
             rows = cursor.fetchall()

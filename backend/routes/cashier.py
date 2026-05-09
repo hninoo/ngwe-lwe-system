@@ -310,7 +310,13 @@ def close_float(
     elif role != "cashier":
         raise HTTPException(403, "Access denied")
 
-    if cash_float.status not in ("ACTIVE", "PENDING_RECEIPT", "PENDING_RECONCILIATION"):
+    if cash_float.status == "PENDING_RECONCILIATION":
+        raise HTTPException(
+            409,
+            "Float is awaiting reconciliation. Use the confirm-return endpoint "
+            "(cashier PIN required) to close it."
+        )
+    if cash_float.status not in ("ACTIVE", "PENDING_RECEIPT"):
         raise HTTPException(409, f"Float cannot be closed (status={cash_float.status})")
 
     closing_denoms = _parse_denominations(body.closing_denominations)

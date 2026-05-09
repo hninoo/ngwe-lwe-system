@@ -197,6 +197,17 @@ class VaultService:
         Raises InsufficientDenominationError if any denomination is short.
         Returns the new denomination balance.
         """
+        # State guard — must be checked before any writes
+        cash_float = self._float_repo.get_float(float_id)
+        if cash_float is None:
+            raise ValueError(f"Float #{float_id} not found.")
+        if cash_float.status != "ACTIVE":
+            raise FloatStateError(
+                f"Float #{float_id} must be ACTIVE for withdrawal (status={cash_float.status})."
+            )
+        if cash_float.employee_id != employee_id:
+            raise ValueError("Float does not belong to this employee.")
+
         denoms = self.parse_denominations(denominations)
         if not denoms:
             raise ValueError("Denomination breakdown is required for withdrawals.")
@@ -251,6 +262,11 @@ class VaultService:
             )
 
         denoms = self.parse_denominations(return_denominations)
+        if not denoms:
+            raise ValueError(
+                "Return denomination breakdown cannot be empty. "
+                "Provide at least one note denomination to return."
+            )
         total = self._total(denoms)
 
         current = float(cash_float.current_balance or 0)
@@ -343,6 +359,53 @@ class VaultService:
         )
 
         return self._float_repo.get_float(float_id)
+
+    # ── Pre-validation (read-only, no writes) ─────────────────────────────────
+
+    def validate_withdrawal(
+        self,
+        float_id: int,
+        employee_id: int,
+        denominations: dict,
+        amount: float,
+    ) -> None:
+        """Pure validation — raises before any writes occur.
+        Call this BEFORE updating account balances or creating transaction records
+        so that no DB state is corrupted if validation fails."""
+        cash_float = self._float_repo.get_float(float_id)
+        if cash_float is None:
+            raise ValueError(f"Float #{float_id} not found.")
+        if cash_float.status != "ACTIVE":
+            raise FloatStateError(
+                f"Float #{float_id} must be ACTIVE for a withdrawal (status={cash_float.status})."
+            )
+        if cash_float.employee_id != employee_id:
+            raise ValueError("Float does not belong to this employee.")
+
+        denoms = self.parse_denominations(denominations)
+        if not denoms:
+            raise ValueError("Denomination breakdown is required for withdrawals.")
+
+        # Denomination-level check
+        current_balance = self._float_repo.get_denomination_balance(float_id)
+        for denom, qty in denoms.items():
+            available = current_balance.get(denom, 0)
+            if qty > available:
+                raise InsufficientDenominationError(
+                    denomination=denom, available=available, requested=qty
+                )
+
+        # Overall balance check
+        denom_total = self._total(denoms)
+        if abs(denom_total - amount) > 1:
+            raise ValueError(
+                f"Denomination total {denom_total:,.0f} does not match "
+                f"withdrawal amount {amount:,.0f}."
+            )
+
+        float_balance = float(cash_float.current_balance or 0)
+        if denom_total > float_balance:
+            raise InsufficientFloatError(available=float_balance, required=denom_total)
 
     # ── Queries ────────────────────────────────────────────────────────────────
 

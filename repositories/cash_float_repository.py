@@ -161,7 +161,8 @@ class CashFloatRepository:
         return self._attach_denominations(self._row_to_float(row))
 
     def activate_float_v2(self, float_id: int) -> CashFloat:
-        """PENDING_RECEIPT → ACTIVE without logging vault_out (vault was debited at issuance)."""
+        """PENDING_RECEIPT → ACTIVE without logging vault_out (vault was debited at issuance).
+        The WHERE clause includes the expected status so concurrent duplicate calls fail safely."""
         cash_float = self.get_float(float_id)
         if cash_float is None:
             raise ValueError(f"Float {float_id} not found")
@@ -172,22 +173,34 @@ class CashFloatRepository:
                 """UPDATE cash_float_assignments
                    SET status = 'ACTIVE', received_at = datetime('now'),
                        current_balance = total_amount
-                   WHERE id = ?""",
+                   WHERE id = ? AND status = 'PENDING_RECEIPT'""",
                 (float_id,),
             )
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Float {float_id} was already activated by a concurrent request."
+                )
         return self.get_float(float_id)
 
     def deduct_denominations(self, float_id: int, denominations: dict[int, int]) -> None:
-        """Deduct denomination quantities from cash_float_denominations."""
+        """Atomically deduct denomination quantities from cash_float_denominations.
+        Uses AND quantity >= ? in the WHERE clause so concurrent deductions cannot
+        produce negative counts.  Raises RuntimeError if any denomination is exhausted
+        (triggers full rollback via the get_cursor exception handler)."""
         with get_cursor(commit=True) as cursor:
             for denom, qty in denominations.items():
                 if qty > 0:
                     cursor.execute(
                         """UPDATE cash_float_denominations
                            SET quantity = quantity - ?
-                           WHERE float_id = ? AND denomination = ?""",
-                        (qty, float_id, denom),
+                           WHERE float_id = ? AND denomination = ? AND quantity >= ?""",
+                        (qty, float_id, denom, qty),
                     )
+                    if cursor.rowcount == 0:
+                        raise RuntimeError(
+                            f"Denomination {denom:,} MMK depleted by a concurrent request "
+                            f"(float #{float_id}). Please retry."
+                        )
 
     def get_denomination_balance(self, float_id: int) -> dict[int, int]:
         """Return current per-denomination quantities for a float."""
@@ -201,15 +214,20 @@ class CashFloatRepository:
     def set_pending_reconciliation(
         self, float_id: int, return_denominations_json: str
     ) -> None:
-        """ACTIVE → PENDING_RECONCILIATION; store return denomination JSON."""
+        """ACTIVE → PENDING_RECONCILIATION; store return denomination JSON.
+        WHERE clause guards against duplicate concurrent transitions."""
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 """UPDATE cash_float_assignments
                    SET status = 'PENDING_RECONCILIATION',
                        return_denominations_json = ?
-                   WHERE id = ?""",
+                   WHERE id = ? AND status = 'ACTIVE'""",
                 (return_denominations_json, float_id),
             )
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Float {float_id} is no longer ACTIVE (concurrent state change)."
+                )
 
     def get_return_denominations_json(self, float_id: int) -> Optional[str]:
         with get_cursor() as cursor:
@@ -223,7 +241,8 @@ class CashFloatRepository:
     def close_after_return(
         self, float_id: int, closing_total: float, verified_by: int
     ) -> None:
-        """PENDING_RECONCILIATION → CLOSED."""
+        """PENDING_RECONCILIATION → CLOSED.
+        WHERE clause guards against closing an already-closed float."""
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 """UPDATE cash_float_assignments
@@ -231,9 +250,13 @@ class CashFloatRepository:
                        closed_at = datetime('now'),
                        closing_total = ?,
                        current_balance = 0
-                   WHERE id = ?""",
+                   WHERE id = ? AND status = 'PENDING_RECONCILIATION'""",
                 (closing_total, float_id),
             )
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Float {float_id} is no longer PENDING_RECONCILIATION (concurrent state change)."
+                )
 
     def activate_float(
         self,
