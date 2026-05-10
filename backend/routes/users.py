@@ -42,6 +42,11 @@ class SetPinRequest(BaseModel):
     pin: str
 
 
+class ChangePinRequest(BaseModel):
+    current_pin: str
+    new_pin: str
+
+
 @router.get("/")
 def get_users(current_user: dict = Depends(get_current_user)) -> list[dict]:
     if current_user["role"] != "owner":
@@ -149,3 +154,21 @@ def set_pin(
     pin_hash = bcrypt.hashpw(body.pin.encode(), bcrypt.gensalt(12)).decode()
     _user_repo.update(user_id, {"pin_hash": pin_hash})
     return {"message": "PIN set"}
+
+
+@router.post("/change-pin")
+def change_pin(
+    body: ChangePinRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Authenticated user changes their own PIN by verifying the current one first."""
+    if len(body.new_pin) != 6 or not body.new_pin.isdigit():
+        raise HTTPException(status_code=400, detail="New PIN must be exactly 6 digits.")
+    stored_hash = _user_repo.get_pin_hash(current_user["user_id"])
+    if not stored_hash:
+        raise HTTPException(status_code=400, detail="No PIN set yet. Use Set PIN first.")
+    if not bcrypt.checkpw(body.current_pin.encode(), stored_hash.encode()):
+        raise HTTPException(status_code=401, detail="Incorrect current PIN.")
+    new_hash = bcrypt.hashpw(body.new_pin.encode(), bcrypt.gensalt(12)).decode()
+    _user_repo.update(current_user["user_id"], {"pin_hash": new_hash})
+    return {"message": "PIN changed"}

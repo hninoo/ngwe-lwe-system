@@ -1473,6 +1473,54 @@ class ProfilePage(QWidget):
         plo.addWidget(save_btn)
 
         layout.addWidget(pw_card)
+
+        # ── PIN management (set first-time or change existing) ──
+        layout.addSpacing(10)
+        layout.addWidget(section_label(t("pin_section_title")))
+
+        pin_card = QFrame()
+        pin_card.setStyleSheet(f"QFrame {{ background-color: {BG_CARD}; border-radius: 10px; border: 1px solid {BORDER_COLOR}; }}")
+        pin_lo = QVBoxLayout(pin_card)
+        pin_lo.setContentsMargins(20, 20, 20, 20)
+        pin_lo.setSpacing(12)
+
+        pin_desc = QLabel(t("pin_section_desc"))
+        pin_desc.setWordWrap(True)
+        pin_desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: transparent;")
+        pin_lo.addWidget(pin_desc)
+
+        pin_lo.addWidget(field_label(t("current_pin_ph")))
+        self._current_pin = QLineEdit()
+        self._current_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        self._current_pin.setPlaceholderText(t("current_pin_optional_ph"))
+        self._current_pin.setMaxLength(6)
+        pin_lo.addWidget(self._current_pin)
+
+        pin_lo.addWidget(field_label(t("new_pin_ph"), required=True))
+        self._new_pin = QLineEdit()
+        self._new_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        self._new_pin.setPlaceholderText("••••••")
+        self._new_pin.setMaxLength(6)
+        pin_lo.addWidget(self._new_pin)
+
+        pin_lo.addWidget(field_label(t("confirm_pin_ph"), required=True))
+        self._confirm_pin = QLineEdit()
+        self._confirm_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        self._confirm_pin.setPlaceholderText("••••••")
+        self._confirm_pin.setMaxLength(6)
+        self._confirm_pin.returnPressed.connect(self._on_save_pin)
+        pin_lo.addWidget(self._confirm_pin)
+
+        self._pin_status = QLabel("")
+        self._pin_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._pin_status.setVisible(False)
+        pin_lo.addWidget(self._pin_status)
+
+        save_pin_btn = accent_btn(t("save_pin"))
+        save_pin_btn.clicked.connect(self._on_save_pin)
+        pin_lo.addWidget(save_pin_btn)
+
+        layout.addWidget(pin_card)
         layout.addStretch()
 
         outer = QVBoxLayout(self)
@@ -1481,6 +1529,56 @@ class ProfilePage(QWidget):
 
     def load_data(self) -> None:
         pass
+
+    def _validate_pin_fields(self, new_pin: str, confirm_pin: str) -> str | None:
+        """Return an error key string if invalid, else None."""
+        if not new_pin or not confirm_pin:
+            return t("pin_required")
+        if not new_pin.isdigit() or len(new_pin) != 6:
+            return t("pin_digits_only")
+        if new_pin != confirm_pin:
+            return t("pin_mismatch")
+        return None
+
+    def _on_save_pin(self) -> None:
+        current = self._current_pin.text().strip()
+        new_pin = self._new_pin.text().strip()
+        confirm = self._confirm_pin.text().strip()
+
+        err = self._validate_pin_fields(new_pin, confirm)
+        if err:
+            if "match" in err.lower() or "မတူ" in err:
+                self._confirm_pin.clear()
+                self._confirm_pin.setFocus()
+            self._show_pin_status(err, True)
+            return
+
+        try:
+            if current:
+                # Changing existing PIN — backend verifies current PIN
+                self._api.change_pin(current, new_pin)
+                self._show_pin_status(t("change_pin_success"), False)
+            else:
+                # First-time setup — no current PIN required
+                user_id = (self._api.user or {}).get("id")
+                if user_id is None:
+                    self._show_pin_status("User ID not found. Please re-login.", True)
+                    return
+                self._api.set_user_pin(user_id, new_pin)
+                self._show_pin_status(t("pin_success"), False)
+            self._current_pin.clear()
+            self._new_pin.clear()
+            self._confirm_pin.clear()
+        except Exception as e:
+            self._show_pin_status(f"Error: {e}", True)
+            if current:
+                self._current_pin.clear()
+                self._current_pin.setFocus()
+
+    def _show_pin_status(self, msg: str, error: bool) -> None:
+        self._pin_status.setText(msg)
+        self._pin_status.setStyleSheet(f"color: {ERROR_COLOR if error else SUCCESS_COLOR}; font-size: 12px;")
+        self._pin_status.setVisible(True)
 
     def _on_save_password(self) -> None:
         try:

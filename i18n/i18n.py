@@ -216,6 +216,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "pw_success":             {"mm": "စကားဝှက် အောင်မြင်စွာ ပြောင်းပြီ။",
                                "en": "Password changed successfully."},
 
+    # ── PIN management (Profile page) ─────────────────────
+    "pin_section_title":      {"mm": "လုပ်ငန်း PIN စီမံခန့်ခွဲမှု",
+                               "en": "Transaction PIN"},
+    "pin_section_desc":       {"mm": "PIN ကို Float လက်ခံမှုနှင့် ငွေပြန်အမ်းမှုများတွင် အသုံးပြုသည်။ ပထမဆုံး သတ်မှတ်ရာတွင် လက်ရှိ PIN ကွက်ကို ဗလာထားနိုင်သည်။ PIN ပြောင်းလဲရာတွင် လက်ရှိ PIN ဖြည့်ရမည်။",
+                               "en": "Your PIN is used to confirm float receipts and returns. Leave Current PIN blank to set it for the first time. Fill it in to change an existing PIN."},
+    "current_pin_optional_ph": {"mm": "PIN ပြောင်းလဲလျှင်သာ ဖြည့်ပါ",
+                                "en": "Leave blank if setting PIN for the first time"},
+    "new_pin_ph":             {"mm": "PIN အသစ် (ဂဏန်း ၆ လုံး)",      "en": "New PIN (6 digits)"},
+    "confirm_pin_ph":         {"mm": "PIN အတည်ပြုရန်",               "en": "Confirm PIN"},
+    "save_pin":               {"mm": "PIN သိမ်းမည်",                  "en": "Save PIN"},
+    "pin_required":           {"mm": "PIN နှစ်ကွက်လုံး ဖြည့်ရမည်။",  "en": "Please enter and confirm your PIN."},
+    "pin_mismatch":           {"mm": "PIN မတူပါ။ ထပ်ကြိုးစားပါ။",    "en": "PINs do not match. Please try again."},
+    "pin_digits_only":        {"mm": "PIN သည် ဂဏန်း ၆ လုံး ဖြစ်ရမည်။",
+                               "en": "PIN must be exactly 6 digits (numbers only)."},
+    "pin_success":            {"mm": "PIN အောင်မြင်စွာ သတ်မှတ်ပြီ။",  "en": "PIN updated successfully."},
+    "current_pin_ph":         {"mm": "လက်ရှိ PIN",                    "en": "Current PIN"},
+    "change_pin_success":     {"mm": "PIN အောင်မြင်စွာ ပြောင်းပြီ။",  "en": "PIN changed successfully."},
+
     # ── Accounts page ─────────────────────────────────────
     "accounts_title":         {"mm": "အကောင့်စီမံခန့်ခွဲမှု",     "en": "Accounts Management"},
     "col_service_type":       {"mm": "ဝန်ဆောင်မှုအမျိုးအစား",     "en": "Service Type"},

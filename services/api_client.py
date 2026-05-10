@@ -379,6 +379,10 @@ class ApiClient:
     def set_user_pin(self, user_id: int, pin: str) -> dict:
         return self._post(f"/users/{user_id}/pin", {"pin": pin})
 
+    def change_pin(self, current_pin: str, new_pin: str) -> dict:
+        """Change own PIN — backend verifies current PIN before updating."""
+        return self._post("/users/change-pin", {"current_pin": current_pin, "new_pin": new_pin})
+
     # ── Activity Logs ──
 
     def get_activity_logs(
