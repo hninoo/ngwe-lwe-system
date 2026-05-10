@@ -469,11 +469,10 @@ class TransactionFormPage(QWidget):
     def _set_float_state(self, has_float: bool) -> None:
         self._float_banner.setText("" if has_float else t("warn_no_float_banner"))
         self._float_banner.setVisible(not has_float)
-        for key in ("withdraw", "transfer", "exchange"):
-            btn = self._action_buttons.get(key)
-            if btn:
-                btn.setEnabled(has_float)
-        if not has_float and self._selected_action in ("withdraw", "transfer", "exchange"):
+        withdraw_btn = self._action_buttons.get("withdraw")
+        if withdraw_btn:
+            withdraw_btn.setEnabled(has_float)
+        if not has_float and self._selected_action == "withdraw":
             self._on_action_select("deposit")
 
     # ── Action buttons ──
