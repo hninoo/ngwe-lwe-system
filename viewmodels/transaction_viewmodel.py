@@ -72,6 +72,35 @@ class TransactionViewModel:
             return round(amount * raw, 2)
         return raw
 
+    def _calc_amount_by_type(self, amount: float, value: float, value_type: str) -> float:
+        if (value_type or "FIXED").upper() == "PERCENTAGE":
+            return round(amount * (value or 0.0), 2)
+        return value or 0.0
+
+    def _resolve_fee_values(
+        self,
+        account: Account,
+        amount: float,
+        fee_mode: str,
+        customer_fee: float,
+        additional_fee_amount: float,
+    ) -> tuple[float, float]:
+        """Return (total_customer_fee, additional_fee) using tier defaults when caller sends none."""
+        if customer_fee > 0 or additional_fee_amount > 0:
+            return customer_fee, additional_fee_amount
+        tier = self._get_tier(account, amount)
+        if tier is None:
+            return 0.0, 0.0
+        if fee_mode == "withdraw":
+            base_raw = tier.fee_amount_withdraw or 0.0
+            add_raw = tier.additional_fee_withdraw_amount or 0.0
+        else:
+            base_raw = tier.fee_amount_deposit or 0.0
+            add_raw = tier.additional_fee_deposit_amount or 0.0
+        base_fee = self._calc_amount_by_type(amount, base_raw, tier.fee_amount_type)
+        additional = self._calc_amount_by_type(amount, add_raw, tier.additional_fee_type)
+        return base_fee + additional, additional
+
     @staticmethod
     def round_fee(amount: float) -> int:
         return math.ceil(amount / 50) * 50
@@ -97,6 +126,7 @@ class TransactionViewModel:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        employee_id: Optional[int] = None,
     ) -> Transaction:
         if amount <= 0:
             raise ValueError("Amount must be greater than zero.")
@@ -104,10 +134,15 @@ class TransactionViewModel:
         if account is None:
             raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "send")
+        customer_fee, additional_fee_amount = self._resolve_fee_values(
+            account, amount, "deposit", customer_fee, additional_fee_amount
+        )
         from_company_id = self._get_company_id(account.service_type_id)
 
         with atomic():
-            self._account_repo.increment_balance(account_id, amount)
+            self._account_repo.increment_balance(account_id, -amount)
+            if employee_id is not None:
+                self._float_repo.add_float_balance(employee_id, amount)
             self._update_fee_account(fee_account_id, customer_fee)
             data = {
                 "transaction_type": "deposit",
@@ -118,7 +153,7 @@ class TransactionViewModel:
                 "commission_amount": commission,
                 "customer_fee": customer_fee,
                 "additional_fee_amount": additional_fee_amount,
-                "balance_change": amount,
+                "balance_change": -amount,
                 "currency": "MMK",
                 "fee_account_id": fee_account_id,
                 "screenshot_path": screenshot_path,
@@ -129,7 +164,7 @@ class TransactionViewModel:
             txn_id = self._txn_repo.create(data)
             _log(created_by, "transaction_created", txn_id, {
                 "type": "deposit", "account_id": account_id,
-                "amount": amount, "balance_delta": +amount,
+                "amount": amount, "balance_delta": -amount,
             })
         return self._txn_repo.get_by_id(txn_id)
 
@@ -154,6 +189,9 @@ class TransactionViewModel:
         if account is None:
             raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "receive")
+        customer_fee, additional_fee_amount = self._resolve_fee_values(
+            account, amount, "withdraw", customer_fee, additional_fee_amount
+        )
         from_company_id = self._get_company_id(account.service_type_id)
 
         # ── PRE-VALIDATE float/denominations BEFORE any DB writes ──────────────
@@ -179,7 +217,7 @@ class TransactionViewModel:
 
         # ── Writes (validation passed) ─────────────────────────────────────────
         with atomic():
-            self._account_repo.increment_balance(account_id, -amount)
+            self._account_repo.increment_balance(account_id, amount)
 
             data = {
                 "transaction_type": "withdraw",
@@ -190,7 +228,7 @@ class TransactionViewModel:
                 "commission_amount": commission,
                 "customer_fee": customer_fee,
                 "additional_fee_amount": additional_fee_amount,
-                "balance_change": -amount,
+                "balance_change": amount,
                 "currency": "MMK",
                 "fee_account_id": fee_account_id,
                 "screenshot_path": screenshot_path,
@@ -214,7 +252,7 @@ class TransactionViewModel:
             self._update_fee_account(fee_account_id, customer_fee)
             _log(created_by, "transaction_created", txn_id, {
                 "type": "withdraw", "account_id": account_id,
-                "amount": amount, "balance_delta": -amount,
+                "amount": amount, "balance_delta": +amount,
             })
         return self._txn_repo.get_by_id(txn_id)
 
@@ -241,6 +279,9 @@ class TransactionViewModel:
         if to_account is None:
             raise ValueError(f"Account #{to_account_id} not found.")
         commission = self._calc_commission(from_account, amount, "send")
+        customer_fee, additional_fee_amount = self._resolve_fee_values(
+            from_account, amount, "deposit", customer_fee, additional_fee_amount
+        )
         balance_change = self._calc_balance_change(from_account, amount, commission)
 
         from_company_id = self._get_company_id(from_account.service_type_id)
@@ -338,6 +379,9 @@ class TransactionViewModel:
         if account is None:
             raise ValueError(f"Account #{account_id} not found.")
         commission = self._calc_commission(account, amount, "send")
+        customer_fee, additional_fee_amount = self._resolve_fee_values(
+            account, amount, "deposit", customer_fee, additional_fee_amount
+        )
         balance_change = self._calc_balance_change(account, amount, commission)
         from_company_id = self._get_company_id(account.service_type_id)
 

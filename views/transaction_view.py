@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPushButton,
+    QSpacerItem,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -250,7 +251,7 @@ class CompanyGridSelector(QWidget):
     """
 
     company_changed = pyqtSignal(int)
-    _COLS = 4
+    _COLS = 8
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -263,7 +264,7 @@ class CompanyGridSelector(QWidget):
         self._inner.setStyleSheet("background: transparent;")
         self._grid = QGridLayout(self._inner)
         self._grid.setContentsMargins(4, 4, 4, 4)
-        self._grid.setSpacing(6)
+        self._grid.setSpacing(4)
         self._grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         self._scroll = QScrollArea()
@@ -469,11 +470,11 @@ class TransactionFormPage(QWidget):
     def _set_float_state(self, has_float: bool) -> None:
         self._float_banner.setText("" if has_float else t("warn_no_float_banner"))
         self._float_banner.setVisible(not has_float)
-        withdraw_btn = self._action_buttons.get("withdraw")
-        if withdraw_btn:
-            withdraw_btn.setEnabled(has_float)
-        if not has_float and self._selected_action == "withdraw":
-            self._on_action_select("deposit")
+        for action in ("deposit", "withdraw", "transfer", "exchange"):
+            btn = self._action_buttons.get(action)
+            if btn:
+                btn.setEnabled(has_float)
+        self._save_btn.setEnabled(has_float)
 
     # ── Action buttons ──
     def _build_action_buttons(self) -> QFrame:
@@ -535,19 +536,12 @@ class TransactionFormPage(QWidget):
         lo.addWidget(self._company_selector)
 
         self._service_type_label = field_label(t("field_service_type"), required=True)
-        lo.addWidget(self._service_type_label)
         self._service_type_selector = ServiceTypeSelector()
         self._service_type_selector.service_type_changed.connect(self._on_service_type_changed)
-        lo.addWidget(self._service_type_selector)
 
-        lo.addWidget(field_label(t("field_account"), required=True))
+        self._account_label = field_label(t("field_account"), required=True)
         self._account_selector = AccountSelector()
         self._account_selector.currentIndexChanged.connect(self._on_account_changed)
-        lo.addWidget(self._account_selector)
-
-        self._balance_hint = QLabel("")
-        self._balance_hint.setVisible(False)
-        lo.addWidget(self._balance_hint)
 
         # Transfer: to-side cascade
         self._to_company_label = field_label(t("field_to_company"), required=True)
@@ -567,90 +561,136 @@ class TransactionFormPage(QWidget):
         self._to_account_selector = AccountSelector()
         lo.addWidget(self._to_account_selector)
 
-        self._customer_label = field_label(t("field_customer"), required=True)
-        lo.addWidget(self._customer_label)
-        cust_row = QHBoxLayout()
+        details_grid = QGridLayout()
+        details_grid.setContentsMargins(0, 0, 0, 0)
+        details_grid.setHorizontalSpacing(12)
+        details_grid.setVerticalSpacing(10)
+        for col in range(12):
+            details_grid.setColumnStretch(col, 1)
+
+        def grid_cell(label: QLabel, widget: QWidget) -> QWidget:
+            cell = QWidget()
+            cell_lo = QVBoxLayout(cell)
+            cell_lo.setContentsMargins(0, 0, 0, 0)
+            cell_lo.setSpacing(4)
+            cell_lo.addWidget(label)
+            cell_lo.addWidget(widget)
+            return cell
+
+        self._service_type_cell = grid_cell(self._service_type_label, self._service_type_selector)
+        details_grid.addWidget(self._service_type_cell, 0, 0, 1, 6)
+
+        account_cell = QWidget()
+        account_cell_lo = QVBoxLayout(account_cell)
+        account_cell_lo.setContentsMargins(0, 0, 0, 0)
+        account_cell_lo.setSpacing(4)
+        account_header = QHBoxLayout()
+        account_header.setContentsMargins(0, 0, 0, 0)
+        account_header.setSpacing(8)
+        account_header.addWidget(self._account_label)
+        account_header.addItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        self._balance_hint = QLabel("")
+        self._balance_hint.setStyleSheet(f"color: {ACCENT_GREEN}; font-size: 11px; font-style: italic;")
+        self._balance_hint.setVisible(False)
+        account_header.addWidget(self._balance_hint)
+        account_cell_lo.addLayout(account_header)
+        account_cell_lo.addWidget(self._account_selector)
+        details_grid.addWidget(account_cell, 0, 6, 1, 6)
+
+        self._customer_name_label = field_label(t("customer_name_ph"), required=True)
         self._customer_name = QLineEdit()
         self._customer_name.setPlaceholderText(t("customer_name_ph"))
         self._customer_name.returnPressed.connect(lambda: self._customer_phone.setFocus())
-        cust_row.addWidget(self._customer_name)
+        self._customer_name_cell = grid_cell(self._customer_name_label, self._customer_name)
+        details_grid.addWidget(self._customer_name_cell, 1, 0, 1, 4)
+
+        self._customer_phone_label = field_label(t("customer_phone_ph"), required=True)
         self._customer_phone = QLineEdit()
         self._customer_phone.setPlaceholderText(t("customer_phone_ph"))
         self._customer_phone.returnPressed.connect(lambda: self._amount_input.setFocus())
-        cust_row.addWidget(self._customer_phone)
-        lo.addLayout(cust_row)
+        self._customer_phone_cell = grid_cell(self._customer_phone_label, self._customer_phone)
+        details_grid.addWidget(self._customer_phone_cell, 1, 4, 1, 4)
 
         self._currency_label = field_label(t("field_currency"), required=True)
-        lo.addWidget(self._currency_label)
         self._currency_combo = QComboBox()
         self._currency_combo.addItems(["MMK", "THB"])
-        lo.addWidget(self._currency_combo)
+        self._currency_cell = grid_cell(self._currency_label, self._currency_combo)
+        details_grid.addWidget(self._currency_cell, 1, 4, 1, 4)
 
-        lo.addWidget(field_label(t("field_amount"), required=True))
+        self._amount_label = field_label(t("field_amount"), required=True)
         self._amount_input = QLineEdit()
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
         self._amount_input.returnPressed.connect(lambda: self._fee_account_combo.setFocus())
-        lo.addWidget(self._amount_input)
+        details_grid.addWidget(grid_cell(self._amount_label, self._amount_input), 1, 8, 1, 4)
 
         self._commission_label = field_label(t("field_commission"))
-        lo.addWidget(self._commission_label)
         self._commission_display = QLineEdit()
         self._commission_display.setReadOnly(True)
         self._commission_display.setText("0")
         self._commission_display.setStyleSheet(
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_MAUVE}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
-        lo.addWidget(self._commission_display)
+        details_grid.addWidget(grid_cell(self._commission_label, self._commission_display), 2, 8, 1, 4)
 
-        lo.addWidget(field_label(t("field_customer_fee")))
+        self._fee_label = field_label(t("field_customer_fee"))
         self._fee_display = QLineEdit()
         self._fee_display.setReadOnly(True)
         self._fee_display.setText("0")
         self._fee_display.setStyleSheet(
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_TEAL}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
-        lo.addWidget(self._fee_display)
+        details_grid.addWidget(grid_cell(self._fee_label, self._fee_display), 2, 0, 1, 4)
 
-        lo.addWidget(field_label(t("field_additional_fee")))
+        self._additional_fee_label = field_label(t("field_additional_fee"))
         self._additional_fee_display = QLineEdit()
         self._additional_fee_display.setReadOnly(True)
         self._additional_fee_display.setText("0")
         self._additional_fee_display.setStyleSheet(
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_YELLOW}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
-        lo.addWidget(self._additional_fee_display)
+        details_grid.addWidget(grid_cell(self._additional_fee_label, self._additional_fee_display), 2, 4, 1, 4)
 
-        lo.addWidget(field_label(t("field_total_fee")))
+        self._total_fee_label = field_label(t("field_total_fee"))
         self._total_charge_display = QLineEdit()
         self._total_charge_display.setReadOnly(True)
         self._total_charge_display.setText("0")
         self._total_charge_display.setStyleSheet(
             f"QLineEdit {{ background-color: {BG_DARK}; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: bold; }}")
-        lo.addWidget(self._total_charge_display)
 
         self._fee_hint = QLabel("")
         self._fee_hint.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-style: italic; padding-left: 2px;")
         self._fee_hint.setVisible(False)
-        lo.addWidget(self._fee_hint)
+        total_fee_cell = QWidget()
+        total_fee_lo = QVBoxLayout(total_fee_cell)
+        total_fee_lo.setContentsMargins(0, 0, 0, 0)
+        total_fee_lo.setSpacing(4)
+        total_fee_lo.addWidget(self._total_fee_label)
+        total_fee_lo.addWidget(self._total_charge_display)
+        total_fee_lo.addWidget(self._fee_hint)
+        details_grid.addWidget(total_fee_cell, 3, 0, 1, 4)
 
-        lo.addWidget(field_label(t("field_fee_account")))
+        self._fee_account_label = field_label(t("field_fee_account"))
         self._fee_account_combo = QComboBox()
         self._fee_account_combo.addItem(t("select_placeholder"))
-        lo.addWidget(self._fee_account_combo)
+        details_grid.addWidget(grid_cell(self._fee_account_label, self._fee_account_combo), 3, 4, 1, 4)
 
-        lo.addWidget(field_label(t("field_balance_change")))
+        self._balance_change_label = field_label(t("field_balance_change"))
         self._balance_change_display = QLineEdit()
         self._balance_change_display.setReadOnly(True)
         self._balance_change_display.setText("0")
         self._balance_change_display.setStyleSheet(
             f"QLineEdit {{ background-color: {BG_DARK}; color: {ACCENT_GREEN}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 8px 12px; font-size: 13px; }}")
-        lo.addWidget(self._balance_change_display)
+        details_grid.addWidget(grid_cell(self._balance_change_label, self._balance_change_display), 3, 8, 1, 4)
 
-        lo.addWidget(field_label(t("field_note")))
+        self._note_label = field_label(t("field_note"))
         self._note_input = TabTextEdit(on_enter=lambda: self._screenshot_btn.setFocus())
         self._note_input.setFixedHeight(60)
         self._note_input.setPlaceholderText(t("note_placeholder"))
-        lo.addWidget(self._note_input)
+        details_grid.addWidget(grid_cell(self._note_label, self._note_input), 4, 0, 1, 12)
 
         ss_row = QHBoxLayout()
+        ss_row.setContentsMargins(0, 0, 0, 0)
+        ss_row.setSpacing(10)
+        ss_wrap = QWidget()
+        ss_wrap.setLayout(ss_row)
         self._screenshot_btn = QPushButton(t("attach_screenshot"))
         self._screenshot_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._screenshot_btn.setStyleSheet(
@@ -661,7 +701,10 @@ class TransactionFormPage(QWidget):
         self._screenshot_label = QLabel(t("no_file_selected"))
         self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         ss_row.addWidget(self._screenshot_label, 1)
-        lo.addLayout(ss_row)
+
+        details_grid.addWidget(ss_wrap, 5, 0, 1, 12)
+
+        lo.addLayout(details_grid)
 
         self._float_banner = QLabel("")
         self._float_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -677,10 +720,15 @@ class TransactionFormPage(QWidget):
         self._status_label.setVisible(False)
         lo.addWidget(self._status_label)
 
+        save_row = QHBoxLayout()
+        save_row.setContentsMargins(0, 20, 0, 0)
+        save_row.setSpacing(0)
         self._save_btn = accent_btn(t("save_transaction"))
         self._save_btn.setFixedHeight(44)
         self._save_btn.clicked.connect(self._on_save)
-        lo.addWidget(self._save_btn)
+        save_row.addWidget(self._save_btn)
+        save_row.addItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        lo.addLayout(save_row)
 
         self._update_form_visibility()
         return self._form_frame
@@ -690,9 +738,7 @@ class TransactionFormPage(QWidget):
         is_exchange = self._selected_action == "exchange"
         has_customer = self._selected_action in ("deposit", "withdraw")
         need_st = self._selected_action in ("deposit", "withdraw")
-        # Service type selector only shown for deposit/withdraw (Pay types)
-        self._service_type_label.setVisible(need_st)
-        self._service_type_selector.setVisible(need_st)
+        self._service_type_cell.setVisible(need_st)
         # To-side cascade for transfer only; service type is always auto-selected
         self._to_company_label.setVisible(is_transfer)
         self._to_company_selector.setVisible(is_transfer)
@@ -700,11 +746,9 @@ class TransactionFormPage(QWidget):
         self._to_service_type_selector.setVisible(False)
         self._to_account_label.setVisible(is_transfer)
         self._to_account_selector.setVisible(is_transfer)
-        self._customer_label.setVisible(has_customer)
-        self._customer_name.setVisible(has_customer)
-        self._customer_phone.setVisible(has_customer)
-        self._currency_label.setVisible(is_exchange)
-        self._currency_combo.setVisible(is_exchange)
+        self._customer_name_cell.setVisible(has_customer)
+        self._customer_phone_cell.setVisible(has_customer)
+        self._currency_cell.setVisible(is_exchange)
 
     # ── Calculations ──
     def _get_selected_account(self) -> Optional[dict]:
@@ -768,8 +812,12 @@ class TransactionFormPage(QWidget):
         commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
         additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
 
-        # deposit/exchange: balance increases; withdraw/transfer: from-account decreases
-        balance_change = -amount if self._selected_action in ("withdraw", "transfer") else amount
+        if self._selected_action == "deposit":
+            balance_change = -amount
+        elif self._selected_action in ("withdraw", "exchange"):
+            balance_change = amount
+        else:
+            balance_change = -amount
         total_fee = fee_amount + additional
         customer_total = amount + total_fee
 
@@ -858,11 +906,11 @@ class TransactionFormPage(QWidget):
     def _calc_projected(self, balance: float, amount: float) -> float:
         if amount <= 0:
             return balance
-        if self._selected_action in ("withdraw", "transfer"):
+        if self._selected_action in ("deposit", "transfer"):
             return balance - amount
-        if self._selected_action == "deposit":
+        if self._selected_action in ("withdraw", "exchange"):
             return balance + amount
-        return balance  # exchange: balance increases, no check needed
+        return balance
 
     def _update_balance_hint(self) -> None:
         account = self._get_selected_account()
@@ -874,18 +922,18 @@ class TransactionFormPage(QWidget):
         if amount <= 0:
             c = ACCENT_GREEN if balance >= 0 else ACCENT_RED
             self._balance_hint.setText(t("current_balance", balance=f"{balance:,.0f}"))
-            self._balance_hint.setStyleSheet(f"color: {c}; font-size: 12px; font-style: italic; padding-left: 2px;")
+            self._balance_hint.setStyleSheet(f"color: {c}; font-size: 11px; font-style: italic;")
         else:
             projected = self._calc_projected(balance, amount)
             c = ACCENT_GREEN if projected >= 0 else ACCENT_RED
             self._balance_hint.setText(t("balance_after", balance=f"{balance:,.0f}", projected=f"{projected:,.0f}"))
-            self._balance_hint.setStyleSheet(f"color: {c}; font-size: 12px; font-style: italic; padding-left: 2px;")
+            self._balance_hint.setStyleSheet(f"color: {c}; font-size: 11px; font-style: italic;")
         self._balance_hint.setVisible(True)
 
     # ── Data loading ──
     def _get_companies_for_action(self) -> list[dict]:
         if self._selected_action in ("deposit", "withdraw"):
-            return [c for c in self._all_companies_cache if c.get("category") in ("Pay", "Both")]
+            return [c for c in self._all_companies_cache if c.get("category") in ("Pay", "Bank", "Both")]
         return [c for c in self._all_companies_cache if c.get("category") in ("Bank", "Both")]
 
     def _repopulate_company_selectors(self) -> None:
@@ -945,6 +993,10 @@ class TransactionFormPage(QWidget):
                 if st:
                     self._on_service_type_changed(st["id"])
             else:
+                service_types = [
+                    s for s in service_types
+                    if s.get("operation") == "All" or s.get("name") in ("WST", "Pay_To_Pay")
+                ]
                 self._service_type_selector.populate(service_types)
                 st_id = self._service_type_selector.selected_service_type_id()
                 if st_id is not None:
@@ -1055,7 +1107,7 @@ class TransactionFormPage(QWidget):
                 return t("err_select_to_account")
             if to_acc_id == self._account_selector.selected_account_id():
                 return t("err_same_account")
-        if self._selected_action in ("withdraw", "transfer"):
+        if self._selected_action in ("deposit", "transfer"):
             account = self._get_selected_account()
             if account:
                 balance = self._get_fresh_balance(account["id"])

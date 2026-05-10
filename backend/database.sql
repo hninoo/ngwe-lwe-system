@@ -332,12 +332,15 @@ INSERT OR IGNORE INTO companies (name, category, is_active) VALUES
 ('AYA Pay',      'Pay',  1),
 ('Thai Bank',    'Bank', 1);
 
--- Service types per company (Pay: WST + Pay_To_Pay / Bank: Transfer + Exchange)
+-- Service types per company (Pay: WST + Pay_To_Pay / Bank: Pay_To_Pay + Transfer + Exchange)
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'WST',       'All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
+
+INSERT OR IGNORE INTO service_types (company_id, name, operation)
+SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'Transfer',  'Transfer' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');

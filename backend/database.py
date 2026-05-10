@@ -275,10 +275,14 @@ def _migrate_004(conn):
             "VALUES (?,?,?)", (cid, "Pay_To_Pay", "All")
         )
 
-    # Bank companies → Transfer (Transfer) + Exchange (Exchange)
+    # Bank companies → Pay_To_Pay (All) + Transfer (Transfer) + Exchange (Exchange)
     bank_companies = ["KBZ Bank", "AYA Bank", "CB Bank", "Thai Bank"]
     for company_name in bank_companies:
         cid = _company_id(company_name)
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation) "
+            "VALUES (?,?,?)", (cid, "Pay_To_Pay", "All")
+        )
         conn.execute(
             "INSERT OR IGNORE INTO service_types (company_id, name, operation) "
             "VALUES (?,?,?)", (cid, "Transfer", "Transfer")
@@ -750,6 +754,17 @@ def _migrate_007(conn):
     conn.commit()
 
 
+def _migrate_008(conn):
+    """Add Pay_To_Pay service type rows for Bank companies."""
+    conn.execute("""
+        INSERT OR IGNORE INTO service_types (company_id, name, operation)
+        SELECT id, 'Pay_To_Pay', 'All'
+        FROM companies
+        WHERE category IN ('Bank', 'Both')
+    """)
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -765,6 +780,7 @@ def _run_migrations(conn):
         (5, "Add is_fee_account flag to accounts", _migrate_005),
         (6, "Add current_balance to floats; create daily_reconciliation_logs", _migrate_006),
         (7, "Rebuild cash_float_assignments with new statuses; create vault_transactions", _migrate_007),
+        (8, "Add Pay_To_Pay service types for Bank companies", _migrate_008),
     ]:
         if version not in applied:
             fn(conn)

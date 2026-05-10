@@ -15,7 +15,8 @@
       "Bash(findstr /i \"claude settings.local\")",
       "Bash(venv\\\\Scripts\\\\python.exe *)",
       "PowerShell(& \"C:\\\\laragon\\\\www\\\\ngwe-lwe-system\\\\venv\\\\Scripts\\\\python.exe\" -c \"import multipart; import multipart.multipart; print\\('OK:', multipart.__file__\\)\")",
-      "PowerShell(& \"C:\\\\laragon\\\\www\\\\ngwe-lwe-system\\\\venv\\\\Scripts\\\\pip.exe\" install python-multipart)"
+      "PowerShell(& \"C:\\\\laragon\\\\www\\\\ngwe-lwe-system\\\\venv\\\\Scripts\\\\pip.exe\" install python-multipart)",
+      "Bash(grep -E '\\\\.\\(py|js|tsx?\\)$')"
     ]
   }
 }

@@ -73,7 +73,7 @@ def _get_accounts_by_company_category(seeded_db, category: str) -> list:
 
 
 def test_deposit_flow_end_to_end(client, owner_headers, seeded_db):
-    """POST deposit via /transactions/deposit → 201, balance updated."""
+    """POST cash-in via /transactions/deposit → selected account balance decreases."""
     account_id = _get_first_active_account_id(seeded_db)
 
     pre_balance = seeded_db.execute(
@@ -98,8 +98,8 @@ def test_deposit_flow_end_to_end(client, owner_headers, seeded_db):
     acc_resp = client.get(f"/accounts/{account_id}", headers=owner_headers)
     assert acc_resp.status_code == 200
     new_balance = acc_resp.json()["balance"]
-    assert new_balance == pre_bal_val + 10000.0, (
-        f"Balance not updated: expected {pre_bal_val + 10000.0}, got {new_balance}"
+    assert new_balance == pre_bal_val - 10000.0, (
+        f"Balance not updated: expected {pre_bal_val - 10000.0}, got {new_balance}"
     )
 
 

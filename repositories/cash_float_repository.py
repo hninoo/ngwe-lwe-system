@@ -362,6 +362,26 @@ class CashFloatRepository:
             row = cursor.fetchone()
         return float(row["current_balance"] or 0) if row else 0.0
 
+    def add_float_balance(self, employee_id: int, amount: float) -> float:
+        """Atomically add amount to an employee's active cash drawer."""
+        with get_cursor(commit=True) as cursor:
+            cursor.execute(
+                """UPDATE cash_float_assignments
+                   SET current_balance = current_balance + ?
+                   WHERE employee_id = ? AND status = 'ACTIVE'""",
+                (amount, employee_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("No active float found for employee")
+            cursor.execute(
+                """SELECT current_balance FROM cash_float_assignments
+                   WHERE employee_id = ? AND status = 'ACTIVE'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (employee_id,),
+            )
+            row = cursor.fetchone()
+        return float(row["current_balance"] or 0) if row else 0.0
+
     def get_open_employee_float_summaries(self) -> list[dict]:
         """Return all floats whose cash has not yet returned to the main vault.
         PENDING_RECEIPT: issued but not yet received by employee (vault already debited).

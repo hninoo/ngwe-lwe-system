@@ -98,6 +98,10 @@ async def create_deposit(
 ) -> dict:
     if current_user["role"] == "cashier":
         raise HTTPException(403, "Cashiers cannot record transactions")
+    if current_user["role"] == "employee":
+        active = _float_repo.get_active_float_for_employee(current_user["user_id"])
+        if active is None:
+            raise HTTPException(403, "No active float. Receive your float from the cashier first.")
     try:
         txn = _txn_vm.create_deposit(
             account_id=body.account_id,
@@ -110,6 +114,7 @@ async def create_deposit(
             additional_fee_amount=body.additional_fee_amount,
             fee_account_id=body.fee_account_id,
             note=body.note,
+            employee_id=current_user["user_id"] if current_user["role"] == "employee" else None,
         )
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))

@@ -141,8 +141,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
     # ── Transaction form ─────────────────────────────────
     "transaction":            {"mm": "ငွေလွှဲ",                   "en": "Transaction"},
-    "action_deposit":         {"mm": "ငွေသွင်း",                  "en": "Deposit"},
-    "action_withdraw":        {"mm": "ငွေထုတ်",                   "en": "Withdraw"},
+    "action_deposit":         {"mm": "Cash In (ငွေသွင်း)",        "en": "Cash In"},
+    "action_withdraw":        {"mm": "Cash Out (ငွေထုတ်)",        "en": "Cash Out"},
     "action_transfer":        {"mm": "လွှဲပြောင်း",               "en": "Transfer"},
     "action_exchange":        {"mm": "ငွေလဲ",                     "en": "Exchange"},
     "field_company":          {"mm": "ကုမ္ပဏီ",                   "en": "Company"},
@@ -188,8 +188,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                "en": "Insufficient balance (current: {balance} MMK)."},
     "err_no_float":           {"mm": "Float မလက်ခံရသေးပါ။ Cashier ထံမှ Float ယူပါ။",
                                "en": "No active float. Receive your float from the cashier first."},
-    "warn_no_float_banner":   {"mm": "⚠ Float မရှိသေးပါ — ငွေထုတ်၊ ငွေလွှဲ၊ ငွေလဲ လုပ်ငန်းများ ပိတ်ထားသည်။",
-                               "en": "⚠ No active float — Withdraw, Transfer and Exchange are disabled."},
+    "warn_no_float_banner":   {"mm": "⚠ Float မရှိသေးပါ — Cash In၊ Cash Out၊ ငွေလွှဲ၊ ငွေလဲ လုပ်ငန်းများ ပိတ်ထားသည်။",
+                               "en": "⚠ No active float — Cash In, Cash Out, Transfer and Exchange are disabled."},
     "err_open_file":          {"mm": "ဖိုင်ဖွင့်မရပါ: {path}",    "en": "Unable to open file: {path}"},
     "err_screenshot":         {"mm": "Screenshot တင်မရပါ: {error}","en": "Failed to load screenshot: {error}"},
     "select_screenshot":      {"mm": "Screenshot ရွေးပါ",           "en": "Select Screenshot"},
