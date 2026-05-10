@@ -111,10 +111,6 @@ class _AddAccountDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
-        # Load initial service types
-        if companies:
-            self._on_company_changed(companies[0]["id"])
-
     def _on_company_changed(self, company_id: int) -> None:
         try:
             sts = self._api.get_service_types(company_id)

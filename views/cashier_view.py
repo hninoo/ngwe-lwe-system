@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t, on_change
 from services.api_client import ApiClient
+from views.widgets.company_selector import add_placeholder
 
 WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
 
@@ -766,6 +767,7 @@ class IssueFloatPage(QWidget):
             self._employees = self._api.get_employees()
             if self._employee_combo is not None:
                 self._employee_combo.clear()
+                add_placeholder(self._employee_combo)
                 for u in self._employees:
                     name = (
                         (u.get("full_name") or "").strip()
@@ -773,8 +775,6 @@ class IssueFloatPage(QWidget):
                         or f"Employee #{u.get('id', '?')}"
                     )
                     self._employee_combo.addItem(name, u.get("id"))
-                if self._employees:
-                    self._employee_combo.setCurrentIndex(0)
                 self._employee_combo.update()
             count = len(self._employees)
             if count == 0:

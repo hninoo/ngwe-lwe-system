@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t
 from services.api_client import ApiClient
+from views.widgets.company_selector import add_placeholder
 
 # ── Colors (shared with rest of app) ─────────────────────────────────────────
 BG_DARK = "#1e1e2e"
@@ -96,6 +97,7 @@ class _AddCompanyDialog(QDialog):
         form.addRow(t("col_name") + ":", self._name_edit)
 
         self._category_combo = QComboBox()
+        add_placeholder(self._category_combo)
         self._category_combo.addItems(CATEGORIES)
         self._category_combo.setStyleSheet(
             f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
@@ -113,6 +115,9 @@ class _AddCompanyDialog(QDialog):
     def _on_accept(self) -> None:
         if not self._name_edit.text().strip():
             QMessageBox.warning(self, "Error", t("err_company_name_empty"))
+            return
+        if self._category_combo.currentIndex() <= 0:
+            QMessageBox.warning(self, "Error", "Please select a category.")
             return
         self.accept()
 

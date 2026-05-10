@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t
 from services.api_client import ApiClient
+from views.widgets.company_selector import add_placeholder
 
 BG_DARK = "#1e1e2e"
 BG_CARD = "#2a2a3e"
@@ -106,6 +107,7 @@ class _AddUserDialog(QDialog):
         form.addRow(t("col_password") + ":", self._password)
 
         self._role = QComboBox()
+        add_placeholder(self._role)
         self._role.addItems(ROLES)
         self._role.setStyleSheet(_combo_style())
         form.addRow(t("col_role") + ":", self._role)
@@ -126,6 +128,9 @@ class _AddUserDialog(QDialog):
             return
         if not self._password.text().strip():
             QMessageBox.warning(self, "Error", t("err_password_empty"))
+            return
+        if self._role.currentIndex() <= 0:
+            QMessageBox.warning(self, "Error", "Please select a role.")
             return
         self.accept()
 
@@ -161,10 +166,11 @@ class _EditUserDialog(QDialog):
         form.addRow(t("col_fullname") + ":", self._fullname)
 
         self._role = QComboBox()
+        add_placeholder(self._role)
         self._role.addItems(ROLES)
         current_role = user.get("role", "employee")
         if current_role in ROLES:
-            self._role.setCurrentIndex(ROLES.index(current_role))
+            self._role.setCurrentIndex(ROLES.index(current_role) + 1)
         self._role.setStyleSheet(_combo_style())
         form.addRow(t("col_role") + ":", self._role)
 

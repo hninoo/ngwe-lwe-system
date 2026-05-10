@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t
 from services.api_client import ApiClient
-from views.widgets.company_selector import CompanySelector, ServiceTypeSelector
+from views.widgets.company_selector import CompanySelector, ServiceTypeSelector, add_placeholder
 
 # ── Theme constants ───────────────────────────────────────────────────────────
 BG_DARK     = "#1e1e2e"
@@ -300,7 +300,7 @@ class CommissionTierSubView(QWidget):
         # Add form — row 2: fee
         r2 = QHBoxLayout()
         r2.addWidget(QLabel(t("tier_fee_type")))
-        self._new_fee_type = QComboBox(); self._new_fee_type.addItems(["FIXED", "PERCENTAGE"]); self._new_fee_type.setFixedWidth(115)
+        self._new_fee_type = QComboBox(); add_placeholder(self._new_fee_type); self._new_fee_type.addItems(["FIXED", "PERCENTAGE"]); self._new_fee_type.setFixedWidth(115)
         r2.addWidget(self._new_fee_type)
         r2.addWidget(QLabel(t("tier_fee_dep")))
         self._new_fee = QLineEdit(); self._new_fee.setPlaceholderText("0"); self._new_fee.setFixedWidth(85)
@@ -314,7 +314,7 @@ class CommissionTierSubView(QWidget):
         # Add form — row 3: commission
         r3 = QHBoxLayout()
         r3.addWidget(QLabel(t("tier_comm_type")))
-        self._new_comm_type = QComboBox(); self._new_comm_type.addItems(["FIXED", "PERCENTAGE"]); self._new_comm_type.setFixedWidth(115)
+        self._new_comm_type = QComboBox(); add_placeholder(self._new_comm_type); self._new_comm_type.addItems(["FIXED", "PERCENTAGE"]); self._new_comm_type.setFixedWidth(115)
         r3.addWidget(self._new_comm_type)
         r3.addWidget(QLabel(t("tier_comm_dep")))
         self._new_comm_dep = QLineEdit(); self._new_comm_dep.setPlaceholderText("0"); self._new_comm_dep.setFixedWidth(85)
@@ -328,7 +328,7 @@ class CommissionTierSubView(QWidget):
         # Add form — row 4: additional fee + submit
         r4 = QHBoxLayout()
         r4.addWidget(QLabel(t("tier_add_type")))
-        self._new_add_type = QComboBox(); self._new_add_type.addItems(["FIXED", "PERCENTAGE"]); self._new_add_type.setFixedWidth(115)
+        self._new_add_type = QComboBox(); add_placeholder(self._new_add_type); self._new_add_type.addItems(["FIXED", "PERCENTAGE"]); self._new_add_type.setFixedWidth(115)
         r4.addWidget(self._new_add_type)
         r4.addWidget(QLabel(t("tier_add_dep")))
         self._new_add_dep = QLineEdit(); self._new_add_dep.setPlaceholderText("0"); self._new_add_dep.setFixedWidth(85)
@@ -358,8 +358,6 @@ class CommissionTierSubView(QWidget):
         except Exception:
             companies = []
         self._company_sel.populate(companies, self._api)
-        if companies:
-            self._on_company_changed(companies[0]["id"])
         self._load_tiers()
 
     def _on_company_changed(self, company_id: int) -> None:
@@ -414,6 +412,11 @@ class CommissionTierSubView(QWidget):
         st_id = self._st_sel.selected_service_type_id()
         if st_id is None:
             _set_err(self._status, t("err_select_service_type"))
+            return
+        if (self._new_fee_type.currentIndex() <= 0
+                or self._new_comm_type.currentIndex() <= 0
+                or self._new_add_type.currentIndex() <= 0):
+            _set_err(self._status, "Please select all fee/commission types.")
             return
         # Client-side range validation
         af_text = self._new_from.text().strip()
@@ -553,4 +556,3 @@ class PasswordSubView(QWidget):
 # sidebar in views/dashboard_view.py. The three sub-view classes above
 # (ExchangeRateSubView, CommissionTierSubView, PasswordSubView) are
 # imported directly by DashboardView.
-

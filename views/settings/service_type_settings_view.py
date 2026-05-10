@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t
 from services.api_client import ApiClient
+from views.widgets.company_selector import add_placeholder
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 BG_DARK = "#1e1e2e"
@@ -86,6 +87,7 @@ class _AddServiceTypeDialog(QDialog):
         form.addRow(t("col_name") + ":", self._name_edit)
 
         self._operation_combo = QComboBox()
+        add_placeholder(self._operation_combo)
         self._operation_combo.addItems(OPERATIONS)
         self._operation_combo.setStyleSheet(
             f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
@@ -103,6 +105,9 @@ class _AddServiceTypeDialog(QDialog):
     def _on_accept(self) -> None:
         if not self._name_edit.text().strip():
             QMessageBox.warning(self, "Error", t("err_service_name_empty"))
+            return
+        if self._operation_combo.currentIndex() <= 0:
+            QMessageBox.warning(self, "Error", "Please select an operation.")
             return
         self.accept()
 
@@ -222,14 +227,15 @@ class ServiceTypeSettingsView(QWidget):
 
         self._company_combo.blockSignals(True)
         self._company_combo.clear()
+        add_placeholder(self._company_combo)
         for c in self._companies:
             self._company_combo.addItem(c.get("name", ""), userData=c.get("id"))
         self._company_combo.blockSignals(False)
 
-        # Restore selection or default to first
+        # Restore selection, otherwise leave placeholder selected.
         idx = 0
         if self._selected_company_id is not None:
-            for i, c in enumerate(self._companies):
+            for i, c in enumerate(self._companies, start=1):
                 if c.get("id") == self._selected_company_id:
                     idx = i
                     break
@@ -237,11 +243,12 @@ class ServiceTypeSettingsView(QWidget):
         self._on_company_selected(idx)
 
     def _on_company_selected(self, index: int) -> None:
-        if index < 0 or index >= len(self._companies):
+        if index <= 0:
             self._service_types = []
+            self._selected_company_id = None
             self._populate_table()
             return
-        company = self._companies[index]
+        company = self._companies[index - 1]
         self._selected_company_id = company.get("id")
         try:
             self._service_types = self._api.get_service_types(self._selected_company_id)

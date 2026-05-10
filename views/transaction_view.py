@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t, on_change
 from services.api_client import ApiClient
-from views.widgets.company_selector import ServiceTypeSelector, AccountSelector
+from views.widgets.company_selector import ServiceTypeSelector, AccountSelector, add_placeholder
 from views.widgets.company_logo_label import get_logo_pixmap
 
 MMT = timezone(timedelta(hours=6, minutes=30))
@@ -613,6 +613,7 @@ class TransactionFormPage(QWidget):
 
         self._currency_label = field_label(t("field_currency"), required=True)
         self._currency_combo = QComboBox()
+        add_placeholder(self._currency_combo)
         self._currency_combo.addItems(["MMK", "THB"])
         self._currency_cell = grid_cell(self._currency_label, self._currency_combo)
         details_grid.addWidget(self._currency_cell, 1, 4, 1, 4)
@@ -669,7 +670,7 @@ class TransactionFormPage(QWidget):
 
         self._fee_account_label = field_label(t("field_fee_account"))
         self._fee_account_combo = QComboBox()
-        self._fee_account_combo.addItem(t("select_placeholder"))
+        add_placeholder(self._fee_account_combo, t("select_placeholder"))
         details_grid.addWidget(grid_cell(self._fee_account_label, self._fee_account_combo), 3, 4, 1, 4)
 
         self._balance_change_label = field_label(t("field_balance_change"))
@@ -897,6 +898,22 @@ class TransactionFormPage(QWidget):
             return acc_id if acc_id != 0 else None
         return None
 
+    def _set_combo_warning(self, combo: QComboBox, warn: bool) -> None:
+        if not warn:
+            combo.setStyleSheet("")
+            return
+        combo.setStyleSheet(
+            f"QComboBox {{ background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {ACCENT_RED}; border-radius: 6px; padding: 8px 12px; "
+            f"font-size: 13px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+        )
+
+    def _clear_combo_warnings(self) -> None:
+        for combo in (self._service_type_selector, self._account_selector,
+                      self._currency_combo, self._to_account_selector):
+            self._set_combo_warning(combo, False)
+
     def _get_fresh_balance(self, account_id: int) -> float:
         try:
             return float(self._api.get_account(account_id).get("balance", 0))
@@ -974,7 +991,7 @@ class TransactionFormPage(QWidget):
             self._fee_accounts_cache = [FEE_CASH_ITEM]
 
         self._fee_account_combo.clear()
-        self._fee_account_combo.addItem(t("select_placeholder"))
+        add_placeholder(self._fee_account_combo, t("select_placeholder"))
         # index 0 = placeholder, index 1 = Cash, index 2+ = fee accounts (is_fee_account=1)
         for a in self._fee_accounts_cache:
             label = (
@@ -998,9 +1015,7 @@ class TransactionFormPage(QWidget):
                     if s.get("operation") == "All" or s.get("name") in ("WST", "Pay_To_Pay")
                 ]
                 self._service_type_selector.populate(service_types)
-                st_id = self._service_type_selector.selected_service_type_id()
-                if st_id is not None:
-                    self._on_service_type_changed(st_id)
+                self._account_selector.populate([])
         except Exception:
             pass
 
@@ -1055,6 +1070,7 @@ class TransactionFormPage(QWidget):
             self._show_status(f"Error: {e}", error=True)
 
     def _handle_save(self) -> None:
+        self._clear_combo_warnings()
         error = self._validate()
         if error:
             self._show_status(error, error=True)
@@ -1081,7 +1097,7 @@ class TransactionFormPage(QWidget):
                 amount=amount, screenshot_path=self._screenshot_path, customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         elif action == "exchange":
             self._api.create_exchange(account_id=account["id"], amount=amount,
-                currency=self._currency_combo.currentText(), screenshot_path=self._screenshot_path,
+                currency=self._currency_combo.currentData() or self._currency_combo.currentText(), screenshot_path=self._screenshot_path,
                 customer_fee=fee, additional_fee_amount=additional, fee_account_id=fee_acc, note=note)
         self._show_status(t("txn_saved"), error=False)
         self._clear_form()
@@ -1092,10 +1108,17 @@ class TransactionFormPage(QWidget):
         if user.get("role") == "employee" and self._selected_action in ("withdraw", "transfer", "exchange"):
             if not self._check_float_status():
                 return t("err_no_float")
+        if self._selected_action in ("deposit", "withdraw") and self._service_type_selector.selected_service_type_id() is None:
+            self._set_combo_warning(self._service_type_selector, True)
+            return t("err_select_service_type")
         if self._account_selector.selected_account_id() is None:
+            self._set_combo_warning(self._account_selector, True)
             return t("err_select_account")
         if self._parse_amount() <= 0:
             return t("err_enter_amount")
+        if self._selected_action == "exchange" and self._currency_combo.currentIndex() <= 0:
+            self._set_combo_warning(self._currency_combo, True)
+            return t("err_select_currency")
         if self._selected_action in ("deposit", "withdraw"):
             if not self._customer_name.text().strip():
                 return t("err_customer_name")
@@ -1104,6 +1127,7 @@ class TransactionFormPage(QWidget):
         if self._selected_action == "transfer":
             to_acc_id = self._to_account_selector.selected_account_id()
             if to_acc_id is None:
+                self._set_combo_warning(self._to_account_selector, True)
                 return t("err_select_to_account")
             if to_acc_id == self._account_selector.selected_account_id():
                 return t("err_same_account")
@@ -1124,6 +1148,14 @@ class TransactionFormPage(QWidget):
         self._total_charge_display.setText("0")
         self._fee_hint.setVisible(False)
         self._fee_account_combo.setCurrentIndex(0)
+        self._currency_combo.setCurrentIndex(0)
+        if self._service_type_selector.count():
+            self._service_type_selector.setCurrentIndex(0)
+        if self._account_selector.count():
+            self._account_selector.setCurrentIndex(0)
+        if self._to_account_selector.count():
+            self._to_account_selector.setCurrentIndex(0)
+        self._clear_combo_warnings()
         self._note_input.clear()
         self._commission_display.setText("0")
         self._balance_change_display.setText("0")

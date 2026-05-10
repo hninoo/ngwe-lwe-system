@@ -630,8 +630,10 @@ class _AccountDialog(QDialog):
                 if self._company_combo.itemData(i) == cid:
                     self._company_combo.setCurrentIndex(i)
                     break
-        if self._company_combo.count():
-            self._on_company_changed(self._company_combo.currentData() or 0)
+        if self._account:
+            cid = self._company_combo.selected_company_id()
+            if cid is not None:
+                self._on_company_changed(cid)
 
         if self._account:
             self._name_edit.setText(self._account.get("account_name", ""))

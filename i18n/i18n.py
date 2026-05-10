@@ -178,6 +178,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "txn_saved":              {"mm": "ငွေလွှဲ အောင်မြင်စွာ သိမ်းပြီ။",
                                "en": "Transaction saved successfully."},
     "err_select_account":     {"mm": "အကောင့် ရွေးပါ။",           "en": "Please select an account."},
+    "err_select_currency":    {"mm": "ငွေကြေး ရွေးပါ။",           "en": "Please select a currency."},
     "err_enter_amount":       {"mm": "ပမာဏ ထည့်ပါ။",              "en": "Please enter a valid amount."},
     "err_customer_name":      {"mm": "ဖောက်သည်အမည် ထည့်ပါ။",    "en": "Please enter the customer name."},
     "err_customer_phone":     {"mm": "ဖောက်သည်ဖုန်း ထည့်ပါ။",    "en": "Please enter the customer phone number."},
