@@ -133,10 +133,9 @@ async def create_cash_in(
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
+    await _broadcast_balances()
     if txn_dict.get("status") == "PENDING_CASHIER_CONFIRM":
         await _broadcast_cash_in_pending(txn_dict)
-    else:
-        await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
     return txn_dict
 

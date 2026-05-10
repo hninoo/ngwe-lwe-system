@@ -30,6 +30,7 @@ class CashInRepository(TransactionOperationBase):
         from_company_id = self._get_company_id(account.service_type_id)
 
         with self.atomic():
+            self._account_repo.increment_balance(account_id, -amount)
             txn_id = self._txn_repo.create({
                 "transaction_type": "cash_in",
                 "account_id": account_id,
@@ -55,5 +56,38 @@ class CashInRepository(TransactionOperationBase):
                 "amount": amount,
                 "balance_delta": -amount,
                 "status": "PENDING_CASHIER_CONFIRM",
+                "vault_impact": "none",
+                "message": (
+                    "Digital balance deducted immediately. "
+                    "Awaiting cashier confirmation for physical cash handover."
+                ),
             })
         return self._txn_repo.get_by_id(txn_id)
+
+    def cancel_pending_cash_in(
+        self,
+        txn_id: int,
+        cashier_id: int,
+        note: Optional[str] = None,
+    ) -> Optional[Transaction]:
+        txn = self._txn_repo.get_by_id(txn_id)
+        if txn is None:
+            return None
+        if txn.transaction_type != "cash_in":
+            raise ValueError("Only Cash In transactions can be cancelled here.")
+        if txn.status != "PENDING_CASHIER_CONFIRM":
+            return None
+
+        reversal_amount = float(txn.amount or 0)
+        with self.atomic():
+            self._account_repo.increment_balance(txn.account_id, reversal_amount)
+            updated = self._txn_repo.cancel_pending_cash_in(txn_id, cashier_id, note)
+            self._log(cashier_id, "cash_in_auto_reversed", txn_id, {
+                "type": "cash_in",
+                "account_id": txn.account_id,
+                "amount": txn.amount,
+                "balance_delta": reversal_amount,
+                "status": "CANCELLED",
+                "message": "Auto-reversal credited digital balance back after cashier cancellation.",
+            })
+        return updated

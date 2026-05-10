@@ -23,7 +23,7 @@ from services.vault_service import (
 
 router = APIRouter(prefix="/cashier", tags=["cashier"])
 
-CASH_TOLERANCE_MMK: int = 100
+CASH_TOLERANCE_MMK: int = 500
 
 _denom_repo = CashDenominationRepository()
 _float_repo = CashFloatRepository()
@@ -403,7 +403,6 @@ def confirm_pending_cash_in(
             raise HTTPException(409, "Cash In is no longer pending confirmation")
         from repositories.account_repository import AccountRepository
         account_repo = AccountRepository()
-        account_repo.increment_balance(txn.account_id, -float(txn.amount or 0))
         if txn.fee_account_id is not None and float(txn.customer_fee or 0) > 0:
             account_repo.increment_balance(txn.fee_account_id, float(txn.customer_fee or 0))
         _denom_repo.record_bulk_entry(
@@ -442,15 +441,20 @@ def cancel_pending_cash_in(
         body.pin,
         f"pin:cancel-cash-in:{current_user['user_id']}",
     )
-    txn_repo = TransactionRepository()
-    txn = txn_repo.get_by_id(txn_id)
+    txn = TransactionRepository().get_by_id(txn_id)
     if txn is None:
         raise HTTPException(404, "Transaction not found")
     if txn.transaction_type != "cash_in":
         raise HTTPException(400, "Only Cash In transactions can be cancelled here.")
     if txn.status != "PENDING_CASHIER_CONFIRM":
         raise HTTPException(409, f"Invalid status transition: {txn.status} -> CANCELLED")
-    updated = txn_repo.cancel_pending_cash_in(txn_id, current_user["user_id"], body.note)
+    from repositories.cash_in_repository import CashInRepository
+    try:
+        updated = CashInRepository().cancel_pending_cash_in(
+            txn_id, current_user["user_id"], body.note
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     if updated is None:
         raise HTTPException(409, "Cash In is no longer pending confirmation")
     return asdict(updated)

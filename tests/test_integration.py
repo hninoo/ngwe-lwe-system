@@ -73,7 +73,7 @@ def _get_accounts_by_company_category(seeded_db, category: str) -> list:
 
 
 def test_cash_in_flow_end_to_end(client, owner_headers, seeded_db):
-    """POST cash-in via /transactions/cash_in -> starts pending with no balance movement."""
+    """POST cash-in via /transactions/cash_in -> deducts digital balance immediately."""
     account_id = _get_first_active_account_id(seeded_db)
 
     pre_balance = seeded_db.execute(
@@ -98,11 +98,11 @@ def test_cash_in_flow_end_to_end(client, owner_headers, seeded_db):
     assert body["status"] == "PENDING_CASHIER_CONFIRM"
     assert body["vault_impact"] == "none"
 
-    # Cash In is maker-checker: the account balance changes only after cashier confirmation.
+    # Cash In is maker-checker: digital value goes out at creation, while physical cash waits for cashier confirmation.
     acc_resp = client.get(f"/accounts/{account_id}", headers=owner_headers)
     assert acc_resp.status_code == 200
     new_balance = acc_resp.json()["balance"]
-    assert new_balance == pre_bal_val
+    assert new_balance == pre_bal_val - 10000.0
 
 
 def test_transfer_flow_cross_company(client, owner_headers, seeded_db):

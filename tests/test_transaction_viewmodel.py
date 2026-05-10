@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from models.account import Account
 from models.commission_tier import CommissionTier
+from models.transaction import Transaction
 
 
 def _make_account(service_type_id: int, balance: float = 100000.0) -> Account:
@@ -173,7 +174,7 @@ def test_employee_cash_in_is_pending_and_does_not_touch_mini_vault():
             employee_id=7,
         )
 
-    account_repo.increment_balance.assert_not_called()
+    account_repo.increment_balance.assert_any_call(1, -25000.0)
     float_repo.add_float_balance.assert_not_called()
     created = vm._txn_repo.create.call_args.args[0]
     assert created["balance_change"] == -25000.0
@@ -196,11 +197,44 @@ def test_owner_cash_in_starts_pending_checker_flow():
             employee_id=None,
         )
 
-    account_repo.increment_balance.assert_not_called()
+    account_repo.increment_balance.assert_any_call(1, -25000.0)
     float_repo.add_float_balance.assert_not_called()
     created = vm._txn_repo.create.call_args.args[0]
     assert created["status"] == "PENDING_CASHIER_CONFIRM"
     assert created["vault_impact"] == "none"
+
+
+def test_cancel_pending_cash_in_auto_reverses_digital_balance():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, _ = _make_vm(account, tier)
+    pending_txn = Transaction(
+        id=42,
+        transaction_type="cash_in",
+        account_id=1,
+        amount=25000.0,
+        status="PENDING_CASHIER_CONFIRM",
+        vault_impact="none",
+        created_by=7,
+    )
+    cancelled_txn = Transaction(
+        id=42,
+        transaction_type="cash_in",
+        account_id=1,
+        amount=25000.0,
+        status="CANCELLED",
+        vault_impact="none",
+        created_by=7,
+        confirmed_by=3,
+    )
+    vm._txn_repo.get_by_id.return_value = pending_txn
+    vm._txn_repo.cancel_pending_cash_in.return_value = cancelled_txn
+
+    updated = vm._cash_in_repo.cancel_pending_cash_in(42, 3, "Wrong amount")
+
+    account_repo.increment_balance.assert_called_once_with(1, 25000.0)
+    vm._txn_repo.cancel_pending_cash_in.assert_called_once_with(42, 3, "Wrong amount")
+    assert updated.status == "CANCELLED"
 
 
 def test_cash_out_increases_account_and_decreases_drawer():
