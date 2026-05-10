@@ -505,8 +505,8 @@ Phase 7 can be prepared (spec file edits) in parallel with Phase 5–6.
 | `test_tier_lookup_by_id` | `tests/test_commission_tier_repository.py` | `get_tier_for_amount(service_type_id, amount)` returns correct tier |
 | `test_commission_calc_kpay_wst` | `tests/test_transaction_viewmodel.py` | Commission for KBZ Pay WST 50,000 MMK = 200 (matches legacy result) |
 | `test_commission_calc_wave_wst` | `tests/test_transaction_viewmodel.py` | Commission for Wave Money WST 10,000 MMK = 123 cash_in |
-| `test_logo_upload_size_limit` | `tests/test_company_routes.py` | 201 KB file rejected with 422 |
-| `test_logo_upload_invalid_type` | `tests/test_company_routes.py` | PDF file rejected with 422 |
+| `test_logo_upload_size_limit` | `tests/test_company_routes.py` | 201 KB file cancelled with 422 |
+| `test_logo_upload_invalid_type` | `tests/test_company_routes.py` | PDF file cancelled with 422 |
 | `test_logo_serve` | `tests/test_company_routes.py` | Uploaded PNG returned byte-for-byte by `GET /companies/{id}/logo` |
 
 ### Integration Tests

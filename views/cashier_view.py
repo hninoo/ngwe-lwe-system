@@ -1579,7 +1579,7 @@ class PendingCashInConfirmDialog(QDialog):
             self._error_label.setVisible(True)
 
 
-class PendingCashInsPage(QWidget):
+class PendingApprovalsPage(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
         self._api = api
@@ -1641,16 +1641,16 @@ class PendingCashInsPage(QWidget):
             f"QPushButton {{ background:{ACCENT_GREEN}; color:{BG_DARK}; "
             "border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; }}"
         )
-        reject = QPushButton("Reject")
-        reject.setCursor(Qt.CursorShape.PointingHandCursor)
-        reject.setStyleSheet(
+        cancel = QPushButton("Cancel")
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setStyleSheet(
             f"QPushButton {{ background:{ACCENT_RED}; color:white; "
             "border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; }}"
         )
         confirm.clicked.connect(lambda _, td=dict(txn): self._confirm_cash_in(td))
-        reject.clicked.connect(lambda _, td=dict(txn): self._reject_cash_in(td))
+        cancel.clicked.connect(lambda _, td=dict(txn): self._cancel_cash_in(td))
         layout.addWidget(confirm)
-        layout.addWidget(reject)
+        layout.addWidget(cancel)
         layout.addStretch()
         self._table.setCellWidget(row, 6, wrapper)
 
@@ -1659,20 +1659,20 @@ class PendingCashInsPage(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.load_data()
 
-    def _reject_cash_in(self, txn: dict) -> None:
+    def _cancel_cash_in(self, txn: dict) -> None:
         pin, ok = QInputDialog.getText(
             self,
-            "Reject Cash In",
-            "Enter cashier PIN to reject this Cash In:",
+            "Cancel Cash In",
+            "Enter cashier PIN to cancel this Cash In:",
             QLineEdit.EchoMode.Password,
         )
         if not ok:
             return
-        note, note_ok = QInputDialog.getText(self, "Reject Cash In", "Reason / note:")
+        note, note_ok = QInputDialog.getText(self, "Cancel Cash In", "Reason / note:")
         if not note_ok:
             note = None
         try:
-            self._api.reject_cash_in(txn["id"], pin.strip(), note=note)
+            self._api.cancel_cash_in(txn["id"], pin.strip(), note=note)
             self.load_data()
         except Exception as exc:
             QMessageBox.warning(self, t("error"), str(exc))
@@ -1771,8 +1771,8 @@ class TransactionsReadOnlyPage(QWidget):
             color = type_colors.get(txn_type, TEXT_PRIMARY)
             amount = tx.get("amount", 0)
             fee = tx.get("customer_fee", 0)
-            txn_status = tx.get("status") or "CONFIRMED"
-            approved = tx.get("cash_approved_by") is not None or txn_status == "CONFIRMED"
+            txn_status = tx.get("status") or "COMPLETED"
+            approved = tx.get("cash_approved_by") is not None or txn_status == "COMPLETED"
 
             time_str = _to_mmt(tx.get("created_at", "")).strftime("%d-%m-%Y %I:%M %p")
             self._table.setItem(row, 0, _cell(str(tx.get("id", "")), Qt.AlignmentFlag.AlignCenter))
@@ -1880,7 +1880,7 @@ class CashierView(QMainWindow):
         self._vault_page = VaultPage(self._api)
         self._issue_page = IssueFloatPage(self._api)
         self._shifts_page = ShiftsPage(self._api)
-        self._pending_cash_ins_page = PendingCashInsPage(self._api)
+        self._pending_approvals_page = PendingApprovalsPage(self._api)
         self._txns_page = TransactionsReadOnlyPage(self._api)
         self._transaction_repository = TransactionUiRepository(self._api)
         self._profile_repository = ProfileRepository(self._transaction_repository)
@@ -1890,7 +1890,7 @@ class CashierView(QMainWindow):
             self._vault_page,
             self._issue_page,
             self._shifts_page,
-            self._pending_cash_ins_page,
+            self._pending_approvals_page,
             self._txns_page,
             self._profile_page,
         ]
@@ -2005,7 +2005,7 @@ class CashierView(QMainWindow):
                     f"color: {ACCENT_GREEN}; font-size: 11px;"
                 )
             elif data.get("type") == "cash_in_pending":
-                self._pending_cash_ins_page.load_data()
+                self._pending_approvals_page.load_data()
         except Exception:
             pass
 

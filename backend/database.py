@@ -778,8 +778,8 @@ def _migrate_009(conn):
 def _migrate_010(conn):
     """Add banking-standard transaction confirmation status fields."""
     for sql in [
-        "ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'CONFIRMED' "
-        "CHECK(status IN ('PENDING_CASHIER_CONFIRM','CONFIRMED','REJECTED'))",
+        "ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'COMPLETED' "
+        "CHECK(status IN ('PENDING_CASHIER_CONFIRM','COMPLETED','CANCELLED'))",
         "ALTER TABLE transactions ADD COLUMN vault_impact TEXT DEFAULT NULL "
         "CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none'))",
         "ALTER TABLE transactions ADD COLUMN confirmed_by INTEGER REFERENCES users(id)",
@@ -791,7 +791,7 @@ def _migrate_010(conn):
             if "duplicate column" not in str(exc).lower():
                 raise
     conn.execute(
-        "UPDATE transactions SET status='CONFIRMED' "
+        "UPDATE transactions SET status='COMPLETED' "
         "WHERE status IS NULL OR status = ''"
     )
     conn.execute(

@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import datetime
 from typing import Optional
 
 from backend.database import get_cursor
@@ -34,7 +35,7 @@ class TransactionRepository(BaseRepository):
             created_at=row["created_at"],
             cash_approved_by=row.get("cash_approved_by"),
             cash_approved_at=row.get("cash_approved_at"),
-            status=row.get("status") or "CONFIRMED",
+            status=row.get("status") or "COMPLETED",
             vault_impact=row.get("vault_impact"),
             confirmed_by=row.get("confirmed_by"),
             confirmed_at=row.get("confirmed_at"),
@@ -165,7 +166,7 @@ class TransactionRepository(BaseRepository):
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 "UPDATE transactions "
-                "SET status='CONFIRMED', vault_impact='main_vault_increase', "
+                "SET status='COMPLETED', vault_impact='main_vault_increase', "
                 "confirmed_by=?, confirmed_at=datetime('now'), "
                 "cash_approved_by=?, cash_approved_at=datetime('now') "
                 "WHERE id=? AND transaction_type='cash_in' "
@@ -178,11 +179,11 @@ class TransactionRepository(BaseRepository):
             row = cursor.fetchone()
         return self._row_to_model(row) if row else None
 
-    def reject_pending_cash_in(self, txn_id: int, cashier_id: int, note: str | None = None) -> Optional[Transaction]:
+    def cancel_pending_cash_in(self, txn_id: int, cashier_id: int, note: str | None = None) -> Optional[Transaction]:
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 "UPDATE transactions "
-                "SET status='REJECTED', vault_impact='none', "
+                "SET status='CANCELLED', vault_impact='none', "
                 "confirmed_by=?, confirmed_at=datetime('now'), "
                 "note=COALESCE(?, note) "
                 "WHERE id=? AND transaction_type='cash_in' "

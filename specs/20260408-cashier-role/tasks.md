@@ -399,7 +399,7 @@ def change_user_role(self, user_id: int, role: str) -> dict:
 - **Status**: NOT DONE
 - **Why**: The plan still shows Status: "Draft — Awaiting Clarification" and 11 `[NEEDS CLARIFICATION]` items. These must be resolved now that implementation choices are visible.
 - **Action**: For each question, document the decision actually implemented:
-  - Q1: Denominations 50, 100, 200, 500, 1000, 5000, 10000 (coins included — confirmed in DB CHECK constraint).
+  - Q1: Denominations 50, 100, 200, 500, 1000, 5000, 10000 (coins included — completed in DB CHECK constraint).
   - Q2: CashIn entry is freestanding (not 1:1 to transaction_id) — `cash_denomination_logs` uses `entry_type='vault_in'`, no reference_id FK.
   - Q3: No auto-suggest implemented (manual entry used; `utils/denomination_utils.py` will add suggest capability for future use).
   - Q4: Cashier sees read-only transaction list via `TransactionsReadOnlyPage` in `CashierView`.

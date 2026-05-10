@@ -135,7 +135,7 @@ def _build_snapshot() -> dict:
     vault_total = sum(d * q for d, q in vault.items())
 
     float_summaries = _float_repo.get_open_employee_float_summaries()
-    # PENDING_RECEIPT floats have current_balance=0 (denominations not yet confirmed),
+    # PENDING_RECEIPT floats have current_balance=0 (denominations not yet completed),
     # but total_amount was already debited from the main vault and is in transit.
     employee_floats_total = sum(
         f["total_amount"] if f["status"] == "PENDING_RECEIPT" else f["current_balance"]

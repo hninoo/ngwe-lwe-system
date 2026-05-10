@@ -25,7 +25,7 @@ class Transaction:
     created_at: Optional[datetime] = None
     cash_approved_by: Optional[int] = None
     cash_approved_at: Optional[str] = None
-    status: Optional[str] = "CONFIRMED"
+    status: Optional[str] = "COMPLETED"
     vault_impact: Optional[str] = None
     confirmed_by: Optional[int] = None
     confirmed_at: Optional[str] = None

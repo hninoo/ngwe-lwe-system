@@ -787,8 +787,8 @@ sufficient for this project?]
 ## 11. Assumptions
 
 1. The existing `client_config.json` is writable from the application's working
-   directory (already confirmed — `save_config()` writes it unconditionally).
-2. The deployment target is Windows (confirmed from project context).
+   directory (already completed — `save_config()` writes it unconditionally).
+2. The deployment target is Windows (completed from project context).
 3. All views are constructed inside the Qt event loop (standard PyQt6 usage) so
    calling `setText()` in `retranslate_ui()` is safe from the main thread.
 4. Unicode Myanmar font is the target encoding (see clarification above).

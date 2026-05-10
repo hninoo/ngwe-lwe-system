@@ -72,7 +72,7 @@ class ConfirmCashInRequest(BaseModel):
     note: Optional[str] = None
 
 
-class RejectCashInRequest(BaseModel):
+class CancelCashInRequest(BaseModel):
     pin: str
     note: Optional[str] = None
 
@@ -352,14 +352,14 @@ def confirm_float_return(
 
 # ── Transaction cash approval ──
 
-@router.get("/pending-cash_ins")
+@router.get("/pending-cash-ins")
 def get_pending_cash_ins(current_user: dict = Depends(get_current_user)) -> list[dict]:
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
     return [asdict(txn) for txn in TransactionRepository().get_pending_cash_ins()]
 
 
-@router.post("/transactions/{txn_id}/confirm-cash_in")
+@router.post("/transactions/{txn_id}/confirm-cash-in")
 def confirm_pending_cash_in(
     txn_id: int,
     body: ConfirmCashInRequest,
@@ -370,7 +370,7 @@ def confirm_pending_cash_in(
     _verify_cashier_pin_or_401(
         current_user["user_id"],
         body.pin,
-        f"pin:confirm-cash_in:{current_user['user_id']}",
+        f"pin:confirm-cash-in:{current_user['user_id']}",
     )
 
     txn_repo = TransactionRepository()
@@ -378,9 +378,9 @@ def confirm_pending_cash_in(
     if txn is None:
         raise HTTPException(404, "Transaction not found")
     if txn.transaction_type != "cash_in":
-        raise HTTPException(400, "Only Cash In transactions can be confirmed here.")
+        raise HTTPException(400, "Only Cash In transactions can be completed here.")
     if txn.status != "PENDING_CASHIER_CONFIRM":
-        raise HTTPException(409, f"Invalid status transition: {txn.status} -> CONFIRMED")
+        raise HTTPException(409, f"Invalid status transition: {txn.status} -> COMPLETED")
 
     denoms = _parse_denominations(body.denominations)
     entered_total = sum(d * q for d, q in denoms.items())
@@ -410,12 +410,12 @@ def confirm_pending_cash_in(
             entry_type="vault_in",
             denominations=denoms,
             created_by=current_user["user_id"],
-            note=body.note or f"Confirmed pending Cash In Txn #{txn_id}",
+            note=body.note or f"Completed pending Cash In Txn #{txn_id}",
         )
         with get_cursor(commit=True) as cur:
             cur.execute(
                 "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
-                "VALUES (?, 'cash_in_cashier_confirmed', 'transaction', ?, ?)",
+                "VALUES (?, 'cash_in_cashier_completed', 'transaction', ?, ?)",
                 (
                     current_user["user_id"],
                     txn_id,
@@ -429,10 +429,10 @@ def confirm_pending_cash_in(
     return asdict(updated)
 
 
-@router.post("/transactions/{txn_id}/reject-cash_in")
-def reject_pending_cash_in(
+@router.post("/transactions/{txn_id}/cancel-cash-in")
+def cancel_pending_cash_in(
     txn_id: int,
-    body: RejectCashInRequest,
+    body: CancelCashInRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     if current_user["role"] != "cashier":
@@ -440,17 +440,17 @@ def reject_pending_cash_in(
     _verify_cashier_pin_or_401(
         current_user["user_id"],
         body.pin,
-        f"pin:reject-cash_in:{current_user['user_id']}",
+        f"pin:cancel-cash-in:{current_user['user_id']}",
     )
     txn_repo = TransactionRepository()
     txn = txn_repo.get_by_id(txn_id)
     if txn is None:
         raise HTTPException(404, "Transaction not found")
     if txn.transaction_type != "cash_in":
-        raise HTTPException(400, "Only Cash In transactions can be rejected here.")
+        raise HTTPException(400, "Only Cash In transactions can be cancelled here.")
     if txn.status != "PENDING_CASHIER_CONFIRM":
-        raise HTTPException(409, f"Invalid status transition: {txn.status} -> REJECTED")
-    updated = txn_repo.reject_pending_cash_in(txn_id, current_user["user_id"], body.note)
+        raise HTTPException(409, f"Invalid status transition: {txn.status} -> CANCELLED")
+    updated = txn_repo.cancel_pending_cash_in(txn_id, current_user["user_id"], body.note)
     if updated is None:
         raise HTTPException(409, "Cash In is no longer pending confirmation")
     return asdict(updated)
@@ -472,7 +472,7 @@ def approve_transaction(
     if txn.transaction_type == "cash_in" and txn.status == "PENDING_CASHIER_CONFIRM":
         raise HTTPException(
             409,
-            "Pending Cash In transactions must be confirmed through the cashier PIN flow.",
+            "Pending Cash In transactions must be completed through the cashier PIN flow.",
         )
 
     if txn.transaction_type == "transfer":

@@ -333,7 +333,7 @@ class ApiClient:
         })
 
     def get_pending_cash_ins(self) -> list[dict]:
-        return self._get("/cashier/pending-cash_ins")
+        return self._get("/cashier/pending-cash-ins")
 
     def confirm_cash_in(
         self,
@@ -342,14 +342,14 @@ class ApiClient:
         denominations: dict,
         note: str | None = None,
     ) -> dict:
-        return self._post(f"/cashier/transactions/{txn_id}/confirm-cash_in", {
+        return self._post(f"/cashier/transactions/{txn_id}/confirm-cash-in", {
             "pin": pin,
             "denominations": denominations,
             "note": note,
         })
 
-    def reject_cash_in(self, txn_id: int, pin: str, note: str | None = None) -> dict:
-        return self._post(f"/cashier/transactions/{txn_id}/reject-cash_in", {
+    def cancel_cash_in(self, txn_id: int, pin: str, note: str | None = None) -> dict:
+        return self._post(f"/cashier/transactions/{txn_id}/cancel-cash-in", {
             "pin": pin,
             "note": note,
         })

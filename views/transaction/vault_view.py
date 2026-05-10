@@ -325,7 +325,7 @@ class VaultPage(QWidget):
 
     def _vault_helper(self) -> str:
         if self._is_cashier():
-            return "Main Vault reflects float issues, returns, and confirmed Cash In handovers."
+            return "Main Vault reflects float issues, returns, and completed Cash In handovers."
         return "Mini Vault is used for Cash Out only; Cash In is handed to the Cashier."
 
     def _populate_history(self, floats: list[dict], transactions: list[dict]) -> None:

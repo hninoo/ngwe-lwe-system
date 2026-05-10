@@ -185,7 +185,7 @@ class VaultService:
                 float_id=float_id,
                 denominations=v_denoms,
                 performed_by=employee_id,
-                note=f"Float #{float_id} receipt confirmed",
+                note=f"Float #{float_id} receipt completed",
             )
 
         return updated
@@ -357,7 +357,7 @@ class VaultService:
                 denominations=return_denoms,
                 created_by=cashier_id,
                 float_id=float_id,
-                note=f"Float #{float_id} return confirmed by cashier",
+                note=f"Float #{float_id} return completed by cashier",
             )
             self._vault_txn_repo.record_bulk(
                 txn_type="return_confirm",
@@ -365,7 +365,7 @@ class VaultService:
                 denominations=return_denoms,
                 performed_by=cashier_id,
                 verified_by=cashier_id,
-                note=f"Float #{float_id} return confirmed",
+                note=f"Float #{float_id} return completed",
             )
 
         return self._float_repo.get_float(float_id)

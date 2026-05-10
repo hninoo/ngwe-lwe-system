@@ -471,7 +471,7 @@ Replace the `service_id` and `service_type TEXT` fields with `service_type_id: i
 
 [NEEDS CLARIFICATION: The plan removes `account_type` TEXT from the `accounts` table during the migration table rebuild (step 6 in T019). However, the current `Account` model has `account_type: Optional[str] = None` and it is used in `transaction_view.py` to display account type labels and in `commission_tier_repository.py` for tier lookups. After migration, does `account_type` still exist as a column in accounts (e.g., kept as-is for display) or is it fully dropped? The plan says to drop it from `accounts` and from `commission_tiers`, but does not explicitly show it being retained. Please confirm: should `account_type` be completely dropped from the `accounts` table, or should it be retained for UI display purposes?]
 
-Update `_row_to_model` in `AccountRepository` (T026) accordingly once this is confirmed.
+Update `_row_to_model` in `AccountRepository` (T026) accordingly once this is completed.
 
 ```
 models/account.py  (modify)

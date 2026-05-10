@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     cash_approved_by      INTEGER,
     cash_approved_at      TEXT,
-    status                TEXT NOT NULL DEFAULT 'CONFIRMED'
-                          CHECK(status IN ('PENDING_CASHIER_CONFIRM','CONFIRMED','REJECTED')),
+    status                TEXT NOT NULL DEFAULT 'COMPLETED'
+                          CHECK(status IN ('PENDING_CASHIER_CONFIRM','COMPLETED','CANCELLED')),
     vault_impact          TEXT
                           CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none')),
     confirmed_by          INTEGER,
