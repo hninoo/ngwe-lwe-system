@@ -166,7 +166,7 @@ def test_employee_cash_in_is_pending_and_does_not_touch_mini_vault():
     tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
     vm, _, account_repo, float_repo = _make_vm(account, tier)
 
-    with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
+    with patch("repositories.transaction_operation_base.TransactionOperationBase._log"):
         vm.create_cash_in(
             account_id=1,
             amount=25000.0,
@@ -189,7 +189,7 @@ def test_owner_cash_in_starts_pending_checker_flow():
     tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
     vm, _, account_repo, float_repo = _make_vm(account, tier)
 
-    with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
+    with patch("repositories.transaction_operation_base.TransactionOperationBase._log"):
         vm.create_cash_in(
             account_id=1,
             amount=25000.0,
@@ -332,7 +332,7 @@ def test_cash_out_increases_account_and_decreases_drawer():
     active_float = SimpleNamespace(id=1, current_balance=50000.0)
     float_repo.get_active_float_for_employee.return_value = active_float
 
-    with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
+    with patch("repositories.transaction_operation_base.TransactionOperationBase._log"):
         vm.create_cash_out(
             account_id=1,
             amount=25000.0,
@@ -390,3 +390,22 @@ def test_tier_fee_fallback_combines_fixed_and_percentage():
 
     assert customer_fee == 2500.0
     assert additional == 500.0
+
+
+def test_round_fee_mmk_standard():
+    from repositories.transaction_operation_base import TransactionOperationBase
+
+    assert TransactionOperationBase.round_fee(120.0) == 100
+    assert TransactionOperationBase.round_fee(1020.0) == 1000
+    assert TransactionOperationBase.round_fee(20.0) == 100
+    assert TransactionOperationBase.round_fee(0.0) == 0
+
+    assert TransactionOperationBase.round_fee(120.1) == 200
+    assert TransactionOperationBase.round_fee(130.0) == 200
+    assert TransactionOperationBase.round_fee(140.0) == 200
+    assert TransactionOperationBase.round_fee(150.0) == 200
+    assert TransactionOperationBase.round_fee(199.99) == 200
+    assert TransactionOperationBase.round_fee(1020.1) == 1100
+    assert TransactionOperationBase.round_fee(50.0) == 100
+    assert TransactionOperationBase.round_fee(99.9) == 100
+    assert TransactionOperationBase.round_fee(21.0) == 100

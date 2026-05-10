@@ -92,7 +92,9 @@ class TransactionOperationBase:
             add_raw = tier.additional_fee_cash_in_amount or 0.0
         base_fee = self._calc_amount_by_type(amount, base_raw, tier.fee_amount_type)
         additional = self._calc_amount_by_type(amount, add_raw, tier.additional_fee_type)
-        return base_fee + additional, additional
+        total_fee = base_fee + additional
+        rounded_fee = float(self.round_fee(total_fee))
+        return rounded_fee, additional
 
     def _validate_employee_float(
         self,
@@ -156,7 +158,22 @@ class TransactionOperationBase:
 
     @staticmethod
     def round_fee(amount: float) -> int:
-        return math.ceil(amount / 50) * 50
+        """
+        Myanmar MMK fee rounding:
+        - remainder = amount % 100
+        - If remainder <= 20: round DOWN to nearest 100
+        - If remainder > 20: round UP to nearest 100
+        - Minimum fee: 100 MMK
+        """
+        if amount <= 0:
+            return 0
+        base = math.floor(amount / 100) * 100
+        remainder = amount - base
+        if remainder <= 20:
+            fee = base
+        else:
+            fee = base + 100
+        return max(fee, 100)
 
     @staticmethod
     def atomic():
