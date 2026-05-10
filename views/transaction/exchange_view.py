@@ -38,18 +38,18 @@ class ExchangeView(BaseFormView):
         # Row 0 — Account + balance hint (left 8) | Currency (right 4)
         grid.addWidget(
             self._make_account_cell_with_balance(t("field_account"), required=True),
-            0, 0, 1, 8,
+            0, 0, 1, 4,
         )
 
         currency_label = field_label(t("field_currency"), required=True)
         self._currency_combo = QComboBox()
         add_placeholder(self._currency_combo)
         self._currency_combo.addItems(["MMK", "THB"])
-        grid.addWidget(self._gcell(currency_label, self._currency_combo), 0, 8, 1, 4)
+        grid.addWidget(self._gcell(currency_label, self._currency_combo), 0, 4, 1, 4)
 
         # Row 1 — Amount (right 4)
         amount_label = field_label(t("field_amount"), required=True)
-        grid.addWidget(self._gcell(amount_label, self._make_amount_input()), 1, 8, 1, 4)
+        grid.addWidget(self._gcell(amount_label, self._make_amount_input()), 0, 8, 1, 4)
 
         lo.addLayout(grid)
         lo.addLayout(self._make_fee_grid())

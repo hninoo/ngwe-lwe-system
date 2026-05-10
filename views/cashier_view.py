@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
 
 from i18n import t, on_change
 from services.api_client import ApiClient
+from views.receive_float_dialog import ReceiveFloatDialog
 from views.widgets.company_selector import add_placeholder
 
 WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
@@ -626,6 +627,270 @@ class VaultPage(QWidget):
 # ════════════════════════════════════════════
 # Page 1: Issue Float
 # ════════════════════════════════════════════
+class ReturnFloatDialog(QDialog):
+    def __init__(self, api: ApiClient, float_data: dict, balance: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._float_data = float_data
+        self._balance = balance.get("denominations", {}) or {}
+        self._spinboxes: dict[int, QSpinBox] = {}
+        self._total_label: Optional[QLabel] = None
+        self._note_input: Optional[QLineEdit] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle("Return Cash to Cashier")
+        self.setFixedWidth(460)
+        self.setStyleSheet(STYLESHEET)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        title = QLabel("Return Cash")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {ACCENT_BLUE};")
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        grid.addWidget(QLabel(t("col_denomination")), 0, 0)
+        grid.addWidget(QLabel(t("col_quantity")), 0, 1)
+        grid.addWidget(QLabel(t("col_value")), 0, 2)
+        for i, denom in enumerate(DENOMINATIONS):
+            available = int(self._balance.get(str(denom), 0) or 0)
+            row = i + 1
+            grid.addWidget(QLabel(f"{denom:,} MMK"), row, 0)
+            spin = QSpinBox()
+            spin.setRange(0, available)
+            spin.setValue(available)
+            spin.setFixedWidth(130)
+            self._spinboxes[denom] = spin
+            val_lbl = QLabel(f"{denom * available:,}")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            spin.valueChanged.connect(
+                lambda v, d=denom, lbl=val_lbl: (
+                    lbl.setText(f"{d * v:,}"),
+                    self._update_total(),
+                )
+            )
+            grid.addWidget(spin, row, 1)
+            grid.addWidget(val_lbl, row, 2)
+        layout.addLayout(grid)
+
+        total_row = QHBoxLayout()
+        total_row.addWidget(QLabel("Total Return"))
+        total_row.addStretch()
+        self._total_label = QLabel("0 MMK")
+        self._total_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self._total_label.setStyleSheet(f"color: {ACCENT_GREEN};")
+        total_row.addWidget(self._total_label)
+        layout.addLayout(total_row)
+
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText(t("note_optional"))
+        layout.addWidget(self._note_input)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        submit = _accent_btn("Return to Cashier", ACCENT_GREEN)
+        submit.clicked.connect(self._on_submit)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(submit)
+        layout.addLayout(btn_row)
+        self._update_total()
+
+    def _update_total(self) -> None:
+        total = sum(d * spin.value() for d, spin in self._spinboxes.items())
+        if self._total_label:
+            self._total_label.setText(f"{total:,} MMK")
+
+    def _on_submit(self) -> None:
+        denoms = {str(d): spin.value() for d, spin in self._spinboxes.items()}
+        total = sum(int(d) * q for d, q in denoms.items())
+        if total <= 0:
+            QMessageBox.warning(self, t("error"), t("total_nonzero"))
+            return
+        try:
+            self._api.initiate_float_return(
+                self._float_data["id"],
+                denoms,
+                self._note_input.text().strip() if self._note_input else None,
+            )
+            self.accept()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
+
+
+class EmployeeVaultPage(QWidget):
+    def __init__(self, api: ApiClient, go_back=None) -> None:
+        super().__init__()
+        self._api = api
+        self._go_back = go_back
+        self._denom_cards: dict[int, tuple[QLabel, QLabel]] = {}
+        self._total_card_value: Optional[QLabel] = None
+        self._float_table: Optional[QTableWidget] = None
+        self._active_float: Optional[dict] = None
+        self._pending_float: Optional[dict] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(_section_label("Vault Overview"))
+        title_row.addStretch()
+        refresh_btn = _accent_btn(t("refresh"), ACCENT_BLUE)
+        refresh_btn.clicked.connect(self.load_data)
+        receive_btn = _accent_btn("Receive Float", ACCENT_GREEN)
+        receive_btn.clicked.connect(self._receive_pending_float)
+        return_btn = _accent_btn("Return Cash", ACCENT_YELLOW)
+        return_btn.clicked.connect(self._return_active_float)
+        title_row.addWidget(refresh_btn)
+        title_row.addWidget(receive_btn)
+        title_row.addWidget(return_btn)
+        if self._go_back:
+            back_btn = _accent_btn("Back", ACCENT_BLUE)
+            back_btn.clicked.connect(self._go_back)
+            title_row.addWidget(back_btn)
+        layout.addLayout(title_row)
+
+        cards_frame = _card_frame()
+        cards_layout = QVBoxLayout(cards_frame)
+        cards_layout.setContentsMargins(16, 16, 16, 16)
+        cards_layout.setSpacing(10)
+        sub_lbl = QLabel("Denomination Balances")
+        sub_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        sub_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        cards_layout.addWidget(sub_lbl)
+
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        for col, denom in enumerate(DENOMINATIONS):
+            card = QFrame()
+            card.setStyleSheet(
+                f"QFrame {{ background-color: {BG_DARK}; border-radius: 8px; "
+                f"border: 1px solid {BORDER_COLOR}; }}"
+            )
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(12, 10, 12, 10)
+            denom_lbl = QLabel(f"{denom:,}")
+            denom_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+            denom_lbl.setStyleSheet(f"color: {ACCENT_BLUE}; border: none;")
+            denom_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            count_lbl = QLabel("0 pcs")
+            count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            count_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; border: none;")
+            val_lbl = QLabel("0 MMK")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none;")
+            cl.addWidget(denom_lbl)
+            cl.addWidget(count_lbl)
+            cl.addWidget(val_lbl)
+            self._denom_cards[denom] = (count_lbl, val_lbl)
+            grid.addWidget(card, 0, col)
+        cards_layout.addLayout(grid)
+
+        total_row = QHBoxLayout()
+        total_title = QLabel("Total Vault Cash:")
+        total_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self._total_card_value = QLabel("0 MMK")
+        self._total_card_value.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._total_card_value.setStyleSheet(f"color: {ACCENT_GREEN};")
+        total_row.addWidget(total_title)
+        total_row.addStretch()
+        total_row.addWidget(self._total_card_value)
+        cards_layout.addLayout(total_row)
+        layout.addWidget(cards_frame)
+
+        layout.addWidget(_section_label("Vault History"))
+        self._float_table = _make_table([
+            t("col_id"), t("col_status"), t("col_float_amount"),
+            t("col_issued_by"), t("col_issued_at"), t("col_received_at"), t("col_closed_at"),
+        ], min_h=260)
+        layout.addWidget(self._float_table)
+        layout.addStretch()
+
+    def load_data(self) -> None:
+        try:
+            floats = self._api.get_floats()
+            self._active_float = next((f for f in floats if f.get("status") == "ACTIVE"), None)
+            self._pending_float = next((f for f in floats if f.get("status") == "PENDING_RECEIPT"), None)
+            self._populate_denoms()
+            self._populate_history(floats)
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), f"Failed to load vault data: {exc}")
+
+    def _populate_denoms(self) -> None:
+        balance = {}
+        total = 0
+        if self._active_float:
+            data = self._api.get_float_denomination_balance(self._active_float["id"])
+            balance = data.get("denominations", {}) or {}
+            total = int(data.get("total", 0) or 0)
+        for denom, (count_lbl, val_lbl) in self._denom_cards.items():
+            qty = int(balance.get(str(denom), 0) or 0)
+            count_lbl.setText(f"{qty} pcs")
+            val_lbl.setText(f"{denom * qty:,} MMK")
+        if self._total_card_value:
+            self._total_card_value.setText(f"{total:,} MMK")
+
+    def _populate_history(self, floats: list[dict]) -> None:
+        if self._float_table is None:
+            return
+        self._float_table.setRowCount(0)
+        for f in floats:
+            row = self._float_table.rowCount()
+            self._float_table.insertRow(row)
+            self._float_table.setItem(row, 0, _cell(str(f.get("id", "")), Qt.AlignmentFlag.AlignCenter))
+            self._float_table.setItem(row, 1, _cell(str(f.get("status", "")), Qt.AlignmentFlag.AlignCenter))
+            amount = float(f.get("current_balance") or f.get("total_amount") or 0)
+            self._float_table.setItem(row, 2, _cell(f"{amount:,.0f}", Qt.AlignmentFlag.AlignRight))
+            self._float_table.setItem(row, 3, _cell(str(f.get("issued_by_name", ""))))
+            self._float_table.setItem(row, 4, _cell(str(f.get("created_at", ""))[:16]))
+            self._float_table.setItem(row, 5, _cell(str(f.get("received_at", "") or "")[:16]))
+            self._float_table.setItem(row, 6, _cell(str(f.get("closed_at", "") or "")[:16]))
+
+    def _receive_pending_float(self) -> None:
+        if not self._pending_float:
+            QMessageBox.information(self, "Receive Float", "No pending float to receive.")
+            return
+        dlg = ReceiveFloatDialog(self._api, self._pending_float, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def _return_active_float(self) -> None:
+        if not self._active_float:
+            QMessageBox.information(self, "Return Cash", "No active vault cash to return.")
+            return
+        balance = self._api.get_float_denomination_balance(self._active_float["id"])
+        dlg = ReturnFloatDialog(self._api, self._active_float, balance, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            QMessageBox.information(self, "Return Cash", "Return request sent to cashier.")
+            self.load_data()
+
+
+class EmployeeVaultView(QMainWindow):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self.setWindowTitle("Vault")
+        self.setMinimumSize(1100, 700)
+        self.setStyleSheet(STYLESHEET)
+        self._page = EmployeeVaultPage(self._api, self._go_dashboard)
+        self.setCentralWidget(self._page)
+        self._page.load_data()
+
+    def _go_dashboard(self) -> None:
+        from views.dashboard_view import DashboardView
+        self._dashboard = DashboardView(self._api)
+        self._dashboard.show()
+        self.close()
+
+
 class IssueFloatPage(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()

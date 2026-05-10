@@ -544,11 +544,13 @@ class ApiClient:
         float_id: int,
         denominations: dict[str, int],
         note: Optional[str] = None,
+        pin: str = "",
     ) -> dict:
         """Employee initiates float return with denomination breakdown."""
         return self._post(f"/cashier/floats/{float_id}/initiate-return", {
             "denominations": denominations,
             "note": note,
+            "pin": pin,
         })
 
     def confirm_float_return(self, float_id: int, cashier_pin: str) -> dict:

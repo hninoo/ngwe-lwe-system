@@ -162,7 +162,7 @@ async def create_withdraw(
             denominations=body.denominations,
         )
     except (InsufficientFloatError, InsufficientDenominationError) as exc:
-        raise HTTPException(422, detail=str(exc))
+        raise HTTPException(422, detail=f"Vault Insufficient: {exc}")
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
@@ -200,7 +200,7 @@ async def create_transfer(
             denominations=body.denominations,
         )
     except (InsufficientFloatError, InsufficientDenominationError) as exc:
-        raise HTTPException(422, detail=str(exc))
+        raise HTTPException(422, detail=f"Vault Insufficient: {exc}")
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
@@ -238,7 +238,7 @@ async def create_exchange(
             denominations=body.denominations,
         )
     except (InsufficientFloatError, InsufficientDenominationError) as exc:
-        raise HTTPException(422, detail=str(exc))
+        raise HTTPException(422, detail=f"Vault Insufficient: {exc}")
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)

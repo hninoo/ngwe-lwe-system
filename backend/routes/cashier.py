@@ -54,6 +54,7 @@ class ReceiveFloatRequest(BaseModel):
 class InitiateReturnRequest(BaseModel):
     denominations: dict[str, int]
     note: Optional[str] = None
+    pin: Optional[str] = None
 
 
 class ConfirmReturnRequest(BaseModel):
@@ -278,6 +279,14 @@ def initiate_float_return(
     """Employee declares remaining denominations to return."""
     if current_user["role"] != "employee":
         raise HTTPException(403, "Employee access only")
+    key = f"pin:initiate-return:{current_user['user_id']}"
+    if not body.pin:
+        raise HTTPException(422, "PIN is required to return cash.")
+    _pin_limiter.check(key)
+    stored_hash = _user_repo.get_pin_hash(current_user["user_id"])
+    if not stored_hash or not bcrypt.checkpw(body.pin.encode(), stored_hash.encode()):
+        _pin_limiter.record_failure(key)
+        raise HTTPException(401, "Incorrect PIN.")
     try:
         updated = _vault_service.initiate_return(
             float_id=float_id,
@@ -287,6 +296,7 @@ def initiate_float_return(
         )
     except Exception as e:
         raise _service_error(e)
+    _pin_limiter.clear(key)
     return asdict(updated)
 
 

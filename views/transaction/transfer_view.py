@@ -48,11 +48,11 @@ class TransferView(BaseFormView):
 
         top_grid.addWidget(
             self._make_account_cell_with_balance(t("field_account"), required=True),
-            0, 0, 1, 8,
+            0, 0, 1, 6,
         )
 
         amount_label = field_label(t("field_amount"), required=True)
-        top_grid.addWidget(self._gcell(amount_label, self._make_amount_input()), 0, 8, 1, 4)
+        top_grid.addWidget(self._gcell(amount_label, self._make_amount_input()), 0, 6, 1, 6)
 
         lo.addLayout(top_grid)
 

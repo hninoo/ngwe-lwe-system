@@ -104,7 +104,7 @@ class TransactionOperationBase:
             return None
         active_float = self._float_repo.get_active_float_for_employee(employee_id)
         if active_float is None:
-            raise ValueError("No active float found for this employee.")
+            raise ValueError("Vault Insufficient: no active vault found for this employee.")
         if denominations:
             self._vault_service.validate_withdrawal(
                 float_id=active_float.id,
