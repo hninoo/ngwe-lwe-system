@@ -6,7 +6,7 @@ from typing import Optional
 @dataclass
 class Transaction:
     id: Optional[int] = None
-    transaction_type: Optional[str] = None  # 'deposit' | 'withdraw' | 'transfer' | 'exchange'
+    transaction_type: Optional[str] = None  # 'cash_in' | 'cash_out' | 'transfer' | 'exchange'
     account_id: Optional[int] = None
     to_account_id: Optional[int] = None
     customer_name: Optional[str] = None
@@ -25,5 +25,9 @@ class Transaction:
     created_at: Optional[datetime] = None
     cash_approved_by: Optional[int] = None
     cash_approved_at: Optional[str] = None
+    status: Optional[str] = "CONFIRMED"
+    vault_impact: Optional[str] = None
+    confirmed_by: Optional[int] = None
+    confirmed_at: Optional[str] = None
     from_company_id: Optional[int] = None   # FK → companies (set for all transaction types)
     to_company_id: Optional[int] = None     # FK → companies (set for transfer/exchange)

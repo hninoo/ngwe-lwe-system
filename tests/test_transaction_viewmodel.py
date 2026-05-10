@@ -36,14 +36,14 @@ def _make_account(service_type_id: int, balance: float = 100000.0) -> Account:
 
 def _make_tier(
     service_type_id: int,
-    comm_deposit: float,
-    comm_withdraw: float,
+    comm_cash_in: float,
+    comm_cash_out: float,
     fee_amount_type: str = "FIXED",
-    fee_amount_deposit: float = 0.0,
-    fee_amount_withdraw: float = 0.0,
+    fee_amount_cash_in: float = 0.0,
+    fee_amount_cash_out: float = 0.0,
     additional_fee_type: str = "FIXED",
-    additional_fee_deposit_amount: float = 0.0,
-    additional_fee_withdraw_amount: float = 0.0,
+    additional_fee_cash_in_amount: float = 0.0,
+    additional_fee_cash_out_amount: float = 0.0,
 ) -> CommissionTier:
     return CommissionTier(
         id=1,
@@ -51,14 +51,14 @@ def _make_tier(
         amount_from=None,
         amount_to=None,
         fee_amount_type=fee_amount_type,
-        fee_amount_deposit=fee_amount_deposit,
-        fee_amount_withdraw=fee_amount_withdraw,
+        fee_amount_cash_in=fee_amount_cash_in,
+        fee_amount_cash_out=fee_amount_cash_out,
         comm_type="FIXED",
-        comm_deposit=comm_deposit,
-        comm_withdraw=comm_withdraw,
+        comm_cash_in=comm_cash_in,
+        comm_cash_out=comm_cash_out,
         additional_fee_type=additional_fee_type,
-        additional_fee_deposit_amount=additional_fee_deposit_amount,
-        additional_fee_withdraw_amount=additional_fee_withdraw_amount,
+        additional_fee_cash_in_amount=additional_fee_cash_in_amount,
+        additional_fee_cash_out_amount=additional_fee_cash_out_amount,
         is_active=True,
     )
 
@@ -100,7 +100,7 @@ def test_commission_calc_kpay_wst():
     """Commission for KBZ Pay WST at 50,000 MMK = 500.0 (seeded value)."""
     KPAY_WST_ID = 1
     account = _make_account(service_type_id=KPAY_WST_ID)
-    tier    = _make_tier(KPAY_WST_ID, comm_deposit=500.0, comm_withdraw=500.0)
+    tier    = _make_tier(KPAY_WST_ID, comm_cash_in=500.0, comm_cash_out=500.0)
 
     vm, tier_repo, _, _ = _make_vm(account, tier)
     comm = vm._calc_commission(account, 50000.0, "send")
@@ -116,7 +116,7 @@ def test_commission_calc_wave_wst():
     """Commission for Wave Money WST agent account at 10,000 MMK = 400.0."""
     WAVE_WST_ID = 2
     account = _make_account(service_type_id=WAVE_WST_ID)
-    tier    = _make_tier(WAVE_WST_ID, comm_deposit=400.0, comm_withdraw=400.0)
+    tier    = _make_tier(WAVE_WST_ID, comm_cash_in=400.0, comm_cash_out=400.0)
 
     vm, tier_repo, _, _ = _make_vm(account, tier)
     comm = vm._calc_commission(account, 10000.0, "send")
@@ -131,7 +131,7 @@ def test_commission_calc_wave_account():
     """Commission for Wave Money Pay_To_Pay personal account."""
     WAVE_P2P_ID = 3
     account = _make_account(service_type_id=WAVE_P2P_ID)
-    tier    = _make_tier(WAVE_P2P_ID, comm_deposit=300.0, comm_withdraw=300.0)
+    tier    = _make_tier(WAVE_P2P_ID, comm_cash_in=300.0, comm_cash_out=300.0)
 
     vm, tier_repo, _, _ = _make_vm(account, tier)
     comm = vm._calc_commission(account, 10000.0, "send")
@@ -146,7 +146,7 @@ def test_commission_calc_true_money_wst():
     """True Money WST returns its own dedicated tier (not KPAY tier)."""
     TRUE_MONEY_WST_ID = 5  # distinct ID from KPAY
     account = _make_account(service_type_id=TRUE_MONEY_WST_ID)
-    tier    = _make_tier(TRUE_MONEY_WST_ID, comm_deposit=500.0, comm_withdraw=500.0)
+    tier    = _make_tier(TRUE_MONEY_WST_ID, comm_cash_in=500.0, comm_cash_out=500.0)
 
     vm, tier_repo, _, _ = _make_vm(account, tier)
     comm = vm._calc_commission(account, 50000.0, "send")
@@ -158,13 +158,13 @@ def test_commission_calc_true_money_wst():
     )
 
 
-def test_cash_in_decreases_account_and_increases_drawer():
+def test_employee_cash_in_is_pending_and_does_not_touch_mini_vault():
     account = _make_account(service_type_id=1)
-    tier = _make_tier(1, comm_deposit=0.0, comm_withdraw=0.0)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
     vm, _, account_repo, float_repo = _make_vm(account, tier)
 
     with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
-        vm.create_deposit(
+        vm.create_cash_in(
             account_id=1,
             amount=25000.0,
             customer_name="A",
@@ -173,21 +173,45 @@ def test_cash_in_decreases_account_and_increases_drawer():
             employee_id=7,
         )
 
-    account_repo.increment_balance.assert_any_call(1, -25000.0)
-    float_repo.add_float_balance.assert_called_once_with(7, 25000.0)
+    account_repo.increment_balance.assert_not_called()
+    float_repo.add_float_balance.assert_not_called()
     created = vm._txn_repo.create.call_args.args[0]
     assert created["balance_change"] == -25000.0
+    assert created["status"] == "PENDING_CASHIER_CONFIRM"
+    assert created["vault_impact"] == "none"
+
+
+def test_owner_cash_in_starts_pending_checker_flow():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, float_repo = _make_vm(account, tier)
+
+    with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
+        vm.create_cash_in(
+            account_id=1,
+            amount=25000.0,
+            customer_name="A",
+            customer_phone="09",
+            created_by=1,
+            employee_id=None,
+        )
+
+    account_repo.increment_balance.assert_not_called()
+    float_repo.add_float_balance.assert_not_called()
+    created = vm._txn_repo.create.call_args.args[0]
+    assert created["status"] == "PENDING_CASHIER_CONFIRM"
+    assert created["vault_impact"] == "none"
 
 
 def test_cash_out_increases_account_and_decreases_drawer():
     account = _make_account(service_type_id=1)
-    tier = _make_tier(1, comm_deposit=0.0, comm_withdraw=0.0)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
     vm, _, account_repo, float_repo = _make_vm(account, tier)
     active_float = SimpleNamespace(id=1, current_balance=50000.0)
     float_repo.get_active_float_for_employee.return_value = active_float
 
     with patch("viewmodels.transaction_viewmodel._log"), patch("viewmodels.transaction_viewmodel.atomic"):
-        vm.create_withdraw(
+        vm.create_cash_out(
             account_id=1,
             amount=25000.0,
             customer_name="A",
@@ -202,21 +226,44 @@ def test_cash_out_increases_account_and_decreases_drawer():
     assert created["balance_change"] == 25000.0
 
 
+def test_cash_out_requires_sufficient_float():
+    from repositories.cash_float_repository import InsufficientFloatError
+
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, float_repo = _make_vm(account, tier)
+    active_float = SimpleNamespace(id=1, current_balance=400000.0)
+    float_repo.get_active_float_for_employee.return_value = active_float
+
+    with pytest.raises(InsufficientFloatError):
+        vm.create_cash_out(
+            account_id=1,
+            amount=500000.0,
+            customer_name="A",
+            customer_phone="09",
+            created_by=7,
+            employee_id=7,
+        )
+
+    account_repo.increment_balance.assert_not_called()
+    vm._txn_repo.create.assert_not_called()
+
+
 def test_tier_fee_fallback_combines_fixed_and_percentage():
     account = _make_account(service_type_id=1)
     tier = _make_tier(
         1,
-        comm_deposit=0.0,
-        comm_withdraw=0.0,
+        comm_cash_in=0.0,
+        comm_cash_out=0.0,
         fee_amount_type="PERCENTAGE",
-        fee_amount_deposit=0.02,
+        fee_amount_cash_in=0.02,
         additional_fee_type="FIXED",
-        additional_fee_deposit_amount=500.0,
+        additional_fee_cash_in_amount=500.0,
     )
     vm, _, _, _ = _make_vm(account, tier)
 
     customer_fee, additional = vm._resolve_fee_values(
-        account, 100000.0, "deposit", 0.0, 0.0
+        account, 100000.0, "cash_in", 0.0, 0.0
     )
 
     assert customer_fee == 2500.0

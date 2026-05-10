@@ -16,7 +16,7 @@ from views.widgets.company_selector import ServiceTypeSelector, add_placeholder
 
 
 class CashInView(BaseFormView):
-    transaction_type = "deposit"
+    transaction_type = "cash_in"
 
     _TXN_HEADERS = ["Time", "Account", "Customer", "Phone", "Amount", "Fee / Commission", "Fee Account"]
     _TXN_COL_WIDTHS = [170, 0, 0, 130, 120, 150, 140]

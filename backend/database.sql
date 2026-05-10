@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS service_types (
     company_id  INTEGER NOT NULL,
     name        TEXT NOT NULL,
     operation   TEXT NOT NULL
-                CHECK(operation IN ('Deposit','Withdraw','Transfer','Exchange','All')),
+                CHECK(operation IN ('CashIn','CashOut','Transfer','Exchange','All')),
     is_active   INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_service_type_id ON accounts(service_type
 -- ============================================================
 CREATE TABLE IF NOT EXISTS transactions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    transaction_type    TEXT NOT NULL CHECK(transaction_type IN ('deposit','withdraw','transfer','exchange')),
+    transaction_type    TEXT NOT NULL CHECK(transaction_type IN ('cash_in','cash_out','transfer','exchange')),
     account_id          INTEGER NOT NULL,
     to_account_id       INTEGER,
     from_company_id     INTEGER,
@@ -112,6 +112,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     cash_approved_by    INTEGER,
     cash_approved_at    TEXT,
+    status              TEXT NOT NULL DEFAULT 'CONFIRMED'
+                        CHECK(status IN ('PENDING_CASHIER_CONFIRM','CONFIRMED','REJECTED')),
+    vault_impact        TEXT
+                        CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none')),
+    confirmed_by        INTEGER,
+    confirmed_at        TEXT,
     FOREIGN KEY (account_id)      REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (to_account_id)   REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (fee_account_id)  REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -122,6 +128,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_txn_type       ON transactions(transaction_type);
 CREATE INDEX IF NOT EXISTS idx_txn_created    ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_txn_created_by ON transactions(created_by);
+CREATE INDEX IF NOT EXISTS idx_pending_cash_ins ON transactions(status)
+    WHERE status = 'PENDING_CASHIER_CONFIRM';
 
 -- ============================================================
 -- 6. commission_tiers
@@ -132,14 +140,14 @@ CREATE TABLE IF NOT EXISTS commission_tiers (
     amount_from                    REAL,
     amount_to                      REAL,
     fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED' CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
-    fee_amount_deposit             REAL NOT NULL DEFAULT 0.0,
-    fee_amount_withdraw            REAL NOT NULL DEFAULT 0.0,
+    fee_amount_cash_in             REAL NOT NULL DEFAULT 0.0,
+    fee_amount_cash_out            REAL NOT NULL DEFAULT 0.0,
     comm_type                      TEXT NOT NULL DEFAULT 'FIXED' CHECK(comm_type IN ('FIXED','PERCENTAGE')),
-    comm_deposit                   REAL NOT NULL DEFAULT 0.0,
-    comm_withdraw                  REAL NOT NULL DEFAULT 0.0,
+    comm_cash_in                   REAL NOT NULL DEFAULT 0.0,
+    comm_cash_out                  REAL NOT NULL DEFAULT 0.0,
     additional_fee_type            TEXT NOT NULL DEFAULT 'FIXED' CHECK(additional_fee_type IN ('FIXED','PERCENTAGE')),
-    additional_fee_deposit_amount  REAL NOT NULL DEFAULT 0.0,
-    additional_fee_withdraw_amount REAL NOT NULL DEFAULT 0.0,
+    additional_fee_cash_in_amount  REAL NOT NULL DEFAULT 0.0,
+    additional_fee_cash_out_amount REAL NOT NULL DEFAULT 0.0,
     is_active                      INTEGER NOT NULL DEFAULT 1,
     created_at                     TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (service_type_id) REFERENCES service_types(id) ON UPDATE CASCADE ON DELETE RESTRICT
@@ -171,8 +179,8 @@ CREATE INDEX IF NOT EXISTS idx_rate_updated ON exchange_rates(updated_at);
 CREATE TABLE IF NOT EXISTS daily_summary (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     summary_date       TEXT NOT NULL UNIQUE,
-    total_deposit      REAL NOT NULL DEFAULT 0.00,
-    total_withdraw     REAL NOT NULL DEFAULT 0.00,
+    total_cash_in      REAL NOT NULL DEFAULT 0.00,
+    total_cash_out     REAL NOT NULL DEFAULT 0.00,
     total_transfer     REAL NOT NULL DEFAULT 0.00,
     total_exchange     REAL NOT NULL DEFAULT 0.00,
     total_commission   REAL NOT NULL DEFAULT 0.00,
@@ -256,7 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(flo
 CREATE TABLE IF NOT EXISTS vault_transactions (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     txn_type       TEXT NOT NULL CHECK(txn_type IN (
-                       'float_issue','float_receipt','withdrawal',
+                       'float_issue','float_receipt','cash_out',
                        'return_initiate','return_confirm','adjustment'
                    )),
     float_id       INTEGER,
@@ -282,8 +290,8 @@ CREATE TABLE IF NOT EXISTS daily_reconciliation_logs (
     recon_date            TEXT NOT NULL,
     closed_by             INTEGER NOT NULL,
     closed_at             TEXT NOT NULL DEFAULT (datetime('now')),
-    total_deposit         REAL NOT NULL DEFAULT 0,
-    total_withdraw        REAL NOT NULL DEFAULT 0,
+    total_cash_in         REAL NOT NULL DEFAULT 0,
+    total_cash_out        REAL NOT NULL DEFAULT 0,
     total_transfer        REAL NOT NULL DEFAULT 0,
     total_exchange        REAL NOT NULL DEFAULT 0,
     total_commission      REAL NOT NULL DEFAULT 0,
@@ -305,7 +313,7 @@ CREATE INDEX IF NOT EXISTS idx_recon_date ON daily_reconciliation_logs(recon_dat
 -- SEED DATA
 -- ============================================================
 
--- schema_version seed (fresh install = already at version 4, all migrations applied)
+-- schema_version seed (fresh install = all migrations applied)
 INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (1, 'Add cashier role and pin_hash'),
 (2, 'Create cash management tables'),
@@ -315,7 +323,8 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (6, 'Add current_balance to floats; create daily_reconciliation_logs'),
 (7, 'Rebuild cash_float_assignments with new statuses; create vault_transactions'),
 (8, 'Add Pay_To_Pay service types for Bank companies'),
-(9, 'Add auth_version for token revocation');
+(9, 'Add auth_version for token revocation'),
+(10, 'Add transaction status and vault impact fields');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123

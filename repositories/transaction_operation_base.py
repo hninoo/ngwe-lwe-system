@@ -66,7 +66,7 @@ class TransactionOperationBase:
         tier = self._get_tier(account, amount)
         if tier is None:
             return 0.0
-        raw = (tier.comm_deposit if comm_type == "send" else tier.comm_withdraw) or 0.0
+        raw = (tier.comm_cash_in if comm_type == "send" else tier.comm_cash_out) or 0.0
         if tier.comm_type == "PERCENTAGE":
             return round(amount * raw, 2)
         return raw
@@ -84,12 +84,12 @@ class TransactionOperationBase:
         tier = self._get_tier(account, amount)
         if tier is None:
             return 0.0, 0.0
-        if fee_mode == "withdraw":
-            base_raw = tier.fee_amount_withdraw or 0.0
-            add_raw = tier.additional_fee_withdraw_amount or 0.0
+        if fee_mode == "cash_out":
+            base_raw = tier.fee_amount_cash_out or 0.0
+            add_raw = tier.additional_fee_cash_out_amount or 0.0
         else:
-            base_raw = tier.fee_amount_deposit or 0.0
-            add_raw = tier.additional_fee_deposit_amount or 0.0
+            base_raw = tier.fee_amount_cash_in or 0.0
+            add_raw = tier.additional_fee_cash_in_amount or 0.0
         base_fee = self._calc_amount_by_type(amount, base_raw, tier.fee_amount_type)
         additional = self._calc_amount_by_type(amount, add_raw, tier.additional_fee_type)
         return base_fee + additional, additional
@@ -106,7 +106,7 @@ class TransactionOperationBase:
         if active_float is None:
             raise ValueError("Vault Insufficient: no active vault found for this employee.")
         if denominations:
-            self._vault_service.validate_withdrawal(
+            self._vault_service.validate_cash_out(
                 float_id=active_float.id,
                 employee_id=employee_id,
                 denominations=denominations,
@@ -118,7 +118,7 @@ class TransactionOperationBase:
             raise InsufficientFloatError(available=current, required=amount)
         return active_float
 
-    def _process_employee_withdrawal(
+    def _process_employee_cash_out(
         self,
         employee_id: Optional[int],
         amount: float,
@@ -129,7 +129,7 @@ class TransactionOperationBase:
         if employee_id is None:
             return
         if denominations and active_float:
-            self._vault_service.process_withdrawal(
+            self._vault_service.process_cash_out(
                 float_id=active_float.id,
                 employee_id=employee_id,
                 denominations=denominations,

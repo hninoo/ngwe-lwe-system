@@ -76,7 +76,7 @@ class TransactionViewModel:
             account, amount, fee_mode, customer_fee, additional_fee_amount
         )
 
-    def create_deposit(
+    def create_cash_in(
         self,
         account_id: int,
         amount: float,
@@ -104,7 +104,7 @@ class TransactionViewModel:
             employee_id=employee_id,
         )
 
-    def create_withdraw(
+    def create_cash_out(
         self,
         account_id: int,
         amount: float,

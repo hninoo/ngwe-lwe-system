@@ -13,7 +13,7 @@ from views.widgets.company_selector import ServiceTypeSelector
 
 
 class CashOutView(BaseFormView):
-    transaction_type = "withdraw"
+    transaction_type = "cash_out"
 
     _TXN_HEADERS = ["Time", "Account", "Customer", "Phone", "Amount", "Commission", "Total Fee"]
     _TXN_COL_WIDTHS = [170, 0, 0, 130, 120, 120, 120]

@@ -10,7 +10,7 @@ class DailyReconciliationRepository:
             cursor.execute("""
                 INSERT INTO daily_reconciliation_logs (
                     recon_date, closed_by,
-                    total_deposit, total_withdraw, total_transfer, total_exchange,
+                    total_cash_in, total_cash_out, total_transfer, total_exchange,
                     total_commission, total_customer_fees,
                     main_vault_total, employee_floats_total,
                     total_cash, total_digital, grand_total,
@@ -18,7 +18,7 @@ class DailyReconciliationRepository:
                 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 data["recon_date"], data["closed_by"],
-                data.get("total_deposit", 0), data.get("total_withdraw", 0),
+                data.get("total_cash_in", 0), data.get("total_cash_out", 0),
                 data.get("total_transfer", 0), data.get("total_exchange", 0),
                 data.get("total_commission", 0), data.get("total_customer_fees", 0),
                 data.get("main_vault_total", 0), data.get("employee_floats_total", 0),

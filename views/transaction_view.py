@@ -56,19 +56,19 @@ SUCCESS_COLOR = "#a6e3a1"
 ERROR_COLOR = "#f38ba8"
 
 TYPE_COLORS = {
-    "deposit": ACCENT_GREEN,
-    "withdraw": ACCENT_RED,
+    "cash_in": ACCENT_GREEN,
+    "cash_out": ACCENT_RED,
     "transfer": ACCENT_BLUE,
     "exchange": ACCENT_YELLOW,
 }
 
 TRANSACTION_TYPE_ALIASES = {
-    "cash_in": "deposit",
-    "cash out": "withdraw",
-    "cash_out": "withdraw",
-    "cash in": "deposit",
-    "deposit": "deposit",
-    "withdraw": "withdraw",
+    "cash_in": "cash_in",
+    "cash out": "cash_out",
+    "cash_out": "cash_out",
+    "cash in": "cash_in",
+    "cash_in": "cash_in",
+    "cash_out": "cash_out",
     "transfer": "transfer",
     "exchange": "exchange",
     "history": "history",
@@ -76,20 +76,20 @@ TRANSACTION_TYPE_ALIASES = {
 }
 
 TXN_TABLE_HEADERS = {
-    "deposit": ["Time", "Type", "Account", "Customer", "Phone", "Amount", "Fee/Commission", "Fee Account"],
-    "withdraw": ["Time", "Type", "Account", "Customer", "Phone", "Amount", "Fee/Commission", "Fee Account"],
+    "cash_in": ["Time", "Type", "Account", "Customer", "Phone", "Amount", "Fee/Commission", "Fee Account"],
+    "cash_out": ["Time", "Type", "Account", "Customer", "Phone", "Amount", "Fee/Commission", "Fee Account"],
     "transfer": ["Time", "Source Acc", "Target Acc", "Amount", "Fee"],
     "exchange": ["Time", "Source", "Target", "Rate", "Fee"],
 }
 
 
 def normalize_transaction_type(transaction_type: str | None) -> str:
-    return TRANSACTION_TYPE_ALIASES.get((transaction_type or "cash_in").strip().lower(), "deposit")
+    return TRANSACTION_TYPE_ALIASES.get((transaction_type or "cash_in").strip().lower(), "cash_in")
 
 def _get_actions():
     return [
-        ("deposit", "Cash In", ACCENT_GREEN),
-        ("withdraw", "Cash Out", ACCENT_RED),
+        ("cash_in", "Cash In", ACCENT_GREEN),
+        ("cash_out", "Cash Out", ACCENT_RED),
         ("transfer", "Transfer", ACCENT_BLUE),
         ("exchange", "Exchange", ACCENT_YELLOW),
     ]
@@ -367,20 +367,20 @@ from views.transaction.profile_view import ProfileView
 # Main TransactionView — QStackedWidget host
 # ════════════════════════════════════════════
 class TransactionView(QMainWindow):
-    PAGE_KEYS = ("deposit", "withdraw", "transfer", "exchange", "history", "profile")
+    PAGE_KEYS = ("cash_in", "cash_out", "transfer", "exchange", "history", "profile")
 
     # Stack indices — transaction types at 0-3, utility pages at 4-5
     PAGE_INDEX = {
-        "deposit": 0,
-        "withdraw": 1,
+        "cash_in": 0,
+        "cash_out": 1,
         "transfer": 2,
         "exchange": 3,
         "history": 4,
         "profile": 5,
     }
     PAGE_LABELS = {
-        "deposit": "Cash In",
-        "withdraw": "Cash Out",
+        "cash_in": "Cash In",
+        "cash_out": "Cash Out",
         "transfer": "Transfer",
         "exchange": "Exchange",
         "history": "History",
@@ -400,8 +400,8 @@ class TransactionView(QMainWindow):
         self._history_repository = HistoryRepository(self._repository)
         self._profile_repository = ProfileRepository(self._repository)
         initial = normalize_transaction_type(transaction_type)
-        # Fallback to "deposit" for unknown keys during normalization
-        self._current_page_key: str = initial if initial in self.PAGE_INDEX else "deposit"
+        # Fallback to "cash_in" for unknown keys during normalization
+        self._current_page_key: str = initial if initial in self.PAGE_INDEX else "cash_in"
         self._init_ui()
         on_change(self.retranslate_ui)
 
@@ -433,8 +433,8 @@ class TransactionView(QMainWindow):
         from views.transaction.exchange_view import ExchangeView
 
         self._pages: dict[str, QWidget] = {
-            "deposit": CashInView(self._api, self._navigate, self._repository),
-            "withdraw": CashOutView(self._api, self._navigate, self._repository),
+            "cash_in": CashInView(self._api, self._navigate, self._repository),
+            "cash_out": CashOutView(self._api, self._navigate, self._repository),
             "transfer": TransferView(self._api, self._navigate, self._repository),
             "exchange": ExchangeView(self._api, self._navigate, self._repository),
             "history": HistoryView(self._history_repository, self._navigate),
@@ -519,10 +519,10 @@ class TransactionView(QMainWindow):
         resolved = normalize_transaction_type(key)
         if resolved in self.PAGE_INDEX and hasattr(self, "_pages") and resolved in self._pages:
             return resolved
-        return "deposit"
+        return "cash_in"
 
     def _page_label(self, key: str | None) -> str:
-        return self.PAGE_LABELS.get(self._resolve_page_key(key), self.PAGE_LABELS["deposit"])
+        return self.PAGE_LABELS.get(self._resolve_page_key(key), self.PAGE_LABELS["cash_in"])
 
     def _navigate(self, page: int, transaction_type: str | None = None) -> None:
         """Unified navigation callback used by all child pages."""

@@ -39,13 +39,13 @@ BORDER_COLOR = "#313244"
 INPUT_BORDER = "#585b70"
 
 TXN_TYPE_COLORS = {
-    "deposit":  ACCENT_GREEN,
-    "withdraw": ACCENT_RED,
+    "cash_in":  ACCENT_GREEN,
+    "cash_out": ACCENT_RED,
     "transfer": ACCENT_BLUE,
     "exchange": ACCENT_YELLOW,
 }
 
-TXN_TYPES = ["", "deposit", "withdraw", "transfer", "exchange"]
+TXN_TYPES = ["", "cash_in", "cash_out", "transfer", "exchange"]
 
 
 def _accent_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:

@@ -37,11 +37,11 @@ class TransactionUiRepository:
     def lookup_tier(self, service_type_id: int, amount: float) -> dict:
         return self._api.lookup_tier(service_type_id, amount)
 
-    def create_deposit(self, **payload) -> dict:
-        return self._api.create_deposit(**payload)
+    def create_cash_in(self, **payload) -> dict:
+        return self._api.create_cash_in(**payload)
 
-    def create_withdraw(self, **payload) -> dict:
-        return self._api.create_withdraw(**payload)
+    def create_cash_out(self, **payload) -> dict:
+        return self._api.create_cash_out(**payload)
 
     def create_transfer(self, **payload) -> dict:
         return self._api.create_transfer(**payload)

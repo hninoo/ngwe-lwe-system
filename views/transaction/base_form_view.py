@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -419,7 +420,7 @@ class BaseFormView(QWidget):
             return
 
         tier = self._lookup_tier(account, amount)
-        is_withdraw = self._selected_action == "withdraw"
+        is_cash_out = self._selected_action == "cash_out"
 
         if tier is None:
             if self._commission_display:
@@ -444,21 +445,21 @@ class BaseFormView(QWidget):
         comm_type_val = (tier.get("comm_type") or "FIXED").upper()
         add_type = (tier.get("additional_fee_type") or "FIXED").upper()
 
-        if is_withdraw:
-            fee_raw = float(tier.get("fee_amount_withdraw") or 0)
-            comm_raw = float(tier.get("comm_withdraw") or 0)
-            add_raw = float(tier.get("additional_fee_withdraw_amount") or 0)
+        if is_cash_out:
+            fee_raw = float(tier.get("fee_amount_cash_out") or 0)
+            comm_raw = float(tier.get("comm_cash_out") or 0)
+            add_raw = float(tier.get("additional_fee_cash_out_amount") or 0)
         else:
-            fee_raw = float(tier.get("fee_amount_deposit") or 0)
-            comm_raw = float(tier.get("comm_deposit") or 0)
-            add_raw = float(tier.get("additional_fee_deposit_amount") or 0)
+            fee_raw = float(tier.get("fee_amount_cash_in") or 0)
+            comm_raw = float(tier.get("comm_cash_in") or 0)
+            add_raw = float(tier.get("additional_fee_cash_in_amount") or 0)
 
         fee_amount = round(amount * fee_raw, 2) if fee_type == "PERCENTAGE" else fee_raw
         commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
         additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
 
-        # deposit/exchange: account balance increases; withdraw/transfer: decreases
-        if self._selected_action in ("deposit", "exchange"):
+        # cash_in/exchange: account balance increases; cash_out/transfer: decreases
+        if self._selected_action in ("cash_in", "exchange"):
             balance_change = amount
         else:
             balance_change = -amount
@@ -478,9 +479,9 @@ class BaseFormView(QWidget):
             self._balance_change_display.setText(f"{balance_change:,.0f}")
 
         if self._fee_hint:
-            if is_withdraw:
+            if is_cash_out:
                 self._fee_hint.setText(
-                    f"Withdrawal: {amount:,.0f}  |  Fee: {fee_amount:,.0f} + {additional:,.0f}"
+                    f"CashOut: {amount:,.0f}  |  Fee: {fee_amount:,.0f} + {additional:,.0f}"
                     f" = {total_fee:,.0f}  |  Agent commission: {commission:,.0f}"
                 )
             else:
@@ -500,10 +501,10 @@ class BaseFormView(QWidget):
         try:
             tier = self._repository.lookup_tier(service_type_id, amount)
             if (
-                tier.get("fee_amount_deposit", 0) == 0
-                and tier.get("fee_amount_withdraw", 0) == 0
-                and tier.get("comm_deposit", 0) == 0
-                and tier.get("comm_withdraw", 0) == 0
+                tier.get("fee_amount_cash_in", 0) == 0
+                and tier.get("fee_amount_cash_out", 0) == 0
+                and tier.get("comm_cash_in", 0) == 0
+                and tier.get("comm_cash_out", 0) == 0
             ):
                 return None
             return tier
@@ -558,8 +559,8 @@ class BaseFormView(QWidget):
     def _calc_projected(self, balance: float, amount: float) -> float:
         if amount <= 0:
             return balance
-        # deposit/exchange: balance increases; withdraw/transfer: decreases
-        if self._selected_action in ("deposit", "exchange"):
+        # cash_in/exchange: balance increases; cash_out/transfer: decreases
+        if self._selected_action in ("cash_in", "exchange"):
             return balance + amount
         return balance - amount
 
@@ -612,7 +613,7 @@ class BaseFormView(QWidget):
     # ── Data loading ────────────────────────────────────────────────────────
 
     def _get_companies_for_action(self) -> list[dict]:
-        if self._selected_action in ("deposit", "withdraw"):
+        if self._selected_action in ("cash_in", "cash_out"):
             return [
                 c for c in self._all_companies_cache
                 if c.get("category") in ("Pay", "Bank", "Both")
@@ -767,8 +768,19 @@ class BaseFormView(QWidget):
         additional = self._parse_additional_fee()
         fee_acc = self._get_fee_account_id()
 
-        if action == "deposit":
-            self._repository.create_deposit(
+        if action == "cash_in":
+            if self._repository.current_user.get("role") == "employee":
+                response = QMessageBox.warning(
+                    self,
+                    "Cash In - Important",
+                    "After recording this cash_in, immediately hand the physical cash "
+                    "to the Cashier for confirmation.\n\n"
+                    "This amount will NOT be added to your Mini Vault balance.",
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                )
+                if response != QMessageBox.StandardButton.Ok:
+                    return
+            self._repository.create_cash_in(
                 account_id=account["id"],
                 amount=amount,
                 customer_name=sanitize_text(self._customer_name.text(), 120) if self._customer_name else "",
@@ -779,8 +791,8 @@ class BaseFormView(QWidget):
                 fee_account_id=fee_acc,
                 note=note,
             )
-        elif action == "withdraw":
-            self._repository.create_withdraw(
+        elif action == "cash_out":
+            self._repository.create_cash_out(
                 account_id=account["id"],
                 amount=amount,
                 customer_name=sanitize_text(self._customer_name.text(), 120) if self._customer_name else "",
@@ -825,7 +837,7 @@ class BaseFormView(QWidget):
     def _validate(self) -> Optional[str]:
         user = self._repository.current_user
         if user.get("role") == "employee" and self._selected_action in (
-            "withdraw",
+            "cash_out",
             "transfer",
             "exchange",
         ):
@@ -836,7 +848,7 @@ class BaseFormView(QWidget):
                 return f"Vault Insufficient: available {float_balance:,.0f} MMK."
 
         if (
-            self._selected_action in ("deposit", "withdraw")
+            self._selected_action in ("cash_in", "cash_out")
             and self._service_type_selector is not None
             and self._service_type_selector.selected_service_type_id() is None
         ):
@@ -858,7 +870,7 @@ class BaseFormView(QWidget):
             self._set_combo_warning(self._currency_combo, True)
             return t("err_select_currency")
 
-        if self._selected_action in ("deposit", "withdraw"):
+        if self._selected_action in ("cash_in", "cash_out"):
             if self._customer_name and not self._customer_name.text().strip():
                 return t("err_customer_name")
             if self._customer_phone and not self._customer_phone.text().strip():
@@ -875,7 +887,7 @@ class BaseFormView(QWidget):
                 return t("err_same_account")
 
         # Insufficient-balance check for actions that decrease the account balance
-        if self._selected_action in ("withdraw", "transfer"):
+        if self._selected_action in ("cash_out", "transfer"):
             account = self._get_selected_account()
             if account:
                 balance = self._get_fresh_balance(account["id"])

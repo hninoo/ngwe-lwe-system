@@ -234,7 +234,7 @@ def _migrate_004(conn):
             company_id  INTEGER NOT NULL,
             name        TEXT NOT NULL,
             operation   TEXT NOT NULL
-                        CHECK(operation IN ('Deposit','Withdraw','Transfer','Exchange','All')),
+                        CHECK(operation IN ('CashIn','CashOut','Transfer','Exchange','All')),
             is_active   INTEGER NOT NULL DEFAULT 1,
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -346,23 +346,23 @@ def _migrate_004(conn):
         conn.execute(
             "INSERT OR IGNORE INTO commission_tiers "
             "(service_type, account_type, amount_from, amount_to, "
-            " fee_amount_type, fee_amount_deposit, fee_amount_withdraw, "
-            " comm_type, comm_deposit, comm_withdraw, "
-            " additional_fee_type, additional_fee_deposit_amount, "
-            " additional_fee_withdraw_amount) "
+            " fee_amount_type, fee_amount_cash_in, fee_amount_cash_out, "
+            " comm_type, comm_cash_in, comm_cash_out, "
+            " additional_fee_type, additional_fee_cash_in_amount, "
+            " additional_fee_cash_out_amount) "
             "VALUES ('TRUE_MONEY_WST', 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 kpay_vals.get("amount_from"),
                 kpay_vals.get("amount_to"),
                 kpay_vals.get("fee_amount_type", "FIXED"),
-                kpay_vals.get("fee_amount_deposit", 0.0),
-                kpay_vals.get("fee_amount_withdraw", 0.0),
+                kpay_vals.get("fee_amount_cash_in", 0.0),
+                kpay_vals.get("fee_amount_cash_out", 0.0),
                 kpay_vals.get("comm_type", "FIXED"),
-                kpay_vals.get("comm_deposit", 0.0),
-                kpay_vals.get("comm_withdraw", 0.0),
+                kpay_vals.get("comm_cash_in", 0.0),
+                kpay_vals.get("comm_cash_out", 0.0),
                 kpay_vals.get("additional_fee_type", "FIXED"),
-                kpay_vals.get("additional_fee_deposit_amount", 0.0),
-                kpay_vals.get("additional_fee_withdraw_amount", 0.0),
+                kpay_vals.get("additional_fee_cash_in_amount", 0.0),
+                kpay_vals.get("additional_fee_cash_out_amount", 0.0),
             ),
         )
 
@@ -379,23 +379,23 @@ def _migrate_004(conn):
         conn.execute(
             "INSERT OR IGNORE INTO commission_tiers "
             "(service_type, account_type, amount_from, amount_to, "
-            " fee_amount_type, fee_amount_deposit, fee_amount_withdraw, "
-            " comm_type, comm_deposit, comm_withdraw, "
-            " additional_fee_type, additional_fee_deposit_amount, "
-            " additional_fee_withdraw_amount) "
+            " fee_amount_type, fee_amount_cash_in, fee_amount_cash_out, "
+            " comm_type, comm_cash_in, comm_cash_out, "
+            " additional_fee_type, additional_fee_cash_in_amount, "
+            " additional_fee_cash_out_amount) "
             "VALUES ('TRUE_MONEY_PAY_TO_PAY', 'personal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 wave_vals.get("amount_from"),
                 wave_vals.get("amount_to"),
                 wave_vals.get("fee_amount_type", "FIXED"),
-                wave_vals.get("fee_amount_deposit", 0.0),
-                wave_vals.get("fee_amount_withdraw", 0.0),
+                wave_vals.get("fee_amount_cash_in", 0.0),
+                wave_vals.get("fee_amount_cash_out", 0.0),
                 wave_vals.get("comm_type", "FIXED"),
-                wave_vals.get("comm_deposit", 0.0),
-                wave_vals.get("comm_withdraw", 0.0),
+                wave_vals.get("comm_cash_in", 0.0),
+                wave_vals.get("comm_cash_out", 0.0),
                 wave_vals.get("additional_fee_type", "FIXED"),
-                wave_vals.get("additional_fee_deposit_amount", 0.0),
-                wave_vals.get("additional_fee_withdraw_amount", 0.0),
+                wave_vals.get("additional_fee_cash_in_amount", 0.0),
+                wave_vals.get("additional_fee_cash_out_amount", 0.0),
             ),
         )
     conn.commit()
@@ -525,16 +525,16 @@ def _migrate_004(conn):
             amount_to                      REAL,
             fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED'
                                            CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
-            fee_amount_deposit             REAL NOT NULL DEFAULT 0.0,
-            fee_amount_withdraw            REAL NOT NULL DEFAULT 0.0,
+            fee_amount_cash_in             REAL NOT NULL DEFAULT 0.0,
+            fee_amount_cash_out            REAL NOT NULL DEFAULT 0.0,
             comm_type                      TEXT NOT NULL DEFAULT 'FIXED'
                                            CHECK(comm_type IN ('FIXED','PERCENTAGE')),
-            comm_deposit                   REAL NOT NULL DEFAULT 0.0,
-            comm_withdraw                  REAL NOT NULL DEFAULT 0.0,
+            comm_cash_in                   REAL NOT NULL DEFAULT 0.0,
+            comm_cash_out                  REAL NOT NULL DEFAULT 0.0,
             additional_fee_type            TEXT NOT NULL DEFAULT 'FIXED'
                                            CHECK(additional_fee_type IN ('FIXED','PERCENTAGE')),
-            additional_fee_deposit_amount  REAL NOT NULL DEFAULT 0.0,
-            additional_fee_withdraw_amount REAL NOT NULL DEFAULT 0.0,
+            additional_fee_cash_in_amount  REAL NOT NULL DEFAULT 0.0,
+            additional_fee_cash_out_amount REAL NOT NULL DEFAULT 0.0,
             is_active                      INTEGER NOT NULL DEFAULT 1,
             created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -545,19 +545,19 @@ def _migrate_004(conn):
         conn.execute("""
             INSERT INTO commission_tiers_v2
                 (service_type_id, amount_from, amount_to,
-                 fee_amount_type, fee_amount_deposit, fee_amount_withdraw,
-                 comm_type, comm_deposit, comm_withdraw,
-                 additional_fee_type, additional_fee_deposit_amount,
-                 additional_fee_withdraw_amount, is_active, created_at)
+                 fee_amount_type, fee_amount_cash_in, fee_amount_cash_out,
+                 comm_type, comm_cash_in, comm_cash_out,
+                 additional_fee_type, additional_fee_cash_in_amount,
+                 additional_fee_cash_out_amount, is_active, created_at)
             SELECT
                 (SELECT st.id FROM service_types st
                  JOIN companies c ON c.id = st.company_id
                  WHERE c.name = ? AND st.name = ? LIMIT 1),
                 ct.amount_from, ct.amount_to,
-                ct.fee_amount_type, ct.fee_amount_deposit, ct.fee_amount_withdraw,
-                ct.comm_type, ct.comm_deposit, ct.comm_withdraw,
-                ct.additional_fee_type, ct.additional_fee_deposit_amount,
-                ct.additional_fee_withdraw_amount, ct.is_active, ct.created_at
+                ct.fee_amount_type, ct.fee_amount_cash_in, ct.fee_amount_cash_out,
+                ct.comm_type, ct.comm_cash_in, ct.comm_cash_out,
+                ct.additional_fee_type, ct.additional_fee_cash_in_amount,
+                ct.additional_fee_cash_out_amount, ct.is_active, ct.created_at
             FROM commission_tiers ct
             WHERE ct.service_type = ?
         """, (company_name, st_name, legacy_key))
@@ -599,7 +599,7 @@ def _migrate_004(conn):
             JOIN service_types st ON a.service_type_id = st.id
             WHERE a.id = transactions.account_id
         )
-        WHERE transaction_type IN ('transfer', 'exchange', 'deposit', 'withdraw')
+        WHERE transaction_type IN ('transfer', 'exchange', 'cash_in', 'cash_out')
           AND from_company_id IS NULL
     """)
 
@@ -649,8 +649,8 @@ def _migrate_006(conn):
             recon_date            TEXT NOT NULL,
             closed_by             INTEGER NOT NULL,
             closed_at             TEXT NOT NULL DEFAULT (datetime('now')),
-            total_deposit         REAL NOT NULL DEFAULT 0,
-            total_withdraw        REAL NOT NULL DEFAULT 0,
+            total_cash_in         REAL NOT NULL DEFAULT 0,
+            total_cash_out        REAL NOT NULL DEFAULT 0,
             total_transfer        REAL NOT NULL DEFAULT 0,
             total_exchange        REAL NOT NULL DEFAULT 0,
             total_commission      REAL NOT NULL DEFAULT 0,
@@ -730,7 +730,7 @@ def _migrate_007(conn):
         CREATE TABLE IF NOT EXISTS vault_transactions (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             txn_type       TEXT NOT NULL CHECK(txn_type IN (
-                               'float_issue','float_receipt','withdrawal',
+                               'float_issue','float_receipt','cash_out',
                                'return_initiate','return_confirm','adjustment'
                            )),
             float_id       INTEGER,
@@ -775,6 +775,39 @@ def _migrate_009(conn):
     conn.commit()
 
 
+def _migrate_010(conn):
+    """Add banking-standard transaction confirmation status fields."""
+    for sql in [
+        "ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'CONFIRMED' "
+        "CHECK(status IN ('PENDING_CASHIER_CONFIRM','CONFIRMED','REJECTED'))",
+        "ALTER TABLE transactions ADD COLUMN vault_impact TEXT DEFAULT NULL "
+        "CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none'))",
+        "ALTER TABLE transactions ADD COLUMN confirmed_by INTEGER REFERENCES users(id)",
+        "ALTER TABLE transactions ADD COLUMN confirmed_at TEXT",
+    ]:
+        try:
+            conn.execute(sql)
+        except Exception as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+    conn.execute(
+        "UPDATE transactions SET status='CONFIRMED' "
+        "WHERE status IS NULL OR status = ''"
+    )
+    conn.execute(
+        "UPDATE transactions SET vault_impact = CASE "
+        "WHEN transaction_type = 'cash_out' THEN 'mini_vault_decrease' "
+        "WHEN transaction_type = 'cash_in' THEN 'main_vault_increase' "
+        "ELSE COALESCE(vault_impact, 'none') END "
+        "WHERE vault_impact IS NULL"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pending_cash_ins "
+        "ON transactions(status) WHERE status = 'PENDING_CASHIER_CONFIRM'"
+    )
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -792,6 +825,7 @@ def _run_migrations(conn):
         (7, "Rebuild cash_float_assignments with new statuses; create vault_transactions", _migrate_007),
         (8, "Add Pay_To_Pay service types for Bank companies", _migrate_008),
         (9, "Add auth_version for token revocation", _migrate_009),
+        (10, "Add transaction status and vault impact fields", _migrate_010),
     ]:
         if version not in applied:
             fn(conn)

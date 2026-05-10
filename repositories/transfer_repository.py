@@ -29,7 +29,7 @@ class TransferRepository(TransactionOperationBase):
         active_float = self._validate_employee_float(employee_id, amount, denominations)
         commission = self._calc_commission(from_account, amount, "send")
         customer_fee, additional_fee_amount = self._resolve_fee_values(
-            from_account, amount, "deposit", customer_fee, additional_fee_amount
+            from_account, amount, "cash_in", customer_fee, additional_fee_amount
         )
         from_company_id = self._get_company_id(from_account.service_type_id)
         to_company_id = self._get_company_id(to_account.service_type_id)
@@ -54,7 +54,7 @@ class TransferRepository(TransactionOperationBase):
                 "from_company_id": from_company_id,
                 "to_company_id": to_company_id,
             })
-            self._process_employee_withdrawal(
+            self._process_employee_cash_out(
                 employee_id, amount, denominations, active_float, txn_id
             )
             self._update_fee_account(fee_account_id, customer_fee)

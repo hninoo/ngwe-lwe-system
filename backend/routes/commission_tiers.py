@@ -27,14 +27,14 @@ class TierRequest(BaseModel):
     amount_from: Optional[float] = None
     amount_to: Optional[float] = None
     fee_amount_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    fee_amount_deposit: float = 0.0
-    fee_amount_withdraw: float = 0.0
+    fee_amount_cash_in: float = 0.0
+    fee_amount_cash_out: float = 0.0
     comm_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    comm_deposit: float = 0.0
-    comm_withdraw: float = 0.0
+    comm_cash_in: float = 0.0
+    comm_cash_out: float = 0.0
     additional_fee_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    additional_fee_deposit_amount: float = 0.0
-    additional_fee_withdraw_amount: float = 0.0
+    additional_fee_cash_in_amount: float = 0.0
+    additional_fee_cash_out_amount: float = 0.0
 
 
 @router.get("/")
@@ -55,8 +55,8 @@ def lookup_tier(
     tier = _tier_repo.get_tier_for_amount(service_type_id, amount)
     if tier is None:
         return {
-            "fee_amount_deposit": 0, "fee_amount_withdraw": 0,
-            "comm_deposit": 0, "comm_withdraw": 0,
+            "fee_amount_cash_in": 0, "fee_amount_cash_out": 0,
+            "comm_cash_in": 0, "comm_cash_out": 0,
         }
     return asdict(tier)
 
@@ -78,14 +78,14 @@ def create_tier(
         "amount_from": amount_from,
         "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_deposit": _money(body.fee_amount_deposit),
-        "fee_amount_withdraw": _money(body.fee_amount_withdraw),
+        "fee_amount_cash_in": _money(body.fee_amount_cash_in),
+        "fee_amount_cash_out": _money(body.fee_amount_cash_out),
         "comm_type": body.comm_type,
-        "comm_deposit": _money(body.comm_deposit),
-        "comm_withdraw": _money(body.comm_withdraw),
+        "comm_cash_in": _money(body.comm_cash_in),
+        "comm_cash_out": _money(body.comm_cash_out),
         "additional_fee_type": body.additional_fee_type,
-        "additional_fee_deposit_amount": _money(body.additional_fee_deposit_amount),
-        "additional_fee_withdraw_amount": _money(body.additional_fee_withdraw_amount),
+        "additional_fee_cash_in_amount": _money(body.additional_fee_cash_in_amount),
+        "additional_fee_cash_out_amount": _money(body.additional_fee_cash_out_amount),
     })
     return {"message": "Tier created", "id": tier_id}
 
@@ -108,14 +108,14 @@ def update_tier(
         "amount_from": amount_from,
         "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_deposit": _money(body.fee_amount_deposit),
-        "fee_amount_withdraw": _money(body.fee_amount_withdraw),
+        "fee_amount_cash_in": _money(body.fee_amount_cash_in),
+        "fee_amount_cash_out": _money(body.fee_amount_cash_out),
         "comm_type": body.comm_type,
-        "comm_deposit": _money(body.comm_deposit),
-        "comm_withdraw": _money(body.comm_withdraw),
+        "comm_cash_in": _money(body.comm_cash_in),
+        "comm_cash_out": _money(body.comm_cash_out),
         "additional_fee_type": body.additional_fee_type,
-        "additional_fee_deposit_amount": _money(body.additional_fee_deposit_amount),
-        "additional_fee_withdraw_amount": _money(body.additional_fee_withdraw_amount),
+        "additional_fee_cash_in_amount": _money(body.additional_fee_cash_in_amount),
+        "additional_fee_cash_out_amount": _money(body.additional_fee_cash_out_amount),
     })
     return {"message": "Tier updated"}
 

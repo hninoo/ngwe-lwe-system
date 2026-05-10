@@ -1,7 +1,7 @@
 # Commission Tiers — Calculation Logic Report
 
 **Date:** 2026-05-10  
-**Scope:** Full calculation path for Deposit, Withdraw, Transfer, Exchange — frontend display + backend execution
+**Scope:** Full calculation path for CashIn, CashOut, Transfer, Exchange — frontend display + backend execution
 
 ---
 
@@ -37,7 +37,7 @@ The `rate` for PERCENTAGE tiers is stored as a decimal (e.g. `0.01` = 1%).
 
 ---
 
-## 3. Deposit
+## 3. CashIn
 
 **Files:** `viewmodels/transaction_viewmodel.py` lines 88–134, `views/transaction_view.py` lines 727–792
 
@@ -45,21 +45,21 @@ The `rate` for PERCENTAGE tiers is stored as a decimal (e.g. `0.01` = 1%).
 
 | Charge | Tier field | Type field |
 |---|---|---|
-| Commission (agent profit) | `comm_deposit` | `comm_type` |
-| Customer fee | `fee_amount_deposit` | `fee_amount_type` |
-| Additional fee | `additional_fee_deposit_amount` | `additional_fee_type` |
+| Commission (agent profit) | `comm_cash_in` | `comm_type` |
+| Customer fee | `fee_amount_cash_in` | `fee_amount_type` |
+| Additional fee | `additional_fee_cash_in_amount` | `additional_fee_type` |
 
 ### Calculation
 
 ```
-commission    = comm_deposit                         (FIXED)
-              = round(amount × comm_deposit, 2)      (PERCENTAGE)
+commission    = comm_cash_in                         (FIXED)
+              = round(amount × comm_cash_in, 2)      (PERCENTAGE)
 
-customer_fee  = fee_amount_deposit                   (FIXED)
-              = round(amount × fee_amount_deposit, 2) (PERCENTAGE)
+customer_fee  = fee_amount_cash_in                   (FIXED)
+              = round(amount × fee_amount_cash_in, 2) (PERCENTAGE)
 
-add_fee       = additional_fee_deposit_amount        (FIXED)
-              = round(amount × additional_fee_deposit_amount, 2) (PERCENTAGE)
+add_fee       = additional_fee_cash_in_amount        (FIXED)
+              = round(amount × additional_fee_cash_in_amount, 2) (PERCENTAGE)
 
 total_fee     = customer_fee + add_fee
 ```
@@ -74,7 +74,7 @@ commission_amount    → stored in transaction record only (agent profit, no aut
 
 ### Example
 
-Service type: Mobile Banking | Tier: 0–500,000 MMK | `comm_type=PERCENTAGE`, `comm_deposit=0.01` | `fee_amount_type=FIXED`, `fee_amount_deposit=2,000` | `additional_fee_type=FIXED`, `additional_fee_deposit_amount=0`
+Service type: Mobile Banking | Tier: 0–500,000 MMK | `comm_type=PERCENTAGE`, `comm_cash_in=0.01` | `fee_amount_type=FIXED`, `fee_amount_cash_in=2,000` | `additional_fee_type=FIXED`, `additional_fee_cash_in_amount=0`
 
 Amount = 100,000 MMK:
 ```
@@ -88,7 +88,7 @@ fee account   +2,000
 
 ---
 
-## 4. Withdraw
+## 4. CashOut
 
 **Files:** `viewmodels/transaction_viewmodel.py` lines 136–219, `views/transaction_view.py` lines 727–792
 
@@ -96,21 +96,21 @@ fee account   +2,000
 
 | Charge | Tier field | Type field |
 |---|---|---|
-| Commission (agent profit) | `comm_withdraw` | `comm_type` |
-| Customer fee | `fee_amount_withdraw` | `fee_amount_type` |
-| Additional fee | `additional_fee_withdraw_amount` | `additional_fee_type` |
+| Commission (agent profit) | `comm_cash_out` | `comm_type` |
+| Customer fee | `fee_amount_cash_out` | `fee_amount_type` |
+| Additional fee | `additional_fee_cash_out_amount` | `additional_fee_type` |
 
 ### Calculation
 
 ```
-commission    = comm_withdraw                          (FIXED)
-              = round(amount × comm_withdraw, 2)       (PERCENTAGE)
+commission    = comm_cash_out                          (FIXED)
+              = round(amount × comm_cash_out, 2)       (PERCENTAGE)
 
-customer_fee  = fee_amount_withdraw                    (FIXED)
-              = round(amount × fee_amount_withdraw, 2) (PERCENTAGE)
+customer_fee  = fee_amount_cash_out                    (FIXED)
+              = round(amount × fee_amount_cash_out, 2) (PERCENTAGE)
 
-add_fee       = additional_fee_withdraw_amount         (FIXED)
-              = round(amount × additional_fee_withdraw_amount, 2) (PERCENTAGE)
+add_fee       = additional_fee_cash_out_amount         (FIXED)
+              = round(amount × additional_fee_cash_out_amount, 2) (PERCENTAGE)
 
 total_fee     = customer_fee + add_fee
 ```
@@ -126,7 +126,7 @@ commission_amount    → stored in transaction record only
 
 ### Example
 
-Same service type | `comm_withdraw=0.005` (0.5%) | `fee_amount_withdraw=1,500` FIXED | `additional_fee_withdraw=0`
+Same service type | `comm_cash_out=0.005` (0.5%) | `fee_amount_cash_out=1,500` FIXED | `additional_fee_cash_out=0`
 
 Amount = 200,000 MMK:
 ```
@@ -147,26 +147,26 @@ employee float  -200,000
 
 ### Tier fields used
 
-Transfer treats the **sending side as a "deposit/send"** operation — it uses the **deposit** tier fields, not the withdraw fields.  
+Transfer treats the **sending side as a "cash_in/send"** operation — it uses the **cash_in** tier fields, not the cash_out fields.  
 Only the **from-account's service type** is used for lookup.
 
 | Charge | Tier field | Type field |
 |---|---|---|
-| Commission (agent profit) | `comm_deposit` | `comm_type` |
-| Customer fee | `fee_amount_deposit` | `fee_amount_type` |
-| Additional fee | `additional_fee_deposit_amount` | `additional_fee_type` |
+| Commission (agent profit) | `comm_cash_in` | `comm_type` |
+| Customer fee | `fee_amount_cash_in` | `fee_amount_type` |
+| Additional fee | `additional_fee_cash_in_amount` | `additional_fee_type` |
 
 ### Calculation
 
 ```
-commission    = comm_deposit                         (FIXED)
-              = round(amount × comm_deposit, 2)      (PERCENTAGE)
+commission    = comm_cash_in                         (FIXED)
+              = round(amount × comm_cash_in, 2)      (PERCENTAGE)
 
-customer_fee  = fee_amount_deposit                   (FIXED)
-              = round(amount × fee_amount_deposit, 2) (PERCENTAGE)
+customer_fee  = fee_amount_cash_in                   (FIXED)
+              = round(amount × fee_amount_cash_in, 2) (PERCENTAGE)
 
-add_fee       = additional_fee_deposit_amount        (FIXED)
-              = round(amount × additional_fee_deposit_amount, 2) (PERCENTAGE)
+add_fee       = additional_fee_cash_in_amount        (FIXED)
+              = round(amount × additional_fee_cash_in_amount, 2) (PERCENTAGE)
 
 total_fee     = customer_fee + add_fee
 ```
@@ -184,7 +184,7 @@ commission_amount     → stored in transaction record only
 
 ### Example
 
-From-account service type: Remittance | `comm_deposit=500` FIXED | `fee_amount_deposit=0.002` PERCENTAGE (0.2%)
+From-account service type: Remittance | `comm_cash_in=500` FIXED | `fee_amount_cash_in=0.002` PERCENTAGE (0.2%)
 
 Amount = 300,000 MMK:
 ```
@@ -205,13 +205,13 @@ fee account  +600
 
 ### Tier fields used
 
-Exchange also uses the **deposit** tier fields (same as transfer — treated as "send").
+Exchange also uses the **cash_in** tier fields (same as transfer — treated as "send").
 
 | Charge | Tier field | Type field |
 |---|---|---|
-| Commission (agent profit) | `comm_deposit` | `comm_type` |
-| Customer fee | `fee_amount_deposit` | `fee_amount_type` |
-| Additional fee | `additional_fee_deposit_amount` | `additional_fee_type` |
+| Commission (agent profit) | `comm_cash_in` | `comm_type` |
+| Customer fee | `fee_amount_cash_in` | `fee_amount_type` |
+| Additional fee | `additional_fee_cash_in_amount` | `additional_fee_type` |
 
 ### Exchange rate resolution
 
@@ -228,14 +228,14 @@ The `exchange_rate` is stored in the transaction record. The `amount` field stor
 ### Calculation
 
 ```
-commission    = comm_deposit                         (FIXED)
-              = round(amount × comm_deposit, 2)      (PERCENTAGE)
+commission    = comm_cash_in                         (FIXED)
+              = round(amount × comm_cash_in, 2)      (PERCENTAGE)
 
-customer_fee  = fee_amount_deposit                   (FIXED)
-              = round(amount × fee_amount_deposit, 2) (PERCENTAGE)
+customer_fee  = fee_amount_cash_in                   (FIXED)
+              = round(amount × fee_amount_cash_in, 2) (PERCENTAGE)
 
-add_fee       = additional_fee_deposit_amount        (FIXED)
-              = round(amount × additional_fee_deposit_amount, 2) (PERCENTAGE)
+add_fee       = additional_fee_cash_in_amount        (FIXED)
+              = round(amount × additional_fee_cash_in_amount, 2) (PERCENTAGE)
 
 total_fee     = customer_fee + add_fee
 ```
@@ -252,14 +252,14 @@ commission_amount    → stored in transaction record only
 
 ## 7. Summary: Which Tier Fields Each Transaction Type Uses
 
-| | Deposit | Withdraw | Transfer | Exchange |
+| | CashIn | CashOut | Transfer | Exchange |
 |---|---|---|---|---|
 | **Lookup: service type from** | Source account | Source account | From-account only | Source account |
-| **Commission field** | `comm_deposit` | `comm_withdraw` | `comm_deposit` | `comm_deposit` |
+| **Commission field** | `comm_cash_in` | `comm_cash_out` | `comm_cash_in` | `comm_cash_in` |
 | **Commission type** | `comm_type` | `comm_type` | `comm_type` | `comm_type` |
-| **Customer fee field** | `fee_amount_deposit` | `fee_amount_withdraw` | `fee_amount_deposit` | `fee_amount_deposit` |
+| **Customer fee field** | `fee_amount_cash_in` | `fee_amount_cash_out` | `fee_amount_cash_in` | `fee_amount_cash_in` |
 | **Fee type** | `fee_amount_type` | `fee_amount_type` | `fee_amount_type` | `fee_amount_type` |
-| **Add. fee field** | `additional_fee_deposit_amount` | `additional_fee_withdraw_amount` | `additional_fee_deposit_amount` | `additional_fee_deposit_amount` |
+| **Add. fee field** | `additional_fee_cash_in_amount` | `additional_fee_cash_out_amount` | `additional_fee_cash_in_amount` | `additional_fee_cash_in_amount` |
 | **Add. fee type** | `additional_fee_type` | `additional_fee_type` | `additional_fee_type` | `additional_fee_type` |
 | **Source balance** | +amount | −amount | −amount | +amount |
 | **Destination balance** | — | — | +amount | — |
@@ -287,7 +287,7 @@ The frontend calculates in real time as the user types (display only). The backe
 |---|---|---|
 | **Tier lookup** | `GET /commission-tiers/lookup` (API call) | `tier_repo.get_tier_for_amount()` (direct DB) |
 | **Purpose** | Display only (live preview) | Actual calculation stored in DB |
-| **Commission source** | `tier["comm_deposit"]` or `tier["comm_withdraw"]` | `tier.comm_deposit` or `tier.comm_withdraw` |
+| **Commission source** | `tier["comm_cash_in"]` or `tier["comm_cash_out"]` | `tier.comm_cash_in` or `tier.comm_cash_out` |
 | **Rounding** | `round(amount × rate, 2)` | `round(amount × rate, 2)` |
 | **Display precision** | `f"{value:,.0f}"` (0 decimals shown) | Stored as REAL (full precision) |
 
@@ -298,8 +298,8 @@ The frontend calculates in real time as the user types (display only). The backe
 | # | Issue | Impact |
 |---|---|---|
 | 1 | `LIMIT 1` with no `ORDER BY` in tier lookup | Non-deterministic result if two tiers overlap |
-| 2 | Transfer uses `comm_deposit` not a dedicated `comm_transfer` field | Cannot set different commission rates for transfer vs deposit |
-| 3 | Exchange uses `comm_deposit` — cannot differentiate exchange commission from deposit | Same as above for exchange |
+| 2 | Transfer uses `comm_cash_in` not a dedicated `comm_transfer` field | Cannot set different commission rates for transfer vs cash_in |
+| 3 | Exchange uses `comm_cash_in` — cannot differentiate exchange commission from cash_in | Same as above for exchange |
 | 4 | Commission is never automatically credited to any account | Agent profit must be tracked manually via reports |
 | 5 | If `fee_account_id` is NULL, total_fee is collected from customer but credited nowhere | Silent data loss |
 | 6 | Frontend PERCENTAGE rate treated as decimal (0.01 = 1%) — no UI hint confirming this to the admin | Misconfiguration risk when adding tiers |

@@ -63,7 +63,7 @@
 | Column                | Type         | Description                              |
 | --------------------- | ------------ | ---------------------------------------- |
 | id                    | INTEGER (PK) | Transaction ID                           |
-| transaction_type      | TEXT         | deposit / withdraw / transfer / exchange |
+| transaction_type      | TEXT         | cash_in / cash_out / transfer / exchange |
 | account_id            | INTEGER (FK) | From account                             |
 | to_account_id         | INTEGER (FK) | To account                               |
 | from_company_id       | INTEGER (FK) | From company                             |
@@ -94,14 +94,14 @@
 | amount_from                    | REAL         | Min                 |
 | amount_to                      | REAL         | Max                 |
 | fee_amount_type                | TEXT         | FIXED / PERCENTAGE  |
-| fee_amount_deposit             | REAL         | Deposit fee         |
-| fee_amount_withdraw            | REAL         | Withdraw fee        |
+| fee_amount_cash_in             | REAL         | CashIn fee         |
+| fee_amount_cash_out            | REAL         | CashOut fee        |
 | comm_type                      | TEXT         | FIXED / PERCENTAGE  |
-| comm_deposit                   | REAL         | Deposit commission  |
-| comm_withdraw                  | REAL         | Withdraw commission |
+| comm_cash_in                   | REAL         | CashIn commission  |
+| comm_cash_out                  | REAL         | CashOut commission |
 | additional_fee_type            | TEXT         | FIXED / PERCENTAGE  |
-| additional_fee_deposit_amount  | REAL         | Extra deposit fee   |
-| additional_fee_withdraw_amount | REAL         | Extra withdraw fee  |
+| additional_fee_cash_in_amount  | REAL         | Extra cash_in fee   |
+| additional_fee_cash_out_amount | REAL         | Extra cash_out fee  |
 | is_active                      | INTEGER      | Active              |
 | created_at                     | TEXT         | Created             |
 
@@ -126,8 +126,8 @@
 | ------------------- | ------------ | ----------- |
 | id                  | INTEGER (PK) | ID          |
 | summary_date        | TEXT         | Date        |
-| total_deposit       | REAL         | Deposit     |
-| total_withdraw      | REAL         | Withdraw    |
+| total_cash_in       | REAL         | CashIn     |
+| total_cash_out      | REAL         | CashOut    |
 | total_transfer      | REAL         | Transfer    |
 | total_exchange      | REAL         | Exchange    |
 | total_commission    | REAL         | Commission  |

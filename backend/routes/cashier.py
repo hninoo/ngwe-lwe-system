@@ -66,6 +66,17 @@ class ReceivedCashRequest(BaseModel):
     note: Optional[str] = None
 
 
+class ConfirmCashInRequest(BaseModel):
+    pin: str
+    denominations: dict[str, int]
+    note: Optional[str] = None
+
+
+class RejectCashInRequest(BaseModel):
+    pin: str
+    note: Optional[str] = None
+
+
 # ── Employees (cashier-accessible) ──
 
 @router.get("/employees")
@@ -112,6 +123,15 @@ def _service_error(e: Exception) -> HTTPException:
     if isinstance(e, FloatStateError):
         return HTTPException(409, str(e))
     return HTTPException(400, str(e))
+
+
+def _verify_cashier_pin_or_401(cashier_id: int, pin: str, key: str) -> None:
+    _pin_limiter.check(key)
+    stored_hash = _user_repo.get_pin_hash(cashier_id)
+    if not stored_hash or not bcrypt.checkpw(pin.encode(), stored_hash.encode()):
+        _pin_limiter.record_failure(key)
+        raise HTTPException(401, "Invalid cashier PIN")
+    _pin_limiter.clear(key)
 
 
 # ── Vault endpoints ──
@@ -332,6 +352,110 @@ def confirm_float_return(
 
 # ── Transaction cash approval ──
 
+@router.get("/pending-cash_ins")
+def get_pending_cash_ins(current_user: dict = Depends(get_current_user)) -> list[dict]:
+    if current_user["role"] != "cashier":
+        raise HTTPException(403, "Cashier access only")
+    return [asdict(txn) for txn in TransactionRepository().get_pending_cash_ins()]
+
+
+@router.post("/transactions/{txn_id}/confirm-cash_in")
+def confirm_pending_cash_in(
+    txn_id: int,
+    body: ConfirmCashInRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "cashier":
+        raise HTTPException(403, "Cashier access only")
+    _verify_cashier_pin_or_401(
+        current_user["user_id"],
+        body.pin,
+        f"pin:confirm-cash_in:{current_user['user_id']}",
+    )
+
+    txn_repo = TransactionRepository()
+    txn = txn_repo.get_by_id(txn_id)
+    if txn is None:
+        raise HTTPException(404, "Transaction not found")
+    if txn.transaction_type != "cash_in":
+        raise HTTPException(400, "Only Cash In transactions can be confirmed here.")
+    if txn.status != "PENDING_CASHIER_CONFIRM":
+        raise HTTPException(409, f"Invalid status transition: {txn.status} -> CONFIRMED")
+
+    denoms = _parse_denominations(body.denominations)
+    entered_total = sum(d * q for d, q in denoms.items())
+    expected = int(txn.amount or 0)
+    diff = entered_total - expected
+    if entered_total <= 0:
+        raise HTTPException(400, "Denomination total must be greater than zero")
+    if abs(diff) > CASH_TOLERANCE_MMK:
+        raise HTTPException(422, detail={
+            "message": "Cash total does not match Cash In amount",
+            "expected": expected,
+            "entered": entered_total,
+            "difference": diff,
+            "tolerance": CASH_TOLERANCE_MMK,
+        })
+
+    with atomic():
+        updated = txn_repo.confirm_pending_cash_in(txn_id, current_user["user_id"])
+        if updated is None:
+            raise HTTPException(409, "Cash In is no longer pending confirmation")
+        from repositories.account_repository import AccountRepository
+        account_repo = AccountRepository()
+        account_repo.increment_balance(txn.account_id, -float(txn.amount or 0))
+        if txn.fee_account_id is not None and float(txn.customer_fee or 0) > 0:
+            account_repo.increment_balance(txn.fee_account_id, float(txn.customer_fee or 0))
+        _denom_repo.record_bulk_entry(
+            entry_type="vault_in",
+            denominations=denoms,
+            created_by=current_user["user_id"],
+            note=body.note or f"Confirmed pending Cash In Txn #{txn_id}",
+        )
+        with get_cursor(commit=True) as cur:
+            cur.execute(
+                "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
+                "VALUES (?, 'cash_in_cashier_confirmed', 'transaction', ?, ?)",
+                (
+                    current_user["user_id"],
+                    txn_id,
+                    json.dumps({
+                        "amount": txn.amount,
+                        "entered_total": entered_total,
+                        "vault_entry_type": "vault_in",
+                    }),
+                ),
+            )
+    return asdict(updated)
+
+
+@router.post("/transactions/{txn_id}/reject-cash_in")
+def reject_pending_cash_in(
+    txn_id: int,
+    body: RejectCashInRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "cashier":
+        raise HTTPException(403, "Cashier access only")
+    _verify_cashier_pin_or_401(
+        current_user["user_id"],
+        body.pin,
+        f"pin:reject-cash_in:{current_user['user_id']}",
+    )
+    txn_repo = TransactionRepository()
+    txn = txn_repo.get_by_id(txn_id)
+    if txn is None:
+        raise HTTPException(404, "Transaction not found")
+    if txn.transaction_type != "cash_in":
+        raise HTTPException(400, "Only Cash In transactions can be rejected here.")
+    if txn.status != "PENDING_CASHIER_CONFIRM":
+        raise HTTPException(409, f"Invalid status transition: {txn.status} -> REJECTED")
+    updated = txn_repo.reject_pending_cash_in(txn_id, current_user["user_id"], body.note)
+    if updated is None:
+        raise HTTPException(409, "Cash In is no longer pending confirmation")
+    return asdict(updated)
+
+
 @router.post("/transactions/{txn_id}/approve")
 def approve_transaction(
     txn_id: int,
@@ -345,11 +469,16 @@ def approve_transaction(
     txn = txn_repo.get_by_id(txn_id)
     if txn is None:
         raise HTTPException(404, "Transaction not found")
+    if txn.transaction_type == "cash_in" and txn.status == "PENDING_CASHIER_CONFIRM":
+        raise HTTPException(
+            409,
+            "Pending Cash In transactions must be confirmed through the cashier PIN flow.",
+        )
 
     if txn.transaction_type == "transfer":
         raise HTTPException(400, "Transfers are not cash-approval transactions.")
     creator = _user_repo.get_by_id(txn.created_by)
-    if creator and creator.role == "employee" and txn.transaction_type in ("withdraw", "exchange"):
+    if creator and creator.role == "employee" and txn.transaction_type in ("cash_out", "exchange"):
         raise HTTPException(
             409,
             "Employee cash-out transactions are already deducted from the employee float.",
@@ -371,7 +500,7 @@ def approve_transaction(
             "tolerance": CASH_TOLERANCE_MMK,
         })
 
-    entry_type = "vault_in" if txn.transaction_type == "deposit" else "vault_out"
+    entry_type = "vault_in" if txn.transaction_type == "cash_in" else "vault_out"
     note = body.note or f"Txn #{txn_id} ({txn.transaction_type})"
 
     with atomic():

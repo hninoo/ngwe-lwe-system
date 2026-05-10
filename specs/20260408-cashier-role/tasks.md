@@ -110,7 +110,7 @@ All test tasks depend on T004. Tasks T005–T012 are marked [P] because they tar
 - **Depends on**: T004
 - **Scenarios to cover** (per plan Section 10):
   - `GET /cashier/vault` as `employee` → 403 Forbidden
-  - `POST /cashier/vault/deposit-entry` as `employee` → 403
+  - `POST /cashier/vault/cash_in-entry` as `employee` → 403
   - `POST /cashier/floats` (issue float) as `employee` → 403
   - `GET /cashier/floats/pending` as `cashier` with no pending float → 404 or empty
   - `POST /cashier/floats` with insufficient vault quantity → 409 Conflict
@@ -125,9 +125,9 @@ All test tasks depend on T004. Tasks T005–T012 are marked [P] because they tar
 - **Status**: NOT DONE
 - **Depends on**: T004
 - **Scenarios to cover** (per `backend/routes/transactions.py` lines inspected):
-  - `POST /transactions/deposit` as `cashier` → 403 (cashiers cannot record transactions)
-  - `POST /transactions/withdraw` as `employee` with no active float → 403 "No active float"
-  - `POST /transactions/withdraw` as `employee` with active float → 201
+  - `POST /transactions/cash_in` as `cashier` → 403 (cashiers cannot record transactions)
+  - `POST /transactions/cash_out` as `employee` with no active float → 403 "No active float"
+  - `POST /transactions/cash_out` as `employee` with active float → 201
   - `POST /transactions/transfer` as `cashier` → 403
 - **Acceptance**: All enforcement rules fire correctly.
 
@@ -196,11 +196,11 @@ All test tasks depend on T004. Tasks T005–T012 are marked [P] because they tar
   - [ ] Issue a float to an employee; verify vault balance decrements
   - [ ] Log in as employee — verify pending float dialog appears on login
   - [ ] Employee receives float with correct 6-digit PIN
-  - [ ] Employee records a withdrawal — verify blocked without active float is fixed
+  - [ ] Employee records a cash_out — verify blocked without active float is fixed
   - [ ] Cashier closes float; verify vault increments on return
   - [ ] Owner views denomination logs — all event rows present
   - [ ] Owner can see all float assignments
-  - [ ] Cashier cannot access `POST /transactions/deposit` or `/withdraw`
+  - [ ] Cashier cannot access `POST /transactions/cash_in` or `/cash_out`
 - **Acceptance**: All checklist items pass; any failures documented.
 
 ---
@@ -362,8 +362,8 @@ def change_user_role(self, user_id: int, role: str) -> dict:
 - **File**: `views/cashier_view.py` — `TransactionsReadOnlyPage` (line 843)
 - **Status**: NEEDS VERIFICATION
 - **Why**: The `CashierView` includes a `TransactionsReadOnlyPage` which is a pragmatic resolution of Q4 (cashier should see transaction history to record denominations). Verify this page loads correctly, respects auth, and links appropriately from the vault panel.
-- **Action**: Manually test the Transactions tab in the cashier view. Confirm it shows deposits without exposing create/withdraw buttons. Add a note in `qa-checklist.md` (T012) for this scenario.
-- **Acceptance**: Cashier can see deposit transactions in read-only mode; no action buttons available.
+- **Action**: Manually test the Transactions tab in the cashier view. Confirm it shows cash_ins without exposing create/cash_out buttons. Add a note in `qa-checklist.md` (T012) for this scenario.
+- **Acceptance**: Cashier can see cash_in transactions in read-only mode; no action buttons available.
 
 ---
 
@@ -377,7 +377,7 @@ def change_user_role(self, user_id: int, role: str) -> dict:
   - The three roles: owner, employee, cashier — and their capabilities.
   - How to create a cashier user (owner panel → Employees → Create User → Role: Cashier).
   - How to set a cashier PIN (`POST /users/{id}/pin` or via owner UI once T019 implemented).
-  - The float lifecycle: Issue → Receive (with PIN) → Withdrawals → Close.
+  - The float lifecycle: Issue → Receive (with PIN) → CashOuts → Close.
   - The denominations supported: 50, 100, 200, 500, 1000, 5000, 10000 MMK.
 - **Acceptance**: README is accurate, readable, and covers the cashier workflow end-to-end.
 
@@ -388,7 +388,7 @@ def change_user_role(self, user_id: int, role: str) -> dict:
 - **Why**: The plan (Phase 6) requires a final regression pass to confirm nothing was broken by cashier-role changes.
 - **Action**: Write regression tests covering:
   - Owner login, create user, toggle active.
-  - Employee records deposit, withdraw, transfer, exchange — all succeed with active float.
+  - Employee records cash_in, cash_out, transfer, exchange — all succeed with active float.
   - Reports endpoint returns 200 for owner.
   - Auth: expired/invalid token returns 401.
   - Password change works for all roles.
@@ -400,16 +400,16 @@ def change_user_role(self, user_id: int, role: str) -> dict:
 - **Why**: The plan still shows Status: "Draft — Awaiting Clarification" and 11 `[NEEDS CLARIFICATION]` items. These must be resolved now that implementation choices are visible.
 - **Action**: For each question, document the decision actually implemented:
   - Q1: Denominations 50, 100, 200, 500, 1000, 5000, 10000 (coins included — confirmed in DB CHECK constraint).
-  - Q2: Deposit entry is freestanding (not 1:1 to transaction_id) — `cash_denomination_logs` uses `entry_type='vault_in'`, no reference_id FK.
+  - Q2: CashIn entry is freestanding (not 1:1 to transaction_id) — `cash_denomination_logs` uses `entry_type='vault_in'`, no reference_id FK.
   - Q3: No auto-suggest implemented (manual entry used; `utils/denomination_utils.py` will add suggest capability for future use).
   - Q4: Cashier sees read-only transaction list via `TransactionsReadOnlyPage` in `CashierView`.
   - Q5: Vault sufficiency check — see T021 (to be verified/implemented).
-  - Q6: Float balance is not auto-decremented per withdrawal; it is informational/reconciliation-only.
+  - Q6: Float balance is not auto-decremented per cash_out; it is informational/reconciliation-only.
   - Q7: No strict denomination sum validation against transaction amount — freestanding entry.
   - Q8: One open float per employee enforced — `get_active_float_for_employee` checked before issue.
   - Q9: `schema_version` table introduced; Python migration runner handles versioning.
-  - Q10: Cashiers are blocked from all transaction writes (403 for deposit/withdraw/transfer/exchange as cashier).
-  - Q11: Float enforcement is a hard block — `POST /transactions/withdraw` as employee with no active float → 403.
+  - Q10: Cashiers are blocked from all transaction writes (403 for cash_in/cash_out/transfer/exchange as cashier).
+  - Q11: Float enforcement is a hard block — `POST /transactions/cash_out` as employee with no active float → 403.
   Update plan Status from "Draft — Awaiting Clarification" to "Implemented — Pending QA".
 - **Acceptance**: All clarification markers in plan.md are resolved with documented decisions.
 

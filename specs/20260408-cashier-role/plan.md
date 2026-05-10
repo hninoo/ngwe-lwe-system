@@ -28,14 +28,14 @@
 
 ## 1. Overview
 
-This feature introduces a third user role — `cashier` — that sits between the owner and employees in the cash-handling chain. The cashier acts as a physical vault: they receive and record deposited cash in denominations (like a bank teller), and they issue cash floats to employees at the start of each shift. Employees use their float to pay out withdrawals to customers. The cashier maintains a running denomination-level inventory of physical cash, and the owner can audit it at any time.
+This feature introduces a third user role — `cashier` — that sits between the owner and employees in the cash-handling chain. The cashier acts as a physical vault: they receive and record cash_ined cash in denominations (like a bank teller), and they issue cash floats to employees at the start of each shift. Employees use their float to pay out cash_outs to customers. The cashier maintains a running denomination-level inventory of physical cash, and the owner can audit it at any time.
 
 ### Core Concepts
 
 | Concept | Description |
 |---|---|
 | **Cash Vault** | The cashier's master physical cash inventory, stored as denomination rows |
-| **Denomination Entry** | When a deposit is completed, the cashier records which physical notes were received (e.g., 10,000 × 5, 5,000 × 8) |
+| **Denomination Entry** | When a cash_in is completed, the cashier records which physical notes were received (e.g., 10,000 × 5, 5,000 × 8) |
 | **Cash Float** | A bundle of physical cash given by the cashier to an employee when their shift opens |
 | **Float Assignment** | A record linking a float amount (with denomination breakdown) to an employee for a specific shift/session |
 | **Float Return** | At shift close, the employee returns unused cash; the cashier reconciles the vault |
@@ -52,7 +52,7 @@ role TEXT NOT NULL DEFAULT 'employee' CHECK(role IN ('owner','employee'))
 ```
 
 - `owner`: full system access, sees all reports, manages users
-- `employee`: records transactions (deposit/withdraw/transfer/exchange), no cash custody
+- `employee`: records transactions (cash_in/cash_out/transfer/exchange), no cash custody
 
 ### Affected Files (existing)
 
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS cash_denomination_logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type      TEXT NOT NULL
                     CHECK(event_type IN (
-                        'deposit_received',   -- cashier records notes from a deposit
+                        'cash_in_received',   -- cashier records notes from a cash_in
                         'float_issued',       -- notes removed from vault, given to employee
                         'float_returned',     -- notes returned by employee at shift close
                         'manual_adjustment'   -- owner/cashier manual correction
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS cash_denomination_logs (
     denomination    INTEGER NOT NULL,
     quantity_delta  INTEGER NOT NULL,          -- positive = added to vault, negative = removed
     quantity_after  INTEGER NOT NULL,          -- snapshot of quantity after this event
-    reference_id    INTEGER,                   -- FK to deposit transaction_id or cash_float_assignments.id
+    reference_id    INTEGER,                   -- FK to cash_in transaction_id or cash_float_assignments.id
     reference_type  TEXT,                      -- 'transaction' | 'float_assignment' | 'manual'
     performed_by    INTEGER NOT NULL,
     note            TEXT,
@@ -312,7 +312,7 @@ All cash management endpoints. Prefix: `/cashier`. Tags: `["cashier"]`.
 | Method | Path | Actor | Description |
 |---|---|---|---|
 | `GET` | `/cashier/vault` | cashier, owner | Get current vault denomination snapshot |
-| `POST` | `/cashier/vault/deposit-entry` | cashier | Record denominations received from a deposit transaction |
+| `POST` | `/cashier/vault/cash_in-entry` | cashier | Record denominations received from a cash_in transaction |
 | `PATCH` | `/cashier/vault/adjustment` | cashier, owner | Manual vault adjustment (e.g., recount discrepancy) |
 | `GET` | `/cashier/vault/logs` | cashier, owner | Paginated denomination change history |
 
@@ -335,7 +335,7 @@ class DenominationEntry(BaseModel):
     denomination: int    # e.g. 10000
     quantity: int        # e.g. 5
 
-class DepositEntryRequest(BaseModel):
+class CashInEntryRequest(BaseModel):
     transaction_id: int                     # links to transactions.id
     denominations: list[DenominationEntry]  # notes received
 
@@ -372,9 +372,9 @@ app.include_router(cashier_routes.router)
 
 ---
 
-### 4.5 Deposit-to-Cashier Link (Optional Enhancement)
+### 4.5 CashIn-to-Cashier Link (Optional Enhancement)
 
-[NEEDS CLARIFICATION: Q2 — When the cashier records denominations for a deposit, should this be linked 1:1 to a specific `transactions.id` (the deposit record), or is the cashier's denomination entry a freestanding activity not tied to individual transactions? Linking tightly enables deposit-by-deposit audit trails but adds UI complexity.]
+[NEEDS CLARIFICATION: Q2 — When the cashier records denominations for a cash_in, should this be linked 1:1 to a specific `transactions.id` (the cash_in record), or is the cashier's denomination entry a freestanding activity not tied to individual transactions? Linking tightly enables cash_in-by-cash_in audit trails but adds UI complexity.]
 
 If linked: `cash_denomination_logs.reference_id` = `transactions.id`, `reference_type` = `'transaction'`.
 If freestanding: cashier records denominations in bulk at end of day or at their own discretion.
@@ -406,7 +406,7 @@ Handles all vault and float logic by calling the FastAPI backend (via `ApiClient
 
 **Responsibilities:**
 - `get_vault_snapshot()` → `GET /cashier/vault`
-- `record_deposit_entry(transaction_id, denominations)` → `POST /cashier/vault/deposit-entry`
+- `record_cash_in_entry(transaction_id, denominations)` → `POST /cashier/vault/cash_in-entry`
 - `issue_float(employee_id, denominations, note)` → `POST /cashier/floats`
 - `return_float(float_id, denominations, note)` → `POST /cashier/floats/{id}/return`
 - `get_float_assignments(status, employee_id)` → `GET /cashier/floats`
@@ -475,7 +475,7 @@ MENU_ITEMS = [
 | Employees | Yes | No | No |
 | Settings | Yes | Yes (own pwd only) | Yes (own pwd only) |
 
-[NEEDS CLARIFICATION: Q4 — Should the cashier be able to see transaction history (read-only) or is that completely off-limits? Cashiers need to know which deposits came in to record denominations against them.]
+[NEEDS CLARIFICATION: Q4 — Should the cashier be able to see transaction history (read-only) or is that completely off-limits? Cashiers need to know which cash_ins came in to record denominations against them.]
 
 ---
 
@@ -487,7 +487,7 @@ A new top-level view added to the `QStackedWidget` in `DashboardView`. Contains 
 
 - A table showing all denominations: columns `[Denomination | Quantity | Total Value]`
 - Footer row: total vault value
-- "Record Deposit Cash" button — opens `DepositEntryDialog`
+- "Record CashIn Cash" button — opens `CashInEntryDialog`
 - "Manual Adjustment" button (owner and cashier) — opens `ManualAdjustmentDialog`
 
 #### Panel B: Issue Float
@@ -516,9 +516,9 @@ A new top-level view added to the `QStackedWidget` in `DashboardView`. Contains 
 
 A lightweight view for employees (replaces or supplements the existing transaction view context):
 
-- Shows the employee's **currently open float** at the top: total assigned, total used for withdrawals, remaining.
-- [NEEDS CLARIFICATION: Q6 — Should the system automatically deduct from the employee's float balance when they record a withdrawal? For example: employee has a 100,000 MMK float; they record a 50,000 MMK withdrawal → float remaining shows 50,000. Or is the float balance purely informational / not tracked per-withdrawal?]
-- "Report" panel showing the employee's shift activity (withdrawals processed since float was issued).
+- Shows the employee's **currently open float** at the top: total assigned, total used for cash_outs, remaining.
+- [NEEDS CLARIFICATION: Q6 — Should the system automatically deduct from the employee's float balance when they record a cash_out? For example: employee has a 100,000 MMK float; they record a 50,000 MMK cash_out → float remaining shows 50,000. Or is the float balance purely informational / not tracked per-cash_out?]
+- "Report" panel showing the employee's shift activity (cash_outs processed since float was issued).
 
 ---
 
@@ -526,7 +526,7 @@ A lightweight view for employees (replaces or supplements the existing transacti
 
 | Dialog Class | Purpose |
 |---|---|
-| `DepositEntryDialog` | Cashier records denomination breakdown for a specific deposit |
+| `CashInEntryDialog` | Cashier records denomination breakdown for a specific cash_in |
 | `IssueFloatDialog` | Cashier specifies denominations to give to an employee |
 | `FloatReturnDialog` | Cashier records denominations returned at shift close |
 | `ManualAdjustmentDialog` | Correct vault quantities (with mandatory note) |
@@ -559,24 +559,24 @@ class DenominationEntryWidget(QWidget):
 
 ## 7. Workflow Walkthrough
 
-### 7.1 Deposit → Cashier Records Denominations
+### 7.1 CashIn → Cashier Records Denominations
 
 ```
-1. Employee records a deposit transaction via existing Transactions view.
-   POST /transactions/deposit  →  Transaction created (id=42, amount=50,000 MMK)
+1. Employee records a cash_in transaction via existing Transactions view.
+   POST /transactions/cash_in  →  Transaction created (id=42, amount=50,000 MMK)
 
-2. Cashier opens "Cash Vault" → "Record Deposit Cash"
-   DepositEntryDialog opens, showing recent unrecorded deposits (or cashier enters manually).
+2. Cashier opens "Cash Vault" → "Record CashIn Cash"
+   CashInEntryDialog opens, showing recent unrecorded cash_ins (or cashier enters manually).
    Cashier inputs: 10,000×3, 5,000×4 = 50,000 MMK total.
 
-3. Client calls POST /cashier/vault/deposit-entry
+3. Client calls POST /cashier/vault/cash_in-entry
    Body: { transaction_id: 42, denominations: [{denomination:10000,quantity:3},{denomination:5000,quantity:4}] }
 
 4. Backend:
-   a. Validates transaction exists and is of type 'deposit'
+   a. Validates transaction exists and is of type 'cash_in'
    b. Validates denomination total == transaction amount  [NEEDS CLARIFICATION: Q7 — Should there be strict validation that denominations sum to exactly the transaction amount, or is loose entry acceptable?]
    c. Updates cash_denominations: +3 to 10000 row, +4 to 5000 row
-   d. Inserts cash_denomination_logs rows (event_type='deposit_received')
+   d. Inserts cash_denomination_logs rows (event_type='cash_in_received')
    e. Returns updated vault snapshot
 
 5. Cashier's vault panel refreshes automatically.
@@ -606,14 +606,14 @@ class DenominationEntryWidget(QWidget):
 4. Employee's "My Float" panel now shows the active float.
 ```
 
-### 7.3 Employee Handles Withdrawals
+### 7.3 Employee Handles CashOuts
 
 ```
-1. Customer arrives to withdraw cash.
-2. Employee records withdrawal via existing Transactions view:
-   POST /transactions/withdraw  →  Transaction created
+1. Customer arrives to cash_out cash.
+2. Employee records cash_out via existing Transactions view:
+   POST /transactions/cash_out  →  Transaction created
 
-3. [NEEDS CLARIFICATION: Q6 re-stated] — Is float balance auto-decremented per withdrawal,
+3. [NEEDS CLARIFICATION: Q6 re-stated] — Is float balance auto-decremented per cash_out,
    or does the employee manually report at shift end?
 
 4. Physical cash: Employee pays customer from their float envelope.
@@ -625,7 +625,7 @@ class DenominationEntryWidget(QWidget):
 1. At end of shift, employee returns unused cash to cashier.
 2. Cashier opens float assignment → "Close Float / Record Return"
    FloatReturnDialog: enters returned denominations.
-   Example: issued 50,000; returned 20,000 (30,000 used in withdrawals)
+   Example: issued 50,000; returned 20,000 (30,000 used in cash_outs)
 
 3. Client calls POST /cashier/floats/{id}/return
    Body: { denominations: [...], note: "End of day" }
@@ -709,9 +709,9 @@ PRAGMA foreign_keys = ON;
 |---|---|---|---|
 | Create/deactivate users | Yes | No | No |
 | Assign any role | Yes | No | No |
-| Record transactions (deposit/withdraw/etc.) | Yes | No | Yes |
+| Record transactions (cash_in/cash_out/etc.) | Yes | No | Yes |
 | View vault snapshot | Yes | Yes | No |
-| Record deposit denomination entry | Yes | Yes | No |
+| Record cash_in denomination entry | Yes | Yes | No |
 | Manual vault adjustment | Yes | Yes | No |
 | Issue float to employee | Yes | Yes | No |
 | View all float assignments | Yes | Yes | No |
@@ -740,18 +740,18 @@ PRAGMA foreign_keys = ON;
 | Issue float with insufficient vault quantity | 409 Conflict |
 | Issue float to employee with existing open float | 409 Conflict |
 | Return more than issued | 422 Unprocessable |
-| Denomination log entries created on deposit entry | Log rows match entries |
+| Denomination log entries created on cash_in entry | Log rows match entries |
 | Employee cannot access `/cashier/vault` | 403 Forbidden |
-| Cashier cannot access `/transactions/deposit` | 403 Forbidden [NEEDS CLARIFICATION: Q10 — Should cashiers be completely blocked from recording transactions, or should they have read-only access for reconciliation?] |
+| Cashier cannot access `/transactions/cash_in` | 403 Forbidden [NEEDS CLARIFICATION: Q10 — Should cashiers be completely blocked from recording transactions, or should they have read-only access for reconciliation?] |
 
 ### Manual QA Checklist
 
 - [ ] Create a `cashier` user via owner panel
 - [ ] Log in as cashier — verify sidebar shows only cashier-appropriate menu items
-- [ ] Record denomination entry after an employee deposits
+- [ ] Record denomination entry after an employee cash_ins
 - [ ] Issue a float to an employee; verify vault decrements correctly
 - [ ] Log in as employee — verify "My Float" shows the issued float
-- [ ] Employee records withdrawals; verify float tracking (per Q6 answer)
+- [ ] Employee records cash_outs; verify float tracking (per Q6 answer)
 - [ ] Cashier closes float; verify vault increments on return
 - [ ] Owner views denomination logs — all events present
 
@@ -811,7 +811,7 @@ PRAGMA foreign_keys = ON;
 1. Create `views/widgets/denomination_entry_widget.py`
 2. Create `views/cashier_view.py` (Vault Snapshot, Issue Float, Float Assignments, Logs panels)
 3. Create `views/employee_float_view.py`
-4. Create dialog classes: `DepositEntryDialog`, `IssueFloatDialog`, `FloatReturnDialog`, `ManualAdjustmentDialog`, `FloatDetailDialog`
+4. Create dialog classes: `CashInEntryDialog`, `IssueFloatDialog`, `FloatReturnDialog`, `ManualAdjustmentDialog`, `FloatDetailDialog`
 5. Update `views/dashboard_view.py` — role-conditional sidebar; register new pages in `QStackedWidget`
 6. Run manual QA checklist
 
@@ -836,9 +836,9 @@ PRAGMA foreign_keys = ON;
 | A2 | A single cashier exists at a time (no multi-cashier contention on vault) | `cash_denominations` uses SQLite WAL mode which handles concurrent reads; write contention unlikely |
 | A3 | `init_db()` is only called once at startup; migration runner is separate | Implement migration runner as a separate function `run_migrations()` called before `init_db()` |
 | A4 | The existing `services/api_client.py` pattern is used in CashierViewModel | Read `services/` directory to confirm; if `ApiClient` needs extension, add methods there |
-| A5 | Employees cannot record deposits or withdrawals without an open float | [NEEDS CLARIFICATION: Q11 — Should the system enforce that an employee MUST have an open float before they can record a withdrawal? Or is the float system informational/non-blocking?] |
+| A5 | Employees cannot record cash_ins or cash_outs without an open float | [NEEDS CLARIFICATION: Q11 — Should the system enforce that an employee MUST have an open float before they can record a cash_out? Or is the float system informational/non-blocking?] |
 | R1 | SQLite CHECK constraint migration is destructive (table rename/copy) | Test thoroughly on a copy of the production DB before running in production |
-| R2 | Float-to-withdrawal linkage is implicit (time-based), not FK-enforced | Acceptable for V1; can add `withdrawal_transaction_id` FK to floats in V2 |
+| R2 | Float-to-cash_out linkage is implicit (time-based), not FK-enforced | Acceptable for V1; can add `cash_out_transaction_id` FK to floats in V2 |
 
 ---
 
@@ -853,23 +853,23 @@ The following questions are marked `[NEEDS CLARIFICATION]` throughout this docum
 > Proposed default: 10,000 / 5,000 / 1,000 / 500 / 100 MMK notes only.
 > Should 200, 50, or 20 kyat coins be included?
 
-**Q2** — Deposit-to-denomination linkage
-> When the cashier records denominations for a deposit, should it be required to link to a specific deposit `transaction_id`, or can the cashier record cash received in bulk (freestanding, not per-transaction)?
+**Q2** — CashIn-to-denomination linkage
+> When the cashier records denominations for a cash_in, should it be required to link to a specific cash_in `transaction_id`, or can the cashier record cash received in bulk (freestanding, not per-transaction)?
 
 **Q3** — Auto-suggest float denominations
 > When issuing a float, should the app auto-calculate suggested denomination breakdown from a target amount entered by the cashier, or is manual denomination-by-denomination entry always used?
 
 **Q4** — Cashier transaction visibility
-> Should the cashier be able to view the transaction list (read-only) to see which deposits have come in — so they know which ones need denomination entries recorded? Or are they completely locked out of the Transactions view?
+> Should the cashier be able to view the transaction list (read-only) to see which cash_ins have come in — so they know which ones need denomination entries recorded? Or are they completely locked out of the Transactions view?
 
 **Q5** — Vault sufficiency check on float issue
 > Should the "Issue Float" screen show a warning (or hard block) if the requested denomination quantities exceed what is currently in the vault for that denomination?
 
-**Q6** — Float balance auto-deduction on withdrawal
-> When an employee records a withdrawal transaction, should the system automatically deduct that amount from their open float balance? Or is the float a one-time assignment and the reconciliation only happens when the cashier closes the float at shift end?
+**Q6** — Float balance auto-deduction on cash_out
+> When an employee records a cash_out transaction, should the system automatically deduct that amount from their open float balance? Or is the float a one-time assignment and the reconciliation only happens when the cashier closes the float at shift end?
 
 **Q7** — Strict denomination-sum validation
-> When the cashier records a deposit denomination entry, should the total of (denomination × quantity) be validated to exactly equal the deposit transaction amount? Or is approximate/partial entry allowed (e.g., cashier records the big notes only, ignores coins)?
+> When the cashier records a cash_in denomination entry, should the total of (denomination × quantity) be validated to exactly equal the cash_in transaction amount? Or is approximate/partial entry allowed (e.g., cashier records the big notes only, ignores coins)?
 
 **Q8** — Multiple open floats per employee
 > Can an employee have more than one open float at the same time? (e.g., morning float not yet closed when afternoon float is issued.) Or should the system enforce exactly one open float per employee?
@@ -878,7 +878,7 @@ The following questions are marked `[NEEDS CLARIFICATION]` throughout this docum
 > Does the project already have a migration versioning mechanism (e.g., a `schema_version` table, Alembic, or a numbered SQL file runner)? Or should a simple integer-version table be introduced as part of this feature?
 
 **Q10** — Cashier access to transaction recording
-> Should cashiers be completely blocked from the `POST /transactions/deposit` and `POST /transactions/withdraw` routes? Or should they have any access (e.g., read-only `GET /transactions/recent` for reconciliation)?
+> Should cashiers be completely blocked from the `POST /transactions/cash_in` and `POST /transactions/cash_out` routes? Or should they have any access (e.g., read-only `GET /transactions/recent` for reconciliation)?
 
-**Q11** — Float enforcement for withdrawals
-> Should the system block an employee from recording a withdrawal if they have no open float? Or is the float system advisory/informational (employee can still record transactions without a float)?
+**Q11** — Float enforcement for cash_outs
+> Should the system block an employee from recording a cash_out if they have no open float? Or is the float system advisory/informational (employee can still record transactions without a float)?

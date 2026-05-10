@@ -101,7 +101,7 @@ class HistoryView(QWidget):
         lo.addWidget(QLabel(t("filter_type")))
         self._type_filter = QComboBox()
         add_placeholder(self._type_filter)
-        self._type_filter.addItems(["All", "deposit", "withdraw", "transfer", "exchange"])
+        self._type_filter.addItems(["All", "cash_in", "cash_out", "transfer", "exchange"])
         lo.addWidget(self._type_filter)
 
         lo.addWidget(QLabel(t("filter_phone")))
@@ -151,7 +151,7 @@ class HistoryView(QWidget):
         self._table.setRowCount(len(txns))
         for row, txn in enumerate(txns):
             tt = txn.get("transaction_type", "")
-            has_cust = tt in ("deposit", "withdraw")
+            has_cust = tt in ("cash_in", "cash_out")
             acc = self._lookup_account(txn.get("account_id"))
             fee_acc = self._lookup_account(txn.get("fee_account_id"))
             items = [

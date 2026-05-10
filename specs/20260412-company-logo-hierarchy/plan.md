@@ -124,7 +124,7 @@ CREATE TABLE service_types (
     company_id  INTEGER NOT NULL,
     name        TEXT NOT NULL,
     operation   TEXT NOT NULL
-                CHECK(operation IN ('Deposit','Withdraw','Transfer','Exchange','All')),
+                CHECK(operation IN ('CashIn','CashOut','Transfer','Exchange','All')),
     is_active   INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -261,7 +261,7 @@ class ServiceType:
     id: Optional[int] = None
     company_id: Optional[int] = None
     name: Optional[str] = None       # 'WST' | 'Pay_To_Pay' | 'Transfer' | 'Exchange'
-    operation: Optional[str] = None  # 'Deposit' | 'Withdraw' | 'Transfer' | 'Exchange' | 'All'
+    operation: Optional[str] = None  # 'CashIn' | 'CashOut' | 'Transfer' | 'Exchange' | 'All'
     is_active: Optional[bool] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -285,7 +285,7 @@ class ServiceType:
 - `viewmodels/transaction_viewmodel.py` — remove `_map_tier_service_type`; pass `account.service_type_id` directly to `_tier_repo.get_tier_for_amount`; update `_get_tier`, `_calc_commission`
 - `viewmodels/account_viewmodel.py` — add `get_accounts_by_company(company_id)`, `get_accounts_by_service_type(service_type_id)`
 
-**Gate**: Existing deposit/withdraw/transfer/exchange transaction flows produce identical commission amounts as before the refactor (verified with a regression fixture).
+**Gate**: Existing cash_in/cash_out/transfer/exchange transaction flows produce identical commission amounts as before the refactor (verified with a regression fixture).
 
 ---
 
@@ -336,7 +336,7 @@ PATCH /service-types/{id}               → update service type (owner only)
 
 **Files to modify**:
 - `views/transaction_view.py`:
-  - Replace the current account `QComboBox` (flat list) with a two-level `CompanySelector` → `ServiceTypeSelector` → `AccountSelector` cascade for Deposit/Withdraw.
+  - Replace the current account `QComboBox` (flat list) with a two-level `CompanySelector` → `ServiceTypeSelector` → `AccountSelector` cascade for CashIn/CashOut.
   - For Transfer/Exchange: add a second `CompanySelector` row labelled "Customer pays in via" and "Shop pays out via".
   - Remove `_map_tier_service_type()` helper (already deleted in Phase 2/3).
   - Commission preview panel reads `service_type_id` from selected account directly.
@@ -504,7 +504,7 @@ Phase 7 can be prepared (spec file edits) in parallel with Phase 5–6.
 | `test_migrate_004_zero_data_loss` | `tests/test_migration.py` | Row counts in accounts and commission_tiers unchanged |
 | `test_tier_lookup_by_id` | `tests/test_commission_tier_repository.py` | `get_tier_for_amount(service_type_id, amount)` returns correct tier |
 | `test_commission_calc_kpay_wst` | `tests/test_transaction_viewmodel.py` | Commission for KBZ Pay WST 50,000 MMK = 200 (matches legacy result) |
-| `test_commission_calc_wave_wst` | `tests/test_transaction_viewmodel.py` | Commission for Wave Money WST 10,000 MMK = 123 deposit |
+| `test_commission_calc_wave_wst` | `tests/test_transaction_viewmodel.py` | Commission for Wave Money WST 10,000 MMK = 123 cash_in |
 | `test_logo_upload_size_limit` | `tests/test_company_routes.py` | 201 KB file rejected with 422 |
 | `test_logo_upload_invalid_type` | `tests/test_company_routes.py` | PDF file rejected with 422 |
 | `test_logo_serve` | `tests/test_company_routes.py` | Uploaded PNG returned byte-for-byte by `GET /companies/{id}/logo` |
@@ -513,7 +513,7 @@ Phase 7 can be prepared (spec file edits) in parallel with Phase 5–6.
 
 | Test | What it verifies |
 |---|---|
-| `test_deposit_flow_end_to_end` | Deposit transaction via API, verify account balance updated, commission recorded |
+| `test_cash_in_flow_end_to_end` | CashIn transaction via API, verify account balance updated, commission recorded |
 | `test_transfer_flow_cross_company` | Transfer from KBZ Bank account to KBZ Pay account, verify both balances, verify from/to accounts resolved to correct companies |
 | `test_company_deactivate_cascade` | Deactivating a company deactivates all its service_types; `GET /accounts?active=true` returns 0 for those service_types |
 
@@ -521,7 +521,7 @@ Phase 7 can be prepared (spec file edits) in parallel with Phase 5–6.
 
 | Test ID | Steps | Pass Criterion |
 |---|---|---|
-| AC-01 | Open transaction form → Deposit tab → select "KBZ Pay" company | KBZ Pay logo appears; ServiceType dropdown shows "WST", "Pay_To_Pay" |
+| AC-01 | Open transaction form → CashIn tab → select "KBZ Pay" company | KBZ Pay logo appears; ServiceType dropdown shows "WST", "Pay_To_Pay" |
 | AC-02 | Select WST, select account, enter 50000, click Calculate | Commission preview shows 1000 (fee) + 200 (commission) per KPAY_WST tier |
 | AC-03 | Open transaction form → Transfer tab | Two company selectors appear: "Customer pays in via" and "Shop pays out via" |
 | AC-04 | Kill server process, open transaction form | Logo placeholder (initial letter) renders for each company |

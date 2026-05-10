@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS transactions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     transaction_type      TEXT NOT NULL
-                          CHECK(transaction_type IN ('deposit','withdraw','transfer','exchange')),
+                          CHECK(transaction_type IN ('cash_in','cash_out','transfer','exchange')),
     account_id            INTEGER NOT NULL,
     to_account_id         INTEGER,
     customer_name         TEXT,
@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     cash_approved_by      INTEGER,
     cash_approved_at      TEXT,
+    status                TEXT NOT NULL DEFAULT 'CONFIRMED'
+                          CHECK(status IN ('PENDING_CASHIER_CONFIRM','CONFIRMED','REJECTED')),
+    vault_impact          TEXT
+                          CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none')),
+    confirmed_by          INTEGER,
+    confirmed_at          TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -107,16 +113,16 @@ CREATE TABLE IF NOT EXISTS commission_tiers (
     amount_to                      REAL,
     fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED'
                                    CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
-    fee_amount_deposit             REAL NOT NULL DEFAULT 0.0,
-    fee_amount_withdraw            REAL NOT NULL DEFAULT 0.0,
+    fee_amount_cash_in             REAL NOT NULL DEFAULT 0.0,
+    fee_amount_cash_out            REAL NOT NULL DEFAULT 0.0,
     comm_type                      TEXT NOT NULL DEFAULT 'FIXED'
                                    CHECK(comm_type IN ('FIXED','PERCENTAGE')),
-    comm_deposit                   REAL NOT NULL DEFAULT 0.0,
-    comm_withdraw                  REAL NOT NULL DEFAULT 0.0,
+    comm_cash_in                   REAL NOT NULL DEFAULT 0.0,
+    comm_cash_out                  REAL NOT NULL DEFAULT 0.0,
     additional_fee_type            TEXT NOT NULL DEFAULT 'FIXED'
                                    CHECK(additional_fee_type IN ('FIXED','PERCENTAGE')),
-    additional_fee_deposit_amount  REAL NOT NULL DEFAULT 0.0,
-    additional_fee_withdraw_amount REAL NOT NULL DEFAULT 0.0,
+    additional_fee_cash_in_amount  REAL NOT NULL DEFAULT 0.0,
+    additional_fee_cash_out_amount REAL NOT NULL DEFAULT 0.0,
     is_active                      INTEGER NOT NULL DEFAULT 1,
     created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -152,7 +158,7 @@ VALUES
 _SEED_COMMISSION_TIERS = """
 INSERT OR IGNORE INTO commission_tiers
     (service_type, account_type, amount_from, amount_to,
-     comm_deposit, comm_withdraw)
+     comm_cash_in, comm_cash_out)
 VALUES
 ('KPAY_WST',            'agent',    NULL, NULL, 500.0, 500.0),
 ('WAVE_WST',            'agent',    NULL, NULL, 400.0, 400.0),
@@ -213,6 +219,7 @@ def make_db_patch(conn):
         "repositories.account_repository.get_cursor",
         "repositories.commission_tier_repository.get_cursor",
         "repositories.transaction_repository.get_cursor",
+        "repositories.cash_denomination_repository.get_cursor",
         "repositories.exchange_rate_repository.get_cursor",
         "repositories.user_repository.get_cursor",
         "viewmodels.transaction_viewmodel.get_cursor",
@@ -255,8 +262,9 @@ def seeded_db(tmp_db):
     Extends tmp_db by running _migrate_004 so that companies, service_types
     are present and accounts/commission_tiers use service_type_id FKs.
     """
-    from backend.database import _migrate_004
+    from backend.database import _migrate_004, _migrate_010
     _migrate_004(tmp_db)
+    _migrate_010(tmp_db)
     yield tmp_db
 
 

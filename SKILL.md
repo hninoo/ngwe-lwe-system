@@ -75,7 +75,7 @@ View ↔ ViewModel → Repository → MySQL
 | `users` | Owner + Employee accounts |
 | `services` | KPay, Wave, KBZ etc (14 services) |
 | `accounts` | Phone numbers per service (Personal/Agent) |
-| `transactions` | Deposit, Withdraw, Transfer, Exchange |
+| `transactions` | CashIn, CashOut, Transfer, Exchange |
 | `exchange_rates` | MMK ↔ THB rates |
 | `daily_summary` | Auto-calculated daily report |
 | `activity_logs` | All user actions (audit trail) |
@@ -96,8 +96,8 @@ All 3 service types (KPAY, WAVE, BANK) use `commission_tiers` table.
 | Field | Purpose |
 |---|---|
 | `fee_amount` | Customer charge (ကောက်ခံမည့်) |
-| `comm_send` | Agent earns on **Deposit** (customer sends in) |
-| `comm_receive` | Agent earns on **Withdraw** (customer takes out) |
+| `comm_send` | Agent earns on **CashIn** (customer sends in) |
+| `comm_receive` | Agent earns on **CashOut** (customer takes out) |
 
 - Tier lookup: `service_type` + `account_type` + `amount_from <= amount <= amount_to`
 - BANK tiers: owner manually sets via Settings
@@ -108,8 +108,8 @@ All 3 service types (KPAY, WAVE, BANK) use `commission_tiers` table.
 
 ## Transaction Types
 
-1. **Deposit (အသွင်း)** — Customer ငွေသား ပေး → wallet ထဲ လွှဲ
-2. **Withdraw (အထုတ်)** — Customer wallet → ငွေသား ထုတ်ပေး
+1. **CashIn (အသွင်း)** — Customer ငွေသား ပေး → wallet ထဲ လွှဲ
+2. **CashOut (အထုတ်)** — Customer wallet → ငွေသား ထုတ်ပေး
 3. **Bank Transfer (ဘဏ်ချင်းငွေလဲ)** — Account A → Account B
 4. **Exchange (ကျပ်-ဘတ်)** — MMK ↔ THB
 
@@ -186,7 +186,7 @@ App start logic:
 4. Repository layer
 5. Login screen
 6. Owner Dashboard
-7. Transaction Form (Deposit/Withdraw)
+7. Transaction Form (CashIn/CashOut)
 8. WebSocket real-time sync
 9. Screenshot system
 10. Employee view

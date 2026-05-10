@@ -64,8 +64,8 @@ def close_day(
     recon_id = _recon_repo.save({
         "recon_date": snapshot["date"],
         "closed_by": current_user["user_id"],
-        "total_deposit": snapshot["summary"]["total_deposit"],
-        "total_withdraw": snapshot["summary"]["total_withdraw"],
+        "total_cash_in": snapshot["summary"]["total_cash_in"],
+        "total_cash_out": snapshot["summary"]["total_cash_out"],
         "total_transfer": snapshot["summary"]["total_transfer"],
         "total_exchange": snapshot["summary"]["total_exchange"],
         "total_commission": snapshot["summary"]["total_commission"],
@@ -145,7 +145,7 @@ def _build_snapshot() -> dict:
     # Full denomination inventory for the Closing Dashboard
     denomination_inventory = _vault_service.get_denomination_inventory()
 
-    pending_deposits = [
+    pending_cash_ins = [
         {
             "id": t.id,
             "account_id": t.account_id,
@@ -155,7 +155,7 @@ def _build_snapshot() -> dict:
             "created_at": str(t.created_at) if t.created_at else None,
         }
         for t in txns
-        if t.transaction_type == "deposit" and t.cash_approved_by is None
+        if t.transaction_type == "cash_in" and t.cash_approved_by is None
     ]
 
     total_digital = sum(a["closing_balance"] for a in account_data)
@@ -170,7 +170,7 @@ def _build_snapshot() -> dict:
         "employee_floats": float_summaries,
         "employee_floats_total": employee_floats_total,
         "denomination_inventory": denomination_inventory,
-        "pending_deposits": pending_deposits,
+        "pending_cash_ins": pending_cash_ins,
         "total_cash": total_cash,
         "total_digital": total_digital,
         "grand_total": total_cash + total_digital,

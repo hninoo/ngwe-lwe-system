@@ -147,8 +147,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sidebar_cashier":      {"mm": "ငွေကိုင်",                  "en": "Cashier"},
 
     # ── Dashboard stats ──
-    "todays_deposits":      {"mm": "ယနေ့ ငွေသွင်းစုစုပေါင်း",  "en": "Today's Deposits"},
-    "todays_withdrawals":   {"mm": "ယနေ့ ငွေထုတ်စုစုပေါင်း",   "en": "Today's Withdrawals"},
+    "todays_cash_ins":      {"mm": "ယနေ့ ငွေသွင်းစုစုပေါင်း",  "en": "Today's CashIns"},
+    "todays_cash_outs":   {"mm": "ယနေ့ ငွေထုတ်စုစုပေါင်း",   "en": "Today's CashOuts"},
     "transfers":            {"mm": "လွှဲငွေများ",                "en": "Transfers"},
     "exchange":             {"mm": "ငွေလဲလှယ်",                 "en": "Exchange"},
     "fees_commission":      {"mm": "ကြေးနှင့် ကော်မရှင်",      "en": "Fees & Commission"},
@@ -183,8 +183,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
     # ── Transaction form ──
     "transaction":          {"mm": "ငွေလွှဲ",                   "en": "Transaction"},
-    "action_deposit":       {"mm": "ငွေသွင်း",                  "en": "Deposit"},
-    "action_withdraw":      {"mm": "ငွေထုတ်",                   "en": "Withdraw"},
+    "action_cash_in":       {"mm": "ငွေသွင်း",                  "en": "CashIn"},
+    "action_cash_out":      {"mm": "ငွေထုတ်",                   "en": "CashOut"},
     "action_transfer":      {"mm": "လွှဲပြောင်း",               "en": "Transfer"},
     "action_exchange":      {"mm": "ငွေလဲ",                     "en": "Exchange"},
     "field_service":        {"mm": "ဝန်ဆောင်မှု",               "en": "Service"},
@@ -229,8 +229,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "reports_title":        {"mm": "နေ့စဥ် အစီရင်ခံစာ",        "en": "Daily Report"},
     "date_label":           {"mm": "ရက်:",                      "en": "Date:"},
     "load_report":          {"mm": "အစီရင်ခံစာတင်မည်",         "en": "Load Report"},
-    "total_deposit":        {"mm": "ငွေသွင်းစုစုပေါင်း",        "en": "Total Deposit"},
-    "total_withdraw":       {"mm": "ငွေထုတ်စုစုပေါင်း",         "en": "Total Withdraw"},
+    "total_cash_in":        {"mm": "ငွေသွင်းစုစုပေါင်း",        "en": "Total CashIn"},
+    "total_cash_out":       {"mm": "ငွေထုတ်စုစုပေါင်း",         "en": "Total CashOut"},
     "total_transfer":       {"mm": "လွှဲပြောင်းစုစုပေါင်း",     "en": "Total Transfer"},
     "total_exchange":       {"mm": "ငွေလဲစုစုပေါင်း",          "en": "Total Exchange"},
     "total_commission":     {"mm": "ကော်မရှင်စုစုပေါင်း",       "en": "Total Commission"},
@@ -482,7 +482,7 @@ toggle persists and retranslates both dialogs without restart.
    `DashboardView._build_sidebar()` and call `t()` per item, or store the sidebar
    buttons as instance attrs keyed by page index and update in `retranslate_ui()`.
 2. `DashboardPage`:
-   - Translate stat card labels (`"Today's Deposits"` etc.).
+   - Translate stat card labels (`"Today's CashIns"` etc.).
    - Translate table headers for `_txn_table`.
    - Store stat-card label widgets in `_stat_labels_text: dict[str, QLabel]` (separate
      from `_stat_labels` which holds value labels) so they can be updated.
@@ -637,7 +637,7 @@ integrate the language switcher end-to-end.
    `"CLOSED"`) are either mapped through the translation dict or deliberately left
    as-is (they may be API-canonical codes).
    [NEEDS CLARIFICATION: Should API-returned enum values like "PENDING", "ACTIVE",
-   "CLOSED", "deposit", "withdraw" be displayed as-is (unchanged from API) or
+   "CLOSED", "cash_in", "cash_out" be displayed as-is (unchanged from API) or
    translated? If translated, a mapping in i18n.py is needed.]
 5. Test with long Myanmar strings to confirm no layout truncation in sidebar
    buttons (fixed-width 200px) or table headers.
@@ -827,7 +827,7 @@ throughout this document:
    `mm` is active?
 
 4. **API enum display** — Should API-returned status and type codes (`"PENDING"`,
-   `"ACTIVE"`, `"CLOSED"`, `"deposit"`, `"withdraw"`, etc.) be translated into
+   `"ACTIVE"`, `"CLOSED"`, `"cash_in"`, `"cash_out"`, etc.) be translated into
    Myanmar in the UI, or displayed as-is for professional/operational clarity?
 
 5. **In-app language selector** — Should a language toggle also appear inside the

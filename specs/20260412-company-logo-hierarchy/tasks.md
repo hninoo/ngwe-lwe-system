@@ -196,7 +196,7 @@ tests/test_service_type_repository.py  (new file)
 **File**: `tests/test_commission_tier_repository.py`
 
 Write tests for the updated `CommissionTierRepository.get_tier_for_amount(service_type_id, amount)` signature. Tests must cover:
-- `test_tier_lookup_by_id`: `get_tier_for_amount(service_type_id=<kpay_wst_id>, amount=50000)` returns the correct tier (verify `comm_deposit` matches seeded value).
+- `test_tier_lookup_by_id`: `get_tier_for_amount(service_type_id=<kpay_wst_id>, amount=50000)` returns the correct tier (verify `comm_cash_in` matches seeded value).
 - `test_tier_lookup_wave_wst`: Wave Money WST lookup returns distinct tier from KBZ Pay WST.
 - `test_tier_lookup_true_money`: True Money WST has its own dedicated tier row.
 - `test_tier_lookup_no_match`: Returns `None` for a service_type_id with no tier rows.
@@ -214,8 +214,8 @@ tests/test_commission_tier_repository.py  (new file)
 **File**: `tests/test_transaction_viewmodel.py`
 
 Write regression tests verifying commission amounts are preserved after the `service_type_id` refactor. Tests must cover:
-- `test_commission_calc_kpay_wst`: Commission for KBZ Pay WST account at 50,000 MMK matches expected value (use seeded tier's `comm_deposit`).
-- `test_commission_calc_wave_wst`: Commission for Wave Money WST agent account at 10,000 MMK returns the correct tier's `comm_deposit`.
+- `test_commission_calc_kpay_wst`: Commission for KBZ Pay WST account at 50,000 MMK matches expected value (use seeded tier's `comm_cash_in`).
+- `test_commission_calc_wave_wst`: Commission for Wave Money WST agent account at 10,000 MMK returns the correct tier's `comm_cash_in`.
 - `test_commission_calc_wave_account`: Commission for Wave Money Pay_To_Pay personal account returns correct tier.
 - `test_commission_calc_true_money_wst`: True Money WST returns its own dedicated tier (not KPAY tier).
 
@@ -306,12 +306,12 @@ tests/test_commission_tier_routes.py  (new file)
 
 ---
 
-### T018 — Write integration tests: deposit/transfer end-to-end [P] [X]
+### T018 — Write integration tests: cash_in/transfer end-to-end [P] [X]
 
 **File**: `tests/test_integration.py`
 
 Write integration tests that exercise the full API stack:
-- `test_deposit_flow_end_to_end`: POST a deposit transaction via `/transactions/` with a seeded account → assert 201 response, assert account balance updated via `GET /accounts/{id}`, assert commission recorded.
+- `test_cash_in_flow_end_to_end`: POST a cash_in transaction via `/transactions/` with a seeded account → assert 201 response, assert account balance updated via `GET /accounts/{id}`, assert commission recorded.
 - `test_transfer_flow_cross_company`: POST a transfer from a KBZ Bank account to a KBZ Pay account → assert both balances updated, assert response includes `from_company_id` and `to_company_id`.
 - `test_company_deactivate_cascade`: PATCH company `is_active=false` → `GET /accounts/?active=true` returns empty list for accounts linked to that company's service_types.
 
@@ -451,7 +451,7 @@ class ServiceType:
     id: Optional[int] = None
     company_id: Optional[int] = None
     name: Optional[str] = None       # 'WST' | 'Pay_To_Pay' | 'Transfer' | 'Exchange'
-    operation: Optional[str] = None  # 'Deposit'|'Withdraw'|'Transfer'|'Exchange'|'All'
+    operation: Optional[str] = None  # 'CashIn'|'CashOut'|'Transfer'|'Exchange'|'All'
     is_active: Optional[bool] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -493,14 +493,14 @@ class CommissionTier:
     amount_from: Optional[float] = None
     amount_to: Optional[float] = None
     fee_amount_type: str = "FIXED"
-    fee_amount_deposit: Optional[float] = None
-    fee_amount_withdraw: Optional[float] = None
+    fee_amount_cash_in: Optional[float] = None
+    fee_amount_cash_out: Optional[float] = None
     comm_type: str = "FIXED"
-    comm_deposit: Optional[float] = None
-    comm_withdraw: Optional[float] = None
+    comm_cash_in: Optional[float] = None
+    comm_cash_out: Optional[float] = None
     additional_fee_type: str = "FIXED"
-    additional_fee_deposit_amount: Optional[float] = None
-    additional_fee_withdraw_amount: Optional[float] = None
+    additional_fee_cash_in_amount: Optional[float] = None
+    additional_fee_cash_out_amount: Optional[float] = None
     is_active: Optional[bool] = None
 ```
 
@@ -662,8 +662,8 @@ Remove the `_map_tier_service_type` helper function and update all references to
 2. Remove `service_repo` parameter from `__init__` and `self._service_repo`.
 3. Delete the `_map_tier_service_type` function.
 4. In `_get_tier(account, amount)`: replace the string mapping call with `return self._tier_repo.get_tier_for_amount(account.service_type_id, amount)`. Remove `service_type` and `account_type` local variables.
-5. In `create_transfer`: add `from_company_id` and `to_company_id` fields to the `data` dict, resolved from `from_account.service_type_id` → `service_types.company_id` via a lightweight `ServiceTypeRepository` lookup. Pass `None` for deposit/withdraw transactions.
-6. Similarly update `create_deposit`, `create_withdraw`, `create_exchange` to pass `from_company_id` (resolved from `account.service_type_id`).
+5. In `create_transfer`: add `from_company_id` and `to_company_id` fields to the `data` dict, resolved from `from_account.service_type_id` → `service_types.company_id` via a lightweight `ServiceTypeRepository` lookup. Pass `None` for cash_in/cash_out transactions.
+6. Similarly update `create_cash_in`, `create_cash_out`, `create_exchange` to pass `from_company_id` (resolved from `account.service_type_id`).
 
 **Gate**: T012 tests pass (green).
 
@@ -882,7 +882,7 @@ This is the highest-risk UI task. Implement carefully:
 
 1. **Remove** `_map_tier_service_type` function at module top.
 2. **Add imports**: `from views.widgets.company_logo_label import get_logo_pixmap, clear_logo_cache` and `from views.widgets.company_selector import CompanySelector, ServiceTypeSelector, AccountSelector`.
-3. **For Deposit/Withdraw tabs**: replace the flat account `QComboBox` with a three-level cascade:
+3. **For CashIn/CashOut tabs**: replace the flat account `QComboBox` with a three-level cascade:
    - `CompanySelector` — a **logo-based button row** (not a combobox); populated from `api_client.get_companies()`, displaying each company's logo image (32×32 with letter fallback); selecting a logo emits `company_changed(company_id)`.
    - `ServiceTypeSelector` — a `QComboBox` populated from `api_client.get_service_types(company_id)` on `company_changed` signal; shows only service types belonging to the selected company.
    - `AccountSelector` — a `QComboBox` populated from `api_client.get_accounts(company_id=..., service_type_id=...)` on service type selection change.

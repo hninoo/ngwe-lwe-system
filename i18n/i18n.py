@@ -84,8 +84,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "sidebar_cashier":        {"mm": "ငွေကိုင်",                  "en": "Cashier"},
 
     # ── Dashboard stats ──────────────────────────────────
-    "todays_deposits":        {"mm": "ယနေ့ ငွေသွင်းစုစုပေါင်း",  "en": "Today's Deposits"},
-    "todays_withdrawals":     {"mm": "ယနေ့ ငွေထုတ်စုစုပေါင်း",   "en": "Today's Withdrawals"},
+    "todays_cash_ins":        {"mm": "ယနေ့ ငွေသွင်းစုစုပေါင်း",  "en": "Today's CashIns"},
+    "todays_cash_outs":     {"mm": "ယနေ့ ငွေထုတ်စုစုပေါင်း",   "en": "Today's CashOuts"},
     "transfers":              {"mm": "လွှဲငွေများ",               "en": "Transfers"},
     "exchange":               {"mm": "ငွေလဲလှယ်",                "en": "Exchange"},
     "fees_commission":        {"mm": "ကြေးနှင့် ကော်မရှင်",      "en": "Fees & Commission"},
@@ -141,8 +141,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
     # ── Transaction form ─────────────────────────────────
     "transaction":            {"mm": "ငွေလွှဲ",                   "en": "Transaction"},
-    "action_deposit":         {"mm": "Cash In (ငွေသွင်း)",        "en": "Cash In"},
-    "action_withdraw":        {"mm": "Cash Out (ငွေထုတ်)",        "en": "Cash Out"},
+    "action_cash_in":         {"mm": "Cash In (ငွေသွင်း)",        "en": "Cash In"},
+    "action_cash_out":        {"mm": "Cash Out (ငွေထုတ်)",        "en": "Cash Out"},
     "action_transfer":        {"mm": "လွှဲပြောင်း",               "en": "Transfer"},
     "action_exchange":        {"mm": "ငွေလဲ",                     "en": "Exchange"},
     "field_company":          {"mm": "ကုမ္ပဏီ",                   "en": "Company"},
@@ -246,8 +246,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── Reports page ──────────────────────────────────────
     "reports_title":          {"mm": "နေ့စဥ် အစီရင်ခံစာ",        "en": "Daily Report"},
     "load_report":            {"mm": "အစီရင်ခံစာတင်မည်",          "en": "Load Report"},
-    "total_deposit":          {"mm": "ငွေသွင်းစုစုပေါင်း",        "en": "Total Deposit"},
-    "total_withdraw":         {"mm": "ငွေထုတ်စုစုပေါင်း",         "en": "Total Withdraw"},
+    "total_cash_in":          {"mm": "ငွေသွင်းစုစုပေါင်း",        "en": "Total CashIn"},
+    "total_cash_out":         {"mm": "ငွေထုတ်စုစုပေါင်း",         "en": "Total CashOut"},
     "total_transfer":         {"mm": "လွှဲပြောင်းစုစုပေါင်း",     "en": "Total Transfer"},
     "total_exchange":         {"mm": "ငွေလဲစုစုပေါင်း",           "en": "Total Exchange"},
     "total_commission":       {"mm": "ကော်မရှင်စုစုပေါင်း",       "en": "Total Commission"},
@@ -283,11 +283,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tier_col_from":          {"mm": "မှ (MMK)",                   "en": "From (MMK)"},
     "tier_col_to":            {"mm": "သို့ (MMK)",                 "en": "To (MMK)"},
     "tier_col_fee_type":      {"mm": "ကြေးအမျိုး",               "en": "Fee Type"},
-    "tier_col_fee_dep":       {"mm": "ကြေး (သွင်း)",              "en": "Fee Deposit"},
-    "tier_col_fee_with":      {"mm": "ကြေး (ထုတ်)",               "en": "Fee Withdraw"},
+    "tier_col_fee_dep":       {"mm": "ကြေး (သွင်း)",              "en": "Fee CashIn"},
+    "tier_col_fee_with":      {"mm": "ကြေး (ထုတ်)",               "en": "Fee CashOut"},
     "tier_col_comm_type":     {"mm": "ကော်မရှင်အမျိုး",           "en": "Comm Type"},
-    "tier_col_comm_dep":      {"mm": "ကော်မရှင် (သွင်း)",         "en": "Comm Deposit"},
-    "tier_col_comm_with":     {"mm": "ကော်မရှင် (ထုတ်)",          "en": "Comm Withdraw"},
+    "tier_col_comm_dep":      {"mm": "ကော်မရှင် (သွင်း)",         "en": "Comm CashIn"},
+    "tier_col_comm_with":     {"mm": "ကော်မရှင် (ထုတ်)",          "en": "Comm CashOut"},
     "tier_col_add_type":      {"mm": "ထပ်ကြေးအမျိုး",             "en": "Add-on Type"},
     "tier_col_add_dep":       {"mm": "ထပ်ကြေး (သွင်း)",           "en": "Add-on Dep"},
     "tier_col_add_with":      {"mm": "ထပ်ကြေး (ထုတ်)",            "en": "Add-on With"},
@@ -610,7 +610,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "closing_physical_section":{"mm": "ငွေသား (လက်ကိုင်)",            "en": "Physical Cash"},
     "closing_main_vault":      {"mm": "ပင်မ ငွေသေတ္တာ",               "en": "Main Vault Balance"},
     "closing_employee_floats": {"mm": "ဝန်ထမ်းများ လက်ကိုင်ငွေ",     "en": "Employee Cash in Hand"},
-    "closing_pending_deposits":{"mm": "ငွေသေတ္တာ မဝင်သေးသော အပ်ငွေ", "en": "Pending Deposits (Not in Vault)"},
+    "closing_pending_cash_ins":{"mm": "ငွေသေတ္တာ မဝင်သေးသော အပ်ငွေ", "en": "Pending CashIns (Not in Vault)"},
     "col_opening_bal":         {"mm": "ဖွင့်ချိန်",                    "en": "Opening"},
     "col_net_change":          {"mm": "ကွာခြားချက်",                   "en": "Net Change"},
     "col_closing_bal":         {"mm": "ပိတ်ချိန်",                    "en": "Closing"},
@@ -627,7 +627,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "closing_day_closed":      {"mm": "နေ့ ပိတ်သိမ်းပြီး။",            "en": "Day closed successfully."},
     "closing_loading":         {"mm": "ဒေတာ ဆွဲယူနေသည်...",           "en": "Loading data..."},
     "closing_no_floats":       {"mm": "ACTIVE Float မရှိပါ",           "en": "No active employee floats"},
-    "closing_no_pending":      {"mm": "Pending အပ်ငွေ မရှိပါ",         "en": "No pending deposits"},
+    "closing_no_pending":      {"mm": "Pending အပ်ငွေ မရှိပါ",         "en": "No pending cash_ins"},
 
     # Multi-vault bidirectional flow
     "float_status_pending_receipt": {"mm": "လက်ခံဆဲ",                  "en": "Pending Receipt"},

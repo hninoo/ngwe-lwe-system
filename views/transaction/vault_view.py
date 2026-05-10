@@ -177,6 +177,9 @@ class VaultPage(QWidget):
         self._go_back = go_back
         self._denom_cards: dict[int, tuple[QLabel, QLabel]] = {}
         self._total_label: Optional[QLabel] = None
+        self._title_label: Optional[QLabel] = None
+        self._denom_title_label: Optional[QLabel] = None
+        self._helper_label: Optional[QLabel] = None
         self._history_table: Optional[QTableWidget] = None
         self._active_float: Optional[dict] = None
         self._pending_float: Optional[dict] = None
@@ -197,10 +200,10 @@ class VaultPage(QWidget):
         outer.addWidget(scroll)
 
         top = QHBoxLayout()
-        title = QLabel("Vault Overview")
-        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        top.addWidget(title)
+        self._title_label = QLabel(self._vault_label())
+        self._title_label.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        self._title_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        top.addWidget(self._title_label)
         top.addStretch()
         refresh = _accent_btn(t("refresh"), ACCENT_BLUE)
         refresh.clicked.connect(self.load_data)
@@ -223,7 +226,8 @@ class VaultPage(QWidget):
         )
         cl = QVBoxLayout(card)
         cl.setContentsMargins(16, 16, 16, 16)
-        cl.addWidget(QLabel("Denomination Balances"))
+        self._denom_title_label = QLabel(f"{self._vault_label()} Denomination Balances")
+        cl.addWidget(self._denom_title_label)
         grid = QGridLayout()
         grid.setSpacing(10)
         for col, denom in enumerate(reversed(DENOMINATIONS)):
@@ -256,6 +260,9 @@ class VaultPage(QWidget):
         self._total_label.setStyleSheet(f"color: {ACCENT_GREEN};")
         total_row.addWidget(self._total_label)
         cl.addLayout(total_row)
+        self._helper_label = QLabel(self._vault_helper())
+        self._helper_label.setStyleSheet(f"color: {TEXT_SECONDARY}; border: none; font-size: 12px;")
+        cl.addWidget(self._helper_label)
         layout.addWidget(card)
 
         hist = QLabel("Vault History")
@@ -275,6 +282,12 @@ class VaultPage(QWidget):
 
     def load_data(self) -> None:
         try:
+            if self._title_label:
+                self._title_label.setText(self._vault_label())
+            if self._denom_title_label:
+                self._denom_title_label.setText(f"{self._vault_label()} Denomination Balances")
+            if self._helper_label:
+                self._helper_label.setText(self._vault_helper())
             history = self._repo.fetch_vault_history()
             floats = history.get("floats", [])
             self._active_float = self._repo.get_active_float()
@@ -289,7 +302,11 @@ class VaultPage(QWidget):
     def _populate_denominations(self) -> None:
         balance = {}
         total = 0
-        if self._active_float:
+        if self._is_cashier():
+            data = self._repo.api.get_vault()
+            balance = data.get("denominations", {}) or {}
+            total = int(data.get("total", 0) or 0)
+        elif self._active_float:
             data = self._repo.get_float_balance(self._active_float["id"])
             balance = data.get("denominations", {}) or {}
             total = int(data.get("total", 0) or 0)
@@ -299,6 +316,17 @@ class VaultPage(QWidget):
             value_label.setText(f"{denom * qty:,} MMK")
         if self._total_label:
             self._total_label.setText(f"{total:,} MMK")
+
+    def _is_cashier(self) -> bool:
+        return ((self._repo.api.user or {}).get("role") or "").lower() == "cashier"
+
+    def _vault_label(self) -> str:
+        return "Main Vault" if self._is_cashier() else "Mini Vault"
+
+    def _vault_helper(self) -> str:
+        if self._is_cashier():
+            return "Main Vault reflects float issues, returns, and confirmed Cash In handovers."
+        return "Mini Vault is used for Cash Out only; Cash In is handed to the Cashier."
 
     def _populate_history(self, floats: list[dict], transactions: list[dict]) -> None:
         if self._history_table is None:
@@ -414,15 +442,15 @@ class VaultPage(QWidget):
     def _build_transaction_history_rows(self, transactions: list[dict]) -> list[dict]:
         rows: list[dict] = []
         labels = {
-            "deposit": "Cash In",
-            "withdraw": "Cash Out",
+            "cash_in": "Cash In",
+            "cash_out": "Cash Out",
             "transfer": "Transfer",
             "exchange": "Exchange",
         }
         for txn in transactions:
             txn_type = (txn.get("transaction_type") or txn.get("txn_type") or "").lower()
             amount = float(txn.get("amount") or 0)
-            if txn_type == "deposit":
+            if txn_type == "cash_in":
                 signed_amount = f"+{amount:,.0f}"
                 status = "Vault Increased"
             else:

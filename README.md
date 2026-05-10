@@ -49,7 +49,7 @@ ngwe-lwe-system/
 Full access: dashboard monitoring, account management, user management, exchange rates, commission tiers, reports, company and service-type hierarchy, fee account configuration.
 
 ### Employee
-Transaction entry only: Deposit, Withdraw, Transfer, Exchange. Selects account, amount, customer details, attaches screenshot, and submits.
+Transaction entry only: CashIn, CashOut, Transfer, Exchange. Selects account, amount, customer details, attaches screenshot, and submits.
 
 ### Cashier
 Cash float management: issues float to employees, approves cash for transactions, records vault entries, closes float sessions. Limited to cash operations — no transaction entry.
@@ -57,7 +57,7 @@ Cash float management: issues float to employees, approves cash for transactions
 ## Features
 
 - **Three roles:** Owner, Employee, Cashier
-- **4 transaction types:** Deposit, Withdraw, Transfer, Exchange (MMK/THB)
+- **4 transaction types:** CashIn, CashOut, Transfer, Exchange (MMK/THB)
 - **Company / service-type hierarchy:** Companies group service types; accounts belong to service types
 - **Fee accounts:** Accounts flagged `is_fee_account=1` appear in the fee dropdown on transactions
 - **Commission tiers:** Dynamic fee/commission lookup by service, account type, and amount range
@@ -151,8 +151,8 @@ python main.py
 | DELETE | `/accounts/{id}` | Deactivate account (owner) |
 | PATCH | `/accounts/{id}/balance` | Set balance (owner) |
 | POST | `/accounts/{id}/balance-adjust` | Adjust balance with log (owner) |
-| POST | `/transactions/deposit` | Create deposit |
-| POST | `/transactions/withdraw` | Create withdrawal |
+| POST | `/transactions/cash_in` | Create cash_in |
+| POST | `/transactions/cash_out` | Create cash_out |
 | POST | `/transactions/transfer` | Create transfer |
 | POST | `/transactions/exchange` | Create currency exchange |
 | GET | `/transactions/` | List transactions with filters (owner) |
@@ -175,7 +175,7 @@ python main.py
 | POST | `/users/{id}/pin` | Set cashier PIN |
 | POST | `/users/change-password` | Change own password |
 | GET | `/cashier/vault` | Get vault balance |
-| POST | `/cashier/vault/entry` | Record vault deposit / adjustment |
+| POST | `/cashier/vault/entry` | Record vault cash_in / adjustment |
 | GET | `/cashier/vault/logs` | Vault denomination logs |
 | GET | `/cashier/floats` | List float assignments |
 | POST | `/cashier/floats` | Issue float to employee (cashier) |

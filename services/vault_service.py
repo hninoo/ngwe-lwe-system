@@ -6,7 +6,7 @@ VaultService — central orchestrator for all vault/float operations.
 Float lifecycle:
     Cashier issues    →  PENDING_RECEIPT         (main vault debited immediately)
     Employee confirms →  ACTIVE                  (PIN + denomination verification)
-    Employee withdraws → float denominations decremented per transaction
+    Employee cash_outs → float denominations decremented per transaction
     Employee returns  →  PENDING_RECONCILIATION  (cashier must count & confirm)
     Cashier confirms  →  CLOSED                  (main vault credited)
 """
@@ -190,9 +190,9 @@ class VaultService:
 
         return updated
 
-    # ── 3. Withdrawal — deduct denominations from employee float ──────────────
+    # ── 3. CashOut — deduct denominations from employee float ──────────────
 
-    def process_withdrawal(
+    def process_cash_out(
         self,
         float_id: int,
         employee_id: int,
@@ -210,14 +210,14 @@ class VaultService:
             raise ValueError(f"Float #{float_id} not found.")
         if cash_float.status != "ACTIVE":
             raise FloatStateError(
-                f"Float #{float_id} must be ACTIVE for withdrawal (status={cash_float.status})."
+                f"Float #{float_id} must be ACTIVE for cash_out (status={cash_float.status})."
             )
         if cash_float.employee_id != employee_id:
             raise ValueError("Float does not belong to this employee.")
 
         denoms = self.parse_denominations(denominations)
         if not denoms:
-            raise ValueError("Denomination breakdown is required for withdrawals.")
+            raise ValueError("Denomination breakdown is required for cash_outs.")
 
         current_balance = self._float_repo.get_denomination_balance(float_id)
         for denom, qty in denoms.items():
@@ -234,12 +234,12 @@ class VaultService:
         self._float_repo.deduct_float_balance(employee_id, total)
 
         self._vault_txn_repo.record_bulk(
-            txn_type="withdrawal",
+            txn_type="cash_out",
             float_id=float_id,
             denominations=denoms,
             performed_by=employee_id,
             transaction_id=transaction_id,
-            note=f"Withdrawal txn #{transaction_id}" if transaction_id else "Withdrawal",
+            note=f"CashOut txn #{transaction_id}" if transaction_id else "CashOut",
         )
 
         return self._float_repo.get_denomination_balance(float_id)
@@ -372,7 +372,7 @@ class VaultService:
 
     # ── Pre-validation (read-only, no writes) ─────────────────────────────────
 
-    def validate_withdrawal(
+    def validate_cash_out(
         self,
         float_id: int,
         employee_id: int,
@@ -387,14 +387,14 @@ class VaultService:
             raise ValueError(f"Float #{float_id} not found.")
         if cash_float.status != "ACTIVE":
             raise FloatStateError(
-                f"Float #{float_id} must be ACTIVE for a withdrawal (status={cash_float.status})."
+                f"Float #{float_id} must be ACTIVE for a cash_out (status={cash_float.status})."
             )
         if cash_float.employee_id != employee_id:
             raise ValueError("Float does not belong to this employee.")
 
         denoms = self.parse_denominations(denominations)
         if not denoms:
-            raise ValueError("Denomination breakdown is required for withdrawals.")
+            raise ValueError("Denomination breakdown is required for cash_outs.")
 
         # Denomination-level check
         current_balance = self._float_repo.get_denomination_balance(float_id)
@@ -410,7 +410,7 @@ class VaultService:
         if abs(denom_total - amount) > 1:
             raise ValueError(
                 f"Denomination total {denom_total:,.0f} does not match "
-                f"withdrawal amount {amount:,.0f}."
+                f"cash_out amount {amount:,.0f}."
             )
 
         float_balance = float(cash_float.current_balance or 0)

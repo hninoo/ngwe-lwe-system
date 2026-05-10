@@ -23,7 +23,7 @@ class VaultRepository:
     def get_cash_affecting_transactions(self, limit: int = 100) -> list[dict]:
         user_id = (self._api.user or {}).get("id") or (self._api.user or {}).get("user_id")
         txns = self._api.get_recent_transactions(limit=limit)
-        cash_types = {"deposit", "withdraw", "transfer", "exchange"}
+        cash_types = {"cash_in", "cash_out", "transfer", "exchange"}
         results = []
         for txn in txns:
             txn_type = (txn.get("transaction_type") or txn.get("txn_type") or txn.get("type") or "").lower()

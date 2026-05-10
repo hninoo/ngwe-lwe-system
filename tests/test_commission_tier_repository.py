@@ -35,7 +35,7 @@ def _get_service_type_id(seeded_db, company_name: str, st_name: str) -> int:
 def test_tier_lookup_by_id(seeded_db):
     """
     get_tier_for_amount(service_type_id=<kpay_wst_id>, amount=50000)
-    returns the correct tier (verify comm_deposit matches seeded value).
+    returns the correct tier (verify comm_cash_in matches seeded value).
     """
     from repositories.commission_tier_repository import CommissionTierRepository
 
@@ -47,8 +47,8 @@ def test_tier_lookup_by_id(seeded_db):
 
     assert tier is not None, "Should find a tier for KBZ Pay WST at 50000"
     assert tier.service_type_id == kpay_wst_id
-    assert tier.comm_deposit == 500.0, (
-        f"Expected comm_deposit=500.0, got {tier.comm_deposit}"
+    assert tier.comm_cash_in == 500.0, (
+        f"Expected comm_cash_in=500.0, got {tier.comm_cash_in}"
     )
 
 
@@ -69,8 +69,8 @@ def test_tier_lookup_wave_wst(seeded_db):
     assert wave_tier.service_type_id != kpay_tier.service_type_id, (
         "Wave WST and KPAY WST should be distinct tiers"
     )
-    assert wave_tier.comm_deposit == 400.0, (
-        f"Expected Wave WST comm_deposit=400.0, got {wave_tier.comm_deposit}"
+    assert wave_tier.comm_cash_in == 400.0, (
+        f"Expected Wave WST comm_cash_in=400.0, got {wave_tier.comm_cash_in}"
     )
 
 

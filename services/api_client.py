@@ -198,7 +198,7 @@ class ApiClient:
 
     # ── Transactions ──
 
-    def create_deposit(
+    def create_cash_in(
         self,
         account_id: int,
         amount: float,
@@ -210,7 +210,7 @@ class ApiClient:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
     ) -> dict:
-        return self._post("/transactions/deposit", {
+        return self._post("/transactions/cash_in", {
             "account_id": account_id,
             "amount": amount,
             "customer_name": customer_name,
@@ -222,7 +222,7 @@ class ApiClient:
             "note": note,
         })
 
-    def create_withdraw(
+    def create_cash_out(
         self,
         account_id: int,
         amount: float,
@@ -233,8 +233,9 @@ class ApiClient:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        denominations: Optional[dict[str, int]] = None,
     ) -> dict:
-        return self._post("/transactions/withdraw", {
+        return self._post("/transactions/cash_out", {
             "account_id": account_id,
             "amount": amount,
             "customer_name": customer_name,
@@ -244,6 +245,7 @@ class ApiClient:
             "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
+            "denominations": denominations,
         })
 
     def create_transfer(
@@ -327,6 +329,28 @@ class ApiClient:
     def approve_transaction(self, txn_id: int, denominations: dict, note: str | None = None) -> dict:
         return self._post(f"/cashier/transactions/{txn_id}/approve", {
             "denominations": denominations,
+            "note": note,
+        })
+
+    def get_pending_cash_ins(self) -> list[dict]:
+        return self._get("/cashier/pending-cash_ins")
+
+    def confirm_cash_in(
+        self,
+        txn_id: int,
+        pin: str,
+        denominations: dict,
+        note: str | None = None,
+    ) -> dict:
+        return self._post(f"/cashier/transactions/{txn_id}/confirm-cash_in", {
+            "pin": pin,
+            "denominations": denominations,
+            "note": note,
+        })
+
+    def reject_cash_in(self, txn_id: int, pin: str, note: str | None = None) -> dict:
+        return self._post(f"/cashier/transactions/{txn_id}/reject-cash_in", {
+            "pin": pin,
             "note": note,
         })
 

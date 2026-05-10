@@ -85,8 +85,8 @@ def test_lookup_tier_with_service_type_id(client, owner_headers, seeded_db):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert "comm_deposit" in data
-    assert data["comm_deposit"] == 500.0
+    assert "comm_cash_in" in data
+    assert data["comm_cash_in"] == 500.0
 
 
 def test_legacy_service_type_string_not_accepted(client, owner_headers):

@@ -21,7 +21,7 @@ _float_repo = CashFloatRepository()
 ws_manager: Optional[ConnectionManager] = None
 
 
-class DepositRequest(BaseModel):
+class CashInRequest(BaseModel):
     account_id: int
     amount: float = Field(gt=0)
     customer_name: str
@@ -33,7 +33,7 @@ class DepositRequest(BaseModel):
     note: Optional[str] = None
 
 
-class WithdrawRequest(BaseModel):
+class CashOutRequest(BaseModel):
     account_id: int
     amount: float = Field(gt=0)
     customer_name: str
@@ -99,9 +99,15 @@ async def _broadcast_new_transaction(txn_dict: dict) -> None:
     await ws_manager.broadcast({"type": "new_transaction", "transaction": txn_dict})
 
 
-@router.post("/deposit")
-async def create_deposit(
-    body: DepositRequest,
+async def _broadcast_cash_in_pending(txn_dict: dict) -> None:
+    if ws_manager is None:
+        return
+    await ws_manager.broadcast({"type": "cash_in_pending", "transaction": txn_dict})
+
+
+@router.post("/cash_in")
+async def create_cash_in(
+    body: CashInRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     if current_user["role"] == "cashier":
@@ -111,7 +117,7 @@ async def create_deposit(
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
     try:
-        txn = _txn_vm.create_deposit(
+        txn = _txn_vm.create_cash_in(
             account_id=body.account_id,
             amount=_money(body.amount),
             customer_name=body.customer_name,
@@ -127,14 +133,17 @@ async def create_deposit(
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)
-    await _broadcast_balances()
+    if txn_dict.get("status") == "PENDING_CASHIER_CONFIRM":
+        await _broadcast_cash_in_pending(txn_dict)
+    else:
+        await _broadcast_balances()
     await _broadcast_new_transaction(txn_dict)
     return txn_dict
 
 
-@router.post("/withdraw")
-async def create_withdraw(
-    body: WithdrawRequest,
+@router.post("/cash_out")
+async def create_cash_out(
+    body: CashOutRequest,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     if current_user["role"] == "cashier":
@@ -143,11 +152,9 @@ async def create_withdraw(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
-        if body.denominations is None:
-            raise HTTPException(422, "Employees must provide denomination breakdown for withdrawals.")
     employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
     try:
-        txn = _txn_vm.create_withdraw(
+        txn = _txn_vm.create_cash_out(
             account_id=body.account_id,
             amount=_money(body.amount),
             customer_name=body.customer_name,
@@ -162,7 +169,7 @@ async def create_withdraw(
             denominations=body.denominations,
         )
     except (InsufficientFloatError, InsufficientDenominationError) as exc:
-        raise HTTPException(422, detail=f"Vault Insufficient: {exc}")
+        raise HTTPException(409, detail=f"Insufficient Mini Vault balance for Cash Out: {exc}")
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)

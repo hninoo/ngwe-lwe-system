@@ -7,7 +7,7 @@ Sections
 ────────
   Digital  : All account balances with opening / net-change / closing columns.
   Physical : Main vault total + per-employee float balances.
-  Pending  : Today's deposits not yet approved by the cashier (cash not in vault).
+  Pending  : Today's cash_ins not yet approved by the cashier (cash not in vault).
   Summary  : Total Cash Assets, Total Digital Assets, Grand Total stat cards.
   Action   : "Close Day" button — snapshots everything and closes all active floats.
 """
@@ -229,8 +229,8 @@ class DailyClosingView(QWidget):
 
         self._layout.addWidget(physical_card)
 
-        # ── Pending Deposits ──────────────────────────────────────────────────
-        self._layout.addWidget(_section_lbl(t("closing_pending_deposits")))
+        # ── Pending CashIns ──────────────────────────────────────────────────
+        self._layout.addWidget(_section_lbl(t("closing_pending_cash_ins")))
         pending_card = _card()
         pending_lo = QVBoxLayout(pending_card)
         pending_lo.setContentsMargins(12, 12, 12, 12)
@@ -366,8 +366,8 @@ class DailyClosingView(QWidget):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 self._inventory_table.setItem(row, col, item)
 
-        # ── Pending deposits table ────────────────────────────────────────────
-        pending = snap.get("pending_deposits", [])
+        # ── Pending cash_ins table ────────────────────────────────────────────
+        pending = snap.get("pending_cash_ins", [])
         self._pending_table.setRowCount(len(pending))
         for row, dep in enumerate(pending):
             created = str(dep.get("created_at", ""))

@@ -38,7 +38,7 @@ class ExchangeRepository(TransactionOperationBase):
         )
         commission = self._calc_commission(account, amount, "send")
         customer_fee, additional_fee_amount = self._resolve_fee_values(
-            account, amount, "deposit", customer_fee, additional_fee_amount
+            account, amount, "cash_in", customer_fee, additional_fee_amount
         )
         from_company_id = self._get_company_id(account.service_type_id)
 
@@ -60,7 +60,7 @@ class ExchangeRepository(TransactionOperationBase):
                 "created_by": created_by,
                 "from_company_id": from_company_id,
             })
-            self._process_employee_withdrawal(
+            self._process_employee_cash_out(
                 employee_id, amount, denominations, active_float, txn_id
             )
             self._update_fee_account(fee_account_id, customer_fee)

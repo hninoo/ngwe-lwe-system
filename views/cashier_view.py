@@ -1294,7 +1294,7 @@ class CashApprovalDialog(QDialog):
             "TRANSFER": ACCENT_BLUE, "EXCHANGE": ACCENT_YELLOW,
         }.get(txn_type, TEXT_PRIMARY)
         # vault direction hint
-        direction = t("vault_in_hint") if self._txn.get("transaction_type") == "deposit" \
+        direction = t("vault_in_hint") if self._txn.get("transaction_type") == "cash_in" \
             else t("vault_out_hint")
         info = QLabel(
             f"Type: <span style='color:{type_color}'>{txn_type}</span>  |  "
@@ -1479,6 +1479,205 @@ class CashApprovalDialog(QDialog):
 # ════════════════════════════════════════════
 # Page 3: Transactions (with date filter + real-time + approval)
 # ════════════════════════════════════════════
+class PendingCashInConfirmDialog(QDialog):
+    def __init__(self, api: ApiClient, txn: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._txn = txn
+        self._expected = int(txn.get("amount", 0))
+        self._spinboxes: dict[int, QSpinBox] = {}
+        self._total_label: Optional[QLabel] = None
+        self._diff_label: Optional[QLabel] = None
+        self._pin_input: Optional[QLineEdit] = None
+        self._note_input: Optional[QLineEdit] = None
+        self._error_label: Optional[QLabel] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle("Confirm Pending Cash In")
+        self.setFixedWidth(460)
+        self.setStyleSheet(STYLESHEET)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        layout.addWidget(_section_label(f"Cash In Txn #{self._txn.get('id', '')}"))
+        layout.addWidget(QLabel(f"Expected: {self._expected:,.0f} MMK"))
+
+        grid = QGridLayout()
+        grid.addWidget(QLabel(t("col_denomination")), 0, 0)
+        grid.addWidget(QLabel(t("col_quantity")), 0, 1)
+        grid.addWidget(QLabel(t("col_value")), 0, 2)
+        for i, denom in enumerate(DENOMINATIONS):
+            row = i + 1
+            grid.addWidget(QLabel(f"{denom:,} MMK"), row, 0)
+            spin = QSpinBox()
+            spin.setRange(0, 99_999_999)
+            spin.valueChanged.connect(lambda _v: self._update_total())
+            self._spinboxes[denom] = spin
+            grid.addWidget(spin, row, 1)
+            grid.addWidget(QLabel(""), row, 2)
+        layout.addLayout(grid)
+
+        self._total_label = QLabel("0 MMK")
+        self._diff_label = QLabel("")
+        layout.addWidget(self._total_label)
+        layout.addWidget(self._diff_label)
+
+        self._pin_input = QLineEdit()
+        self._pin_input.setPlaceholderText("Cashier PIN")
+        self._pin_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pin_input.setMaxLength(6)
+        layout.addWidget(self._pin_input)
+
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText(t("note_optional"))
+        layout.addWidget(self._note_input)
+
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        submit = _accent_btn("Confirm Cash In", ACCENT_GREEN)
+        submit.clicked.connect(self._on_submit)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(submit)
+        layout.addLayout(btn_row)
+        self._update_total()
+
+    def _update_total(self) -> None:
+        total = sum(d * spin.value() for d, spin in self._spinboxes.items())
+        diff = total - self._expected
+        if self._total_label:
+            self._total_label.setText(f"Total Counted: {total:,.0f} MMK")
+        if self._diff_label:
+            self._diff_label.setText(f"Difference: {diff:+,.0f} MMK")
+            self._diff_label.setStyleSheet(
+                f"color: {ACCENT_GREEN if abs(diff) <= CASH_TOLERANCE else ACCENT_RED};"
+            )
+
+    def _on_submit(self) -> None:
+        pin = self._pin_input.text().strip() if self._pin_input else ""
+        if len(pin) != 6 or not pin.isdigit():
+            self._show_error(t("pin_invalid"))
+            return
+        denoms = {str(d): spin.value() for d, spin in self._spinboxes.items()}
+        note = self._note_input.text().strip() if self._note_input else None
+        try:
+            self._api.confirm_cash_in(self._txn["id"], pin, denoms, note=note)
+            self.accept()
+        except Exception as exc:
+            self._show_error(str(exc))
+
+    def _show_error(self, message: str) -> None:
+        if self._error_label:
+            self._error_label.setText(message)
+            self._error_label.setVisible(True)
+
+
+class PendingCashInsPage(QWidget):
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._table: Optional[QTableWidget] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _scrollable_page()
+        main = QVBoxLayout(self)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.addWidget(scroll)
+        title_row = QHBoxLayout()
+        title_row.addWidget(_section_label("Pending Confirmation"))
+        title_row.addStretch()
+        refresh = _accent_btn(t("refresh"), ACCENT_BLUE)
+        refresh.clicked.connect(self.load_data)
+        title_row.addWidget(refresh)
+        layout.addLayout(title_row)
+        self._table = _make_table(
+            ["ID", "Employee", "Customer", "Amount", "Created", "Status", "Action"],
+            min_h=300,
+        )
+        layout.addWidget(self._table)
+        layout.addStretch()
+
+    def load_data(self) -> None:
+        try:
+            self._populate(self._api.get_pending_cash_ins())
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
+
+    def _populate(self, txns: list[dict]) -> None:
+        if self._table is None:
+            return
+        self._table.setRowCount(0)
+        for txn in txns:
+            row = self._table.rowCount()
+            self._table.insertRow(row)
+            self._table.setItem(row, 0, _cell(str(txn.get("id", "")), Qt.AlignmentFlag.AlignCenter))
+            self._table.setItem(row, 1, _cell(str(txn.get("created_by", ""))))
+            self._table.setItem(row, 2, _cell(txn.get("customer_name", "") or ""))
+            self._table.setItem(row, 3, _cell(f"{float(txn.get('amount') or 0):,.0f}", Qt.AlignmentFlag.AlignRight))
+            self._table.setItem(row, 4, _cell(str(txn.get("created_at", ""))[:16]))
+            status_item = _cell(txn.get("status", ""), Qt.AlignmentFlag.AlignCenter)
+            status_item.setForeground(QColor(ACCENT_YELLOW))
+            self._table.setItem(row, 5, status_item)
+            self._set_actions(row, txn)
+
+    def _set_actions(self, row: int, txn: dict) -> None:
+        if self._table is None:
+            return
+        wrapper = QWidget()
+        layout = QHBoxLayout(wrapper)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(6)
+        confirm = QPushButton("Confirm Cash In")
+        confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        confirm.setStyleSheet(
+            f"QPushButton {{ background:{ACCENT_GREEN}; color:{BG_DARK}; "
+            "border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; }}"
+        )
+        reject = QPushButton("Reject")
+        reject.setCursor(Qt.CursorShape.PointingHandCursor)
+        reject.setStyleSheet(
+            f"QPushButton {{ background:{ACCENT_RED}; color:white; "
+            "border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; }}"
+        )
+        confirm.clicked.connect(lambda _, td=dict(txn): self._confirm_cash_in(td))
+        reject.clicked.connect(lambda _, td=dict(txn): self._reject_cash_in(td))
+        layout.addWidget(confirm)
+        layout.addWidget(reject)
+        layout.addStretch()
+        self._table.setCellWidget(row, 6, wrapper)
+
+    def _confirm_cash_in(self, txn: dict) -> None:
+        dlg = PendingCashInConfirmDialog(self._api, txn, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def _reject_cash_in(self, txn: dict) -> None:
+        pin, ok = QInputDialog.getText(
+            self,
+            "Reject Cash In",
+            "Enter cashier PIN to reject this Cash In:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        note, note_ok = QInputDialog.getText(self, "Reject Cash In", "Reason / note:")
+        if not note_ok:
+            note = None
+        try:
+            self._api.reject_cash_in(txn["id"], pin.strip(), note=note)
+            self.load_data()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
+
+
 class TransactionsReadOnlyPage(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
@@ -1559,8 +1758,8 @@ class TransactionsReadOnlyPage(QWidget):
         if self._table is None:
             return
         type_colors = {
-            "deposit":  ACCENT_GREEN,
-            "withdraw": ACCENT_RED,
+            "cash_in":  ACCENT_GREEN,
+            "cash_out": ACCENT_RED,
             "transfer": ACCENT_BLUE,
             "exchange": ACCENT_YELLOW,
         }
@@ -1572,7 +1771,8 @@ class TransactionsReadOnlyPage(QWidget):
             color = type_colors.get(txn_type, TEXT_PRIMARY)
             amount = tx.get("amount", 0)
             fee = tx.get("customer_fee", 0)
-            approved = tx.get("cash_approved_by") is not None
+            txn_status = tx.get("status") or "CONFIRMED"
+            approved = tx.get("cash_approved_by") is not None or txn_status == "CONFIRMED"
 
             time_str = _to_mmt(tx.get("created_at", "")).strftime("%d-%m-%Y %I:%M %p")
             self._table.setItem(row, 0, _cell(str(tx.get("id", "")), Qt.AlignmentFlag.AlignCenter))
@@ -1590,9 +1790,11 @@ class TransactionsReadOnlyPage(QWidget):
             cash_item.setForeground(QColor(ACCENT_GREEN if approved else ACCENT_YELLOW))
             self._table.setItem(row, 7, cash_item)
 
-            # Backend rejects employee withdraw/exchange (float already debited).
+            # Backend rejects employee cash_out/exchange (float already debited).
             # Owner-initiated cash-outs still require cashier approval here.
-            if not approved and txn_type in ("deposit", "withdraw", "exchange"):
+            if txn_type == "cash_in" and txn_status == "PENDING_CASHIER_CONFIRM":
+                self._table.setItem(row, 8, _cell("Pending Confirmation", Qt.AlignmentFlag.AlignCenter))
+            elif not approved and txn_type in ("cash_in", "cash_out", "exchange"):
                 btn = QPushButton(t("confirm_receipt_btn"))
                 btn.setStyleSheet(
                     f"QPushButton {{ background:{ACCENT_GREEN}; color:{BG_DARK}; "
@@ -1626,8 +1828,9 @@ class CashierView(QMainWindow):
             (t("nav_vault"), 0),
             (t("nav_issue_float"), 1),
             (t("nav_shifts"), 2),
-            (t("nav_transactions"), 3),
-            ("Profile", 4),
+            ("Pending Confirmation", 3),
+            (t("nav_transactions"), 4),
+            ("Profile", 5),
         ]
 
     def __init__(self, api: ApiClient) -> None:
@@ -1677,6 +1880,7 @@ class CashierView(QMainWindow):
         self._vault_page = VaultPage(self._api)
         self._issue_page = IssueFloatPage(self._api)
         self._shifts_page = ShiftsPage(self._api)
+        self._pending_cash_ins_page = PendingCashInsPage(self._api)
         self._txns_page = TransactionsReadOnlyPage(self._api)
         self._transaction_repository = TransactionUiRepository(self._api)
         self._profile_repository = ProfileRepository(self._transaction_repository)
@@ -1686,6 +1890,7 @@ class CashierView(QMainWindow):
             self._vault_page,
             self._issue_page,
             self._shifts_page,
+            self._pending_cash_ins_page,
             self._txns_page,
             self._profile_page,
         ]
@@ -1799,6 +2004,8 @@ class CashierView(QMainWindow):
                 self._txns_page._ws_badge.setStyleSheet(
                     f"color: {ACCENT_GREEN}; font-size: 11px;"
                 )
+            elif data.get("type") == "cash_in_pending":
+                self._pending_cash_ins_page.load_data()
         except Exception:
             pass
 

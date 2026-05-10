@@ -12,8 +12,8 @@ from repositories.transaction_repository import TransactionRepository
 
 @dataclass
 class DaySummary:
-    total_deposit: float = 0.0
-    total_withdraw: float = 0.0
+    total_cash_in: float = 0.0
+    total_cash_out: float = 0.0
     total_transfer: float = 0.0
     total_exchange: float = 0.0
     total_commission: float = 0.0
@@ -53,10 +53,10 @@ class DashboardViewModel:
             summary.total_commission += txn.commission_amount or 0.0
             summary.total_customer_fees += txn.customer_fee or 0.0
 
-            if txn.transaction_type == "deposit":
-                summary.total_deposit += amount
-            elif txn.transaction_type == "withdraw":
-                summary.total_withdraw += amount
+            if txn.transaction_type == "cash_in":
+                summary.total_cash_in += amount
+            elif txn.transaction_type == "cash_out":
+                summary.total_cash_out += amount
             elif txn.transaction_type == "transfer":
                 summary.total_transfer += amount
             elif txn.transaction_type == "exchange":

@@ -1,5 +1,5 @@
 """
-Integration tests for deposit/transfer end-to-end API flow.
+Integration tests for cash_in/transfer end-to-end API flow.
 
 T018: Full API stack integration tests.
 
@@ -72,8 +72,8 @@ def _get_accounts_by_company_category(seeded_db, category: str) -> list:
     return [r["id"] if isinstance(r, dict) else r[0] for r in rows]
 
 
-def test_deposit_flow_end_to_end(client, owner_headers, seeded_db):
-    """POST cash-in via /transactions/deposit → selected account balance decreases."""
+def test_cash_in_flow_end_to_end(client, owner_headers, seeded_db):
+    """POST cash-in via /transactions/cash_in -> starts pending with no balance movement."""
     account_id = _get_first_active_account_id(seeded_db)
 
     pre_balance = seeded_db.execute(
@@ -83,7 +83,7 @@ def test_deposit_flow_end_to_end(client, owner_headers, seeded_db):
                    else pre_balance[0])
 
     resp = client.post(
-        "/transactions/deposit",
+        "/transactions/cash_in",
         headers=owner_headers,
         json={
             "account_id": account_id,
@@ -94,13 +94,15 @@ def test_deposit_flow_end_to_end(client, owner_headers, seeded_db):
     )
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
 
-    # Verify balance updated via GET /accounts/{id}
+    body = resp.json()
+    assert body["status"] == "PENDING_CASHIER_CONFIRM"
+    assert body["vault_impact"] == "none"
+
+    # Cash In is maker-checker: the account balance changes only after cashier confirmation.
     acc_resp = client.get(f"/accounts/{account_id}", headers=owner_headers)
     assert acc_resp.status_code == 200
     new_balance = acc_resp.json()["balance"]
-    assert new_balance == pre_bal_val - 10000.0, (
-        f"Balance not updated: expected {pre_bal_val - 10000.0}, got {new_balance}"
-    )
+    assert new_balance == pre_bal_val
 
 
 def test_transfer_flow_cross_company(client, owner_headers, seeded_db):

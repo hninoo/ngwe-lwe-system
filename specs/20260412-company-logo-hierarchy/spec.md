@@ -37,7 +37,7 @@ Transfer/Exchange transactions may involve both a Pay company and a Bank company
 - Each company must have exactly one logo image. Supported formats: PNG, JPG, SVG (displayed at 32×32 px in lists, 64×64 px in detail headers).
 
 ### FR-02 ServiceType Entity
-- A **ServiceType** record has: `id`, `company_id` (FK → companies), `name` (e.g. "WST", "Pay_To_Pay", "Transfer", "Exchange"), `operation` (Deposit | Withdraw | Transfer | Exchange | All), `is_active`, `created_at`, `updated_at`.
+- A **ServiceType** record has: `id`, `company_id` (FK → companies), `name` (e.g. "WST", "Pay_To_Pay", "Transfer", "Exchange"), `operation` (CashIn | CashOut | Transfer | Exchange | All), `is_active`, `created_at`, `updated_at`.
 - ServiceType replaces the current `service_type` text column used in `accounts` and `commission_tiers`.
 
 ### FR-03 Account Linkage
