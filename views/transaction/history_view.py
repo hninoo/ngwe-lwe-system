@@ -21,7 +21,8 @@ from PyQt6.QtWidgets import (
 )
 
 from i18n import t
-from services.api_client import ApiClient
+from repositories.history_repository import HistoryRepository
+from views.components.input_validation import sanitize_text
 from views.transaction_view import (
     ACCENT_BLUE,
     BG_CARD,
@@ -38,13 +39,13 @@ from views.transaction_view import (
 from views.widgets.company_selector import add_placeholder
 
 
-class HistoryPage(QWidget):
+class HistoryView(QWidget):
     HISTORY_COL_WIDTHS = [180, 100, 0, 140, 0, 140, 140, 90, 90, 120, 90]
     HISTORY_STRETCH = {2, 4}
 
-    def __init__(self, api: ApiClient, navigate) -> None:
+    def __init__(self, repository: HistoryRepository, navigate) -> None:
         super().__init__()
-        self._api = api
+        self._repository = repository
         self._navigate = navigate
         self._all_filtered: list[dict] = []
         self._accounts_cache: list[dict] = []
@@ -118,26 +119,24 @@ class HistoryPage(QWidget):
 
     def load_data(self) -> None:
         try:
-            self._accounts_cache = self._api.get_accounts()
+            self._accounts_cache = self._repository.get_accounts()
         except Exception:
-            pass
+            self._accounts_cache = []
         self._on_search()
 
     def _on_search(self) -> None:
         try:
-            txns = self._api.get_recent_transactions(500)
             d_from = self._date_from.date().toString("yyyy-MM-dd")
             d_to = self._date_to.date().toString("yyyy-MM-dd")
-            t_type = self._type_filter.currentText()
-            phone_q = self._phone_filter.text().strip().lower()
-            self._all_filtered = [tx for tx in txns
-                if d_from <= str(tx.get("created_at", ""))[:10] <= d_to
-                and (self._type_filter.currentIndex() <= 1 or tx.get("transaction_type") == t_type)
-                and self._matches_phone(tx, phone_q)]
+            t_type = None if self._type_filter.currentIndex() <= 1 else self._type_filter.currentText()
+            phone_q = sanitize_text(self._phone_filter.text(), 80).lower()
+            self._all_filtered = self._repository.search_transactions(d_from, d_to, t_type, phone_q)
             self._show_rows(self._all_filtered[:self._limit])
             self._load_more_btn.setVisible(len(self._all_filtered) > self._limit)
         except Exception:
-            pass
+            self._all_filtered = []
+            self._show_rows([])
+            self._load_more_btn.setVisible(False)
 
     def _on_load_more(self) -> None:
         try:
@@ -147,18 +146,6 @@ class HistoryPage(QWidget):
             self._load_more_btn.setVisible(end < len(self._all_filtered))
         except Exception:
             pass
-
-    def _matches_phone(self, txn: dict, query: str) -> bool:
-        if not query:
-            return True
-        acc = self._lookup_account(txn.get("account_id"))
-        fields = [
-            str(txn.get("customer_phone", "") or "").lower(),
-            str(txn.get("customer_name", "") or "").lower(),
-            (acc.get("phone_number", "") or "").lower() if acc else "",
-            (acc.get("account_name", "") or "").lower() if acc else "",
-        ]
-        return any(query in f for f in fields)
 
     def _show_rows(self, txns: list[dict]) -> None:
         self._table.setRowCount(len(txns))
@@ -203,12 +190,7 @@ class HistoryPage(QWidget):
             self._table.setRowHeight(row, 30)
 
     def _lookup_account(self, account_id) -> Optional[dict]:
-        if not account_id:
-            return None
-        for acc in self._accounts_cache:
-            if acc.get("id") == account_id:
-                return acc
-        return None
+        return self._repository.lookup_account(self._accounts_cache, account_id)
 
     def _view_screenshot(self, path: str) -> None:
         try:

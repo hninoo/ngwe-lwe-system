@@ -16,6 +16,13 @@ from backend.routes import companies, service_types, activity_logs
 logger = logging.getLogger(__name__)
 
 
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("CORS_ALLOW_ORIGINS", "")
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return ["http://127.0.0.1", "http://localhost"]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure assets/logos/ directory exists and is writable
@@ -36,7 +43,7 @@ app = FastAPI(title="Ngwe Lwe", version="1.0.0-beta", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # Desktop (PyQt6) clients — CORS not enforced by requests lib
+    allow_origins=_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],

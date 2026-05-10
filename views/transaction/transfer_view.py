@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QTableWidgetItem, QVBoxLayout, QWidget
 
 from i18n import t
-from views.transaction.base_form_view import TransactionFormPage
+from views.transaction.base_form_view import BaseFormView
 from views.transaction_view import (
     ACCENT_BLUE,
     BG_CARD,
@@ -15,7 +15,7 @@ from views.transaction_view import (
 from views.widgets.company_selector import AccountSelector, add_placeholder
 
 
-class TransferView(TransactionFormPage):
+class TransferView(BaseFormView):
     transaction_type = "transfer"
 
     _TXN_HEADERS = ["Time", "From Account", "To Account", "Amount", "Fee"]
@@ -27,8 +27,7 @@ class TransferView(TransactionFormPage):
             api,
             navigate,
             transaction_type=self.transaction_type,
-            operation_repository=repository,
-            show_action_buttons=False,
+            repository=repository,
         )
 
     # ── Form fields ──────────────────────────────────────────────────────────

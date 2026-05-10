@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QComboBox, QGridLayout, QTableWidgetItem
 
 from i18n import t
-from views.transaction.base_form_view import TransactionFormPage
+from views.transaction.base_form_view import BaseFormView
 from views.transaction_view import (
     field_label,
     format_datetime,
@@ -10,7 +10,7 @@ from views.transaction_view import (
 from views.widgets.company_selector import add_placeholder
 
 
-class ExchangeView(TransactionFormPage):
+class ExchangeView(BaseFormView):
     transaction_type = "exchange"
 
     _TXN_HEADERS = ["Time", "Account", "Currency", "Rate", "Amount", "Fee"]
@@ -22,8 +22,7 @@ class ExchangeView(TransactionFormPage):
             api,
             navigate,
             transaction_type=self.transaction_type,
-            operation_repository=repository,
-            show_action_buttons=False,
+            repository=repository,
         )
 
     # ── Form fields ──────────────────────────────────────────────────────────

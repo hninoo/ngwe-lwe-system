@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (
 )
 
 from i18n import t
-from services.api_client import ApiClient
+from repositories.profile_repository import ProfileRepository
+from views.components.input_validation import install_pin_validator
 from views.transaction_view import (
     ACCENT_BLUE,
     ACCENT_TEAL,
@@ -29,10 +30,10 @@ from views.transaction_view import (
 )
 
 
-class ProfilePage(QWidget):
-    def __init__(self, api: ApiClient, navigate) -> None:
+class ProfileView(QWidget):
+    def __init__(self, repository: ProfileRepository, navigate) -> None:
         super().__init__()
-        self._api = api
+        self._repository = repository
         self._navigate = navigate
         self._init_ui()
 
@@ -47,7 +48,7 @@ class ProfilePage(QWidget):
         clo.setContentsMargins(20, 20, 20, 20)
         clo.setSpacing(10)
 
-        user = self._api.user or {}
+        user = self._repository.current_user
         name_label = QLabel(user.get("full_name", ""))
         name_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         clo.addWidget(name_label)
@@ -79,18 +80,21 @@ class ProfilePage(QWidget):
         plo.addWidget(field_label(t("current_password_ph"), required=True))
         self._old_pw = QLineEdit()
         self._old_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self._old_pw.setMaxLength(128)
         self._old_pw.setPlaceholderText(t("current_password_ph"))
         plo.addWidget(self._old_pw)
 
         plo.addWidget(field_label(t("new_password_ph"), required=True))
         self._new_pw = QLineEdit()
         self._new_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self._new_pw.setMaxLength(128)
         self._new_pw.setPlaceholderText(t("new_password_ph"))
         plo.addWidget(self._new_pw)
 
         plo.addWidget(field_label(t("confirm_password_ph"), required=True))
         self._confirm_pw = QLineEdit()
         self._confirm_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self._confirm_pw.setMaxLength(128)
         self._confirm_pw.setPlaceholderText(t("confirm_password_ph"))
         plo.addWidget(self._confirm_pw)
 
@@ -124,21 +128,21 @@ class ProfilePage(QWidget):
         self._current_pin = QLineEdit()
         self._current_pin.setEchoMode(QLineEdit.EchoMode.Password)
         self._current_pin.setPlaceholderText(t("current_pin_optional_ph"))
-        self._current_pin.setMaxLength(6)
+        install_pin_validator(self._current_pin)
         pin_lo.addWidget(self._current_pin)
 
         pin_lo.addWidget(field_label(t("new_pin_ph"), required=True))
         self._new_pin = QLineEdit()
         self._new_pin.setEchoMode(QLineEdit.EchoMode.Password)
         self._new_pin.setPlaceholderText("••••••")
-        self._new_pin.setMaxLength(6)
+        install_pin_validator(self._new_pin)
         pin_lo.addWidget(self._new_pin)
 
         pin_lo.addWidget(field_label(t("confirm_pin_ph"), required=True))
         self._confirm_pin = QLineEdit()
         self._confirm_pin.setEchoMode(QLineEdit.EchoMode.Password)
         self._confirm_pin.setPlaceholderText("••••••")
-        self._confirm_pin.setMaxLength(6)
+        install_pin_validator(self._confirm_pin)
         self._confirm_pin.returnPressed.connect(self._on_save_pin)
         pin_lo.addWidget(self._confirm_pin)
 
@@ -159,7 +163,7 @@ class ProfilePage(QWidget):
         outer.addWidget(scroll)
 
     def load_data(self) -> None:
-        pass
+        return None
 
     def _validate_pin_fields(self, new_pin: str, confirm_pin: str) -> str | None:
         """Return an error key string if invalid, else None."""
@@ -186,20 +190,20 @@ class ProfilePage(QWidget):
 
         try:
             if current:
-                self._api.change_pin(current, new_pin)
+                self._repository.change_pin(current, new_pin)
                 self._show_pin_status(t("change_pin_success"), False)
             else:
-                user_id = (self._api.user or {}).get("id")
+                user_id = self._repository.current_user.get("id")
                 if user_id is None:
                     self._show_pin_status("User ID not found. Please re-login.", True)
                     return
-                self._api.set_user_pin(user_id, new_pin)
+                self._repository.set_user_pin(user_id, new_pin)
                 self._show_pin_status(t("pin_success"), False)
             self._current_pin.clear()
             self._new_pin.clear()
             self._confirm_pin.clear()
-        except Exception as e:
-            self._show_pin_status(f"Error: {e}", True)
+        except Exception:
+            self._show_pin_status("Unable to update PIN.", True)
             if current:
                 self._current_pin.clear()
                 self._current_pin.setFocus()
@@ -220,13 +224,13 @@ class ProfilePage(QWidget):
             if new != confirm:
                 self._show_pw_status(t("pw_mismatch"), True)
                 return
-            self._api.change_password(old, new)
+            self._repository.change_password(old, new)
             self._show_pw_status(t("pw_success"), False)
             self._old_pw.clear()
             self._new_pw.clear()
             self._confirm_pw.clear()
-        except Exception as e:
-            self._show_pw_status(f"Error: {e}", True)
+        except Exception:
+            self._show_pw_status("Unable to update password.", True)
 
     def _show_pw_status(self, msg: str, error: bool) -> None:
         self._pw_status.setText(msg)

@@ -9,6 +9,7 @@ import json
 
 from backend.auth import get_current_user
 from backend.database import atomic, get_cursor
+from backend.rate_limit import RateLimiter
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.transaction_repository import TransactionRepository
@@ -28,6 +29,7 @@ _denom_repo = CashDenominationRepository()
 _float_repo = CashFloatRepository()
 _user_repo = UserRepository()
 _vault_service = VaultService(float_repo=_float_repo, denom_repo=_denom_repo)
+_pin_limiter = RateLimiter(max_attempts=5, window_seconds=300)
 
 
 # ── Pydantic request models ──
@@ -68,6 +70,8 @@ class ReceivedCashRequest(BaseModel):
 @router.get("/employees")
 def list_employees(current_user: dict = Depends(get_current_user)) -> list[dict]:
     """Active employees visible to cashier for float issuance."""
+    if current_user["role"] not in ("cashier", "owner"):
+        raise HTTPException(403, "Cashier or owner access only")
     return [
         {"id": u.id, "full_name": u.full_name, "username": u.username}
         for u in _user_repo.get_employees()
@@ -244,6 +248,8 @@ def receive_float(
     """Employee confirms receipt with PIN + denomination count verification."""
     if current_user["role"] != "employee":
         raise HTTPException(403, "Employee access only")
+    key = f"pin:receive:{current_user['user_id']}"
+    _pin_limiter.check(key)
     try:
         updated = _vault_service.confirm_receipt(
             float_id=float_id,
@@ -254,9 +260,12 @@ def receive_float(
     except ValueError as e:
         msg = str(e)
         status = 401 if "Incorrect PIN" in msg else 400
+        if status == 401:
+            _pin_limiter.record_failure(key)
         raise HTTPException(status, msg)
     except (DenominationMismatchError, FloatStateError) as e:
         raise HTTPException(422, str(e))
+    _pin_limiter.clear(key)
     return asdict(updated)
 
 
@@ -290,6 +299,8 @@ def confirm_float_return(
     """Cashier verifies returned cash with PIN — credits main vault."""
     if current_user["role"] != "cashier":
         raise HTTPException(403, "Cashier access only")
+    key = f"pin:return:{current_user['user_id']}"
+    _pin_limiter.check(key)
     try:
         updated = _vault_service.confirm_return(
             float_id=float_id,
@@ -299,9 +310,12 @@ def confirm_float_return(
     except ValueError as e:
         msg = str(e)
         status = 401 if "Incorrect PIN" in msg else 400
+        if status == 401:
+            _pin_limiter.record_failure(key)
         raise HTTPException(status, msg)
     except FloatStateError as e:
         raise HTTPException(409, str(e))
+    _pin_limiter.clear(key)
     return asdict(updated)
 
 

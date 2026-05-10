@@ -3,7 +3,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGridLayout, QTableWidgetItem, QWidget
 
 from i18n import t
-from views.transaction.base_form_view import TransactionFormPage
+from views.transaction.base_form_view import BaseFormView
 from views.transaction_view import (
     ACCENT_GREEN,
     ACCENT_RED,
@@ -15,7 +15,7 @@ from views.transaction_view import (
 from views.widgets.company_selector import ServiceTypeSelector, add_placeholder
 
 
-class CashInView(TransactionFormPage):
+class CashInView(BaseFormView):
     transaction_type = "deposit"
 
     _TXN_HEADERS = ["Time", "Account", "Customer", "Phone", "Amount", "Fee / Commission", "Fee Account"]
@@ -27,8 +27,7 @@ class CashInView(TransactionFormPage):
             api,
             navigate,
             transaction_type=self.transaction_type,
-            operation_repository=repository,
-            show_action_buttons=False,
+            repository=repository,
         )
 
     # ── Form fields ──────────────────────────────────────────────────────────

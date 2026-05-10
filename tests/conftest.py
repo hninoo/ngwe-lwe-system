@@ -19,6 +19,8 @@ ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+os.environ.setdefault("APP_SECRET", "test-secret-key-for-pytest-only-32-chars")
+
 
 # ---------------------------------------------------------------------------
 # Pre-migration-004 schema (what exists on disk before the migration runs)
@@ -161,7 +163,10 @@ VALUES
 
 _SEED_USER = """
 INSERT OR IGNORE INTO users (id, username, password_hash, full_name, role)
-VALUES (1, 'owner', '$2b$12$fake', 'Test Owner', 'owner');
+VALUES
+(1, 'owner', '$2b$12$fake', 'Test Owner', 'owner'),
+(2, 'employee', '$2b$12$fake', 'Test Employee', 'employee'),
+(3, 'cashier', '$2b$12$fake', 'Test Cashier', 'cashier');
 """
 
 

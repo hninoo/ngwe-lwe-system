@@ -14,7 +14,7 @@ from repositories.transaction_repository import TransactionRepository
 from services.vault_service import VaultService
 
 
-class TransactionOperationRepository:
+class TransactionOperationBase:
     """Shared, UI-agnostic business rules for transaction operation repositories."""
 
     def __init__(

@@ -28,6 +28,9 @@ from PyQt6.QtWidgets import (
 )
 
 from i18n import t, on_change
+from repositories.history_repository import HistoryRepository
+from repositories.profile_repository import ProfileRepository
+from repositories.transaction_ui_repository import TransactionUiRepository
 from services.api_client import ApiClient
 from views.widgets.company_selector import ServiceTypeSelector, AccountSelector, add_placeholder
 from views.widgets.company_logo_label import get_logo_pixmap
@@ -356,14 +359,16 @@ class CompanyGridSelector(QWidget):
         return self._selected_id
 
 
-from views.transaction.history_page import HistoryPage
-from views.transaction.profile_page import ProfilePage
+from views.transaction.history_view import HistoryView
+from views.transaction.profile_view import ProfileView
 
 
 # ════════════════════════════════════════════
 # Main TransactionView — QStackedWidget host
 # ════════════════════════════════════════════
 class TransactionView(QMainWindow):
+    PAGE_KEYS = ("deposit", "withdraw", "transfer", "exchange", "history", "profile")
+
     # Stack indices — transaction types at 0-3, utility pages at 4-5
     PAGE_INDEX = {
         "deposit": 0,
@@ -388,11 +393,12 @@ class TransactionView(QMainWindow):
         self,
         api_client: ApiClient,
         transaction_type: str | None = None,
-        operation_repository=None,
     ) -> None:
         super().__init__()
         self._api = api_client
-        self._operation_repository = operation_repository
+        self._repository = TransactionUiRepository(api_client)
+        self._history_repository = HistoryRepository(self._repository)
+        self._profile_repository = ProfileRepository(self._repository)
         initial = normalize_transaction_type(transaction_type)
         # Fallback to "deposit" for unknown keys during normalization
         self._current_page_key: str = initial if initial in self.PAGE_INDEX else "deposit"
@@ -400,12 +406,12 @@ class TransactionView(QMainWindow):
         on_change(self.retranslate_ui)
 
     def retranslate_ui(self) -> None:
-        fullname = self._api.user.get("full_name", "") if self._api.user else ""
+        fullname = self._repository.current_user.get("full_name", "")
         self.setWindowTitle(f"{t('app_title')} - {fullname}")
         self._update_breadcrumb()
 
     def _init_ui(self) -> None:
-        fullname = self._api.user.get("full_name", "") if self._api.user else ""
+        fullname = self._repository.current_user.get("full_name", "")
         self.setWindowTitle(f"{t('app_title')} - {fullname}")
         self.setMinimumSize(1000, 700)
         self.setStyleSheet(STYLESHEET)
@@ -426,32 +432,15 @@ class TransactionView(QMainWindow):
         from views.transaction.transfer_view import TransferView
         from views.transaction.exchange_view import ExchangeView
 
-        selected_repo = self._operation_repository
         self._pages: dict[str, QWidget] = {
-            "deposit": CashInView(
-                self._api,
-                self._navigate,
-                selected_repo if self._current_page_key == "deposit" else None,
-            ),
-            "withdraw": CashOutView(
-                self._api,
-                self._navigate,
-                selected_repo if self._current_page_key == "withdraw" else None,
-            ),
-            "transfer": TransferView(
-                self._api,
-                self._navigate,
-                selected_repo if self._current_page_key == "transfer" else None,
-            ),
-            "exchange": ExchangeView(
-                self._api,
-                self._navigate,
-                selected_repo if self._current_page_key == "exchange" else None,
-            ),
-            "history": HistoryPage(self._api, self._navigate),
-            "profile": ProfilePage(self._api, self._navigate),
+            "deposit": CashInView(self._api, self._navigate, self._repository),
+            "withdraw": CashOutView(self._api, self._navigate, self._repository),
+            "transfer": TransferView(self._api, self._navigate, self._repository),
+            "exchange": ExchangeView(self._api, self._navigate, self._repository),
+            "history": HistoryView(self._history_repository, self._navigate),
+            "profile": ProfileView(self._profile_repository, self._navigate),
         }
-        for key in ("deposit", "withdraw", "transfer", "exchange", "history", "profile"):
+        for key in self.PAGE_KEYS:
             self._stack.addWidget(self._pages[key])
 
         self.switch_to_page(self._current_page_key)
@@ -502,25 +491,38 @@ class TransactionView(QMainWindow):
 
     def _update_breadcrumb(self) -> None:
         if hasattr(self, "_breadcrumb_tail"):
-            label = self.PAGE_LABELS.get(self._current_page_key, "")
+            label = self._page_label(self._current_page_key)
             self._breadcrumb_tail.setText(f"/ {label}" if label else "")
 
     # ── Navigation ──────────────────────────────────────────────────────────
 
     def switch_to_page(self, key: str) -> None:
         """Switch the stack to any registered page key and reload its data."""
-        if key not in self.PAGE_INDEX:
-            key = "deposit"
+        key = self._resolve_page_key(key)
         self._current_page_key = key
-        self._stack.setCurrentIndex(self.PAGE_INDEX[key])
+        index = self.PAGE_INDEX[key]
+        if 0 <= index < self._stack.count():
+            self._stack.setCurrentIndex(index)
         self._update_breadcrumb()
         page = self._pages[key]
         if hasattr(page, "load_data"):
-            page.load_data()
+            try:
+                page.load_data()
+            except Exception:
+                return
 
     def switch_to_transaction(self, transaction_type: str) -> None:
         """Convenience wrapper — normalises a transaction-type string and delegates."""
         self.switch_to_page(normalize_transaction_type(transaction_type))
+
+    def _resolve_page_key(self, key: str | None) -> str:
+        resolved = normalize_transaction_type(key)
+        if resolved in self.PAGE_INDEX and hasattr(self, "_pages") and resolved in self._pages:
+            return resolved
+        return "deposit"
+
+    def _page_label(self, key: str | None) -> str:
+        return self.PAGE_LABELS.get(self._resolve_page_key(key), self.PAGE_LABELS["deposit"])
 
     def _navigate(self, page: int, transaction_type: str | None = None) -> None:
         """Unified navigation callback used by all child pages."""

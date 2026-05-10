@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QGridLayout, QLineEdit, QTableWidgetItem
 
 from i18n import t
-from views.transaction.base_form_view import TransactionFormPage
+from views.transaction.base_form_view import BaseFormView
 from views.transaction_view import (
     ACCENT_GREEN,
     ACCENT_RED,
@@ -12,7 +12,7 @@ from views.transaction_view import (
 from views.widgets.company_selector import ServiceTypeSelector
 
 
-class CashOutView(TransactionFormPage):
+class CashOutView(BaseFormView):
     transaction_type = "withdraw"
 
     _TXN_HEADERS = ["Time", "Account", "Customer", "Phone", "Amount", "Commission", "Total Fee"]
@@ -24,8 +24,7 @@ class CashOutView(TransactionFormPage):
             api,
             navigate,
             transaction_type=self.transaction_type,
-            operation_repository=repository,
-            show_action_buttons=False,
+            repository=repository,
         )
 
     # ── Form fields ──────────────────────────────────────────────────────────

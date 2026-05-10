@@ -47,8 +47,8 @@ BORDER_COLOR = "#313244"
 INPUT_BORDER = "#585b70"
 
 MAX_LOGO_BYTES = 200 * 1024  # 200 KB
-ALLOWED_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg"}
-MIME_MAP = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml"}
+ALLOWED_SUFFIXES = {".png", ".jpg", ".jpeg"}
+MIME_MAP = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
 CATEGORIES = ["Pay", "Bank", "Both"]
 
@@ -307,7 +307,7 @@ class CompanySettingsView(QWidget):
             self,
             t("upload_logo"),
             "",
-            "Images (*.png *.jpg *.jpeg *.svg)",
+            "Images (*.png *.jpg *.jpeg)",
         )
         if not path:
             return

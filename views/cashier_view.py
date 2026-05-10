@@ -136,8 +136,8 @@ class WebSocketThread(QThread):
                         self.message_received.emit(msg)
                     except TimeoutError:
                         pass
-        except Exception:
-            pass
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), f"Failed to load vault data: {exc}")
 
     def stop(self) -> None:
         self._running = False
@@ -619,8 +619,8 @@ class VaultPage(QWidget):
                     self._log_table.setItem(row, 4, _cell(f"{denom * qty:,}", Qt.AlignmentFlag.AlignRight))
                     self._log_table.setItem(row, 5, _cell(log.get("note", "") or ""))
                     self._log_table.setItem(row, 6, _cell(str(log.get("created_by", ""))))
-        except Exception:
-            pass
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), f"Failed to load transaction history: {exc}")
 
 
 # ════════════════════════════════════════════

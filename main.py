@@ -457,31 +457,12 @@ class _StartupChoiceDialog(QDialog):
 # ──────────────────────────────────────────────────────────
 # Open login window
 # ──────────────────────────────────────────────────────────
-def _repository_for_transaction_type(transaction_type: str):
-    normalized = (transaction_type or "").strip().lower()
-    if normalized == "cash_in":
-        from repositories.cash_in_repo import CashInRepository
-        return CashInRepository()
-    if normalized == "cash_out":
-        from repositories.cash_out_repo import CashOutRepository
-        return CashOutRepository()
-    if normalized == "transfer":
-        from repositories.transfer_repo import TransferRepository
-        return TransferRepository()
-    if normalized == "exchange":
-        from repositories.exchange_repo import ExchangeRepository
-        return ExchangeRepository()
-    raise ValueError(f"Unknown transaction type: {transaction_type}")
-
-
 def _open_transaction_from_dashboard(dashboard, api, transaction_type: str) -> None:
     from views.transaction_view import TransactionView
 
-    repository = _repository_for_transaction_type(transaction_type)
     transaction_window = TransactionView(
         api,
         transaction_type=transaction_type,
-        operation_repository=repository,
     )
     dashboard._next = transaction_window
     transaction_window.show()

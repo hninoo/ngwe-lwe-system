@@ -20,7 +20,7 @@ else:
 
 # ── Config file path ──
 CONFIG_FILE = os.path.join(_BASE, "server_config.json")
-DEFAULT_CONFIG = {"host": "0.0.0.0", "port": 8000}
+DEFAULT_CONFIG = {"host": "127.0.0.1", "port": 8000}
 
 def _get_or_create_app_secret() -> str:
     """Read or generate a per-install secret stored in the app config directory."""

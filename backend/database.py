@@ -765,6 +765,16 @@ def _migrate_008(conn):
     conn.commit()
 
 
+def _migrate_009(conn):
+    """Add auth_version for token revocation on credential or role changes."""
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0")
+    except Exception as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -781,6 +791,7 @@ def _run_migrations(conn):
         (6, "Add current_balance to floats; create daily_reconciliation_logs", _migrate_006),
         (7, "Rebuild cash_float_assignments with new statuses; create vault_transactions", _migrate_007),
         (8, "Add Pay_To_Pay service types for Bank companies", _migrate_008),
+        (9, "Add auth_version for token revocation", _migrate_009),
     ]:
         if version not in applied:
             fn(conn)

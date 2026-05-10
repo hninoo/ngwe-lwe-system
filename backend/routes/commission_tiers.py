@@ -5,11 +5,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
+from backend.money import normalize_money
 from repositories.commission_tier_repository import CommissionTierRepository
 
 router = APIRouter(prefix="/commission-tiers", tags=["commission_tiers"])
 
 _tier_repo = CommissionTierRepository()
+
+
+def _money(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return normalize_money(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 class TierRequest(BaseModel):
@@ -58,22 +68,24 @@ def create_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    err = _tier_repo.check_overlap(body.service_type_id, body.amount_from, body.amount_to)
+    amount_from = _money(body.amount_from)
+    amount_to = _money(body.amount_to)
+    err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to)
     if err:
         raise HTTPException(status_code=422, detail=err)
     tier_id = _tier_repo.create({
         "service_type_id": body.service_type_id,
-        "amount_from": body.amount_from,
-        "amount_to": body.amount_to,
+        "amount_from": amount_from,
+        "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_deposit": body.fee_amount_deposit,
-        "fee_amount_withdraw": body.fee_amount_withdraw,
+        "fee_amount_deposit": _money(body.fee_amount_deposit),
+        "fee_amount_withdraw": _money(body.fee_amount_withdraw),
         "comm_type": body.comm_type,
-        "comm_deposit": body.comm_deposit,
-        "comm_withdraw": body.comm_withdraw,
+        "comm_deposit": _money(body.comm_deposit),
+        "comm_withdraw": _money(body.comm_withdraw),
         "additional_fee_type": body.additional_fee_type,
-        "additional_fee_deposit_amount": body.additional_fee_deposit_amount,
-        "additional_fee_withdraw_amount": body.additional_fee_withdraw_amount,
+        "additional_fee_deposit_amount": _money(body.additional_fee_deposit_amount),
+        "additional_fee_withdraw_amount": _money(body.additional_fee_withdraw_amount),
     })
     return {"message": "Tier created", "id": tier_id}
 
@@ -86,22 +98,24 @@ def update_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    err = _tier_repo.check_overlap(body.service_type_id, body.amount_from, body.amount_to, exclude_id=tier_id)
+    amount_from = _money(body.amount_from)
+    amount_to = _money(body.amount_to)
+    err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to, exclude_id=tier_id)
     if err:
         raise HTTPException(status_code=422, detail=err)
     _tier_repo.update(tier_id, {
         "service_type_id": body.service_type_id,
-        "amount_from": body.amount_from,
-        "amount_to": body.amount_to,
+        "amount_from": amount_from,
+        "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_deposit": body.fee_amount_deposit,
-        "fee_amount_withdraw": body.fee_amount_withdraw,
+        "fee_amount_deposit": _money(body.fee_amount_deposit),
+        "fee_amount_withdraw": _money(body.fee_amount_withdraw),
         "comm_type": body.comm_type,
-        "comm_deposit": body.comm_deposit,
-        "comm_withdraw": body.comm_withdraw,
+        "comm_deposit": _money(body.comm_deposit),
+        "comm_withdraw": _money(body.comm_withdraw),
         "additional_fee_type": body.additional_fee_type,
-        "additional_fee_deposit_amount": body.additional_fee_deposit_amount,
-        "additional_fee_withdraw_amount": body.additional_fee_withdraw_amount,
+        "additional_fee_deposit_amount": _money(body.additional_fee_deposit_amount),
+        "additional_fee_withdraw_amount": _money(body.additional_fee_withdraw_amount),
     })
     return {"message": "Tier updated"}
 

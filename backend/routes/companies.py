@@ -16,7 +16,7 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 _company_vm = CompanyViewModel()
 _service_type_vm = ServiceTypeViewModel()
 
-ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/svg+xml"}
+ALLOWED_MIME_TYPES = {"image/png", "image/jpeg"}
 MAX_LOGO_SIZE_BYTES = 200 * 1024  # 200 KB
 LOGO_DIR = Path("assets/logos")
 
@@ -30,7 +30,6 @@ class CompanyUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
     is_active: Optional[bool] = None
-    logo_path: Optional[str] = None
 
 
 class ServiceTypeCreate(BaseModel):
@@ -113,7 +112,7 @@ async def upload_logo(
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid file type '{content_type}'. Allowed: png, jpeg, svg",
+            detail=f"Invalid file type '{content_type}'. Allowed: png, jpeg",
         )
 
     # Read all bytes and validate size
@@ -128,7 +127,6 @@ async def upload_logo(
     ext_map = {
         "image/png": "png",
         "image/jpeg": "jpg",
-        "image/svg+xml": "svg",
     }
     ext = ext_map.get(content_type, "png")
 
@@ -159,13 +157,18 @@ def get_logo(
         raise HTTPException(status_code=404, detail="Company not found")
     if not company.logo_path:
         raise HTTPException(status_code=404, detail="No logo set for this company")
-    logo_file = Path(company.logo_path)
-    if not logo_file.exists():
+    logo_root = LOGO_DIR.resolve()
+    logo_file = Path(company.logo_path).resolve()
+    try:
+        logo_file.relative_to(logo_root)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Logo file not found on disk")
+    if not logo_file.exists() or not logo_file.is_file():
         raise HTTPException(status_code=404, detail="Logo file not found on disk")
 
     # Determine MIME type from extension
     suffix = logo_file.suffix.lower()
-    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml"}
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
     media_type = mime_map.get(suffix, "application/octet-stream")
     return FileResponse(str(logo_file), media_type=media_type)
 

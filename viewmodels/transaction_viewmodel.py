@@ -4,14 +4,14 @@ from backend.database import atomic
 from models.transaction import Transaction
 from repositories.account_repository import AccountRepository
 from repositories.cash_float_repository import CashFloatRepository, InsufficientFloatError
-from repositories.cash_in_repo import CashInRepository
-from repositories.cash_out_repo import CashOutRepository
+from repositories.cash_in_repository import CashInRepository
+from repositories.cash_out_repository import CashOutRepository
 from repositories.commission_tier_repository import CommissionTierRepository
 from repositories.exchange_rate_repository import ExchangeRateRepository
-from repositories.exchange_repo import ExchangeRepository
+from repositories.exchange_repository import ExchangeRepository
 from repositories.service_type_repository import ServiceTypeRepository
 from repositories.transaction_repository import TransactionRepository
-from repositories.transfer_repo import TransferRepository
+from repositories.transfer_repository import TransferRepository
 from services.vault_service import InsufficientDenominationError, VaultService
 
 

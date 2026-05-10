@@ -19,7 +19,9 @@ class UserRepository(BaseRepository):
             role=row["role"],
             is_active=bool(row["is_active"]),
             created_at=row["created_at"],
+            updated_at=row.get("updated_at"),
             pin_hash=row.get("pin_hash"),
+            auth_version=int(row.get("auth_version") or 0),
         )
 
     def get_by_username(self, username: str) -> Optional[User]:
@@ -59,4 +61,24 @@ class UserRepository(BaseRepository):
         return [self._row_to_model(r) for r in rows]
 
     def update_is_active(self, user_id: int, is_active: bool) -> bool:
-        return self.update(user_id, {"is_active": is_active})
+        return self.update_with_auth_revoke(user_id, {"is_active": is_active})
+
+    def update_with_auth_revoke(self, user_id: int, data: dict) -> bool:
+        from backend.database import get_cursor
+
+        set_clause = ", ".join(f"{key} = ?" for key in data.keys())
+        with get_cursor(commit=True) as cursor:
+            try:
+                cursor.execute(
+                    f"UPDATE users SET {set_clause}, auth_version = COALESCE(auth_version, 0) + 1 "
+                    "WHERE id = ?",
+                    (*data.values(), user_id),
+                )
+            except Exception as exc:
+                if "auth_version" not in str(exc):
+                    raise
+                cursor.execute(
+                    f"UPDATE users SET {set_clause} WHERE id = ?",
+                    (*data.values(), user_id),
+                )
+            return cursor.rowcount > 0

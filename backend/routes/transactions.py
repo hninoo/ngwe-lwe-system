@@ -1,10 +1,11 @@
 from dataclasses import asdict
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.auth import get_current_user
+from backend.money import normalize_money
 from backend.websocket_manager import ConnectionManager
 from repositories.cash_float_repository import CashFloatRepository
 from viewmodels.account_viewmodel import AccountViewModel
@@ -60,7 +61,7 @@ class TransferRequest(BaseModel):
 class ExchangeRequest(BaseModel):
     account_id: int
     amount: float = Field(gt=0)
-    currency: str
+    currency: Literal["MMK", "THB"]
     screenshot_path: Optional[str] = None
     customer_fee: float = Field(default=0.0, ge=0)
     additional_fee_amount: float = Field(default=0.0, ge=0)
@@ -70,6 +71,13 @@ class ExchangeRequest(BaseModel):
 
 
 _txn_repo_direct = None  # lazy import to avoid circular
+
+
+def _money(value: float) -> float:
+    try:
+        return normalize_money(value)
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc))
 
 
 async def _broadcast_balances() -> None:
@@ -105,13 +113,13 @@ async def create_deposit(
     try:
         txn = _txn_vm.create_deposit(
             account_id=body.account_id,
-            amount=body.amount,
+            amount=_money(body.amount),
             customer_name=body.customer_name,
             customer_phone=body.customer_phone,
             screenshot_path=body.screenshot_path,
             created_by=current_user["user_id"],
-            customer_fee=body.customer_fee,
-            additional_fee_amount=body.additional_fee_amount,
+            customer_fee=_money(body.customer_fee),
+            additional_fee_amount=_money(body.additional_fee_amount),
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=current_user["user_id"] if current_user["role"] == "employee" else None,
@@ -141,13 +149,13 @@ async def create_withdraw(
     try:
         txn = _txn_vm.create_withdraw(
             account_id=body.account_id,
-            amount=body.amount,
+            amount=_money(body.amount),
             customer_name=body.customer_name,
             customer_phone=body.customer_phone,
             screenshot_path=body.screenshot_path,
             created_by=current_user["user_id"],
-            customer_fee=body.customer_fee,
-            additional_fee_amount=body.additional_fee_amount,
+            customer_fee=_money(body.customer_fee),
+            additional_fee_amount=_money(body.additional_fee_amount),
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
@@ -181,11 +189,11 @@ async def create_transfer(
         txn = _txn_vm.create_transfer(
             from_account_id=body.from_account_id,
             to_account_id=body.to_account_id,
-            amount=body.amount,
+            amount=_money(body.amount),
             screenshot_path=body.screenshot_path,
             created_by=current_user["user_id"],
-            customer_fee=body.customer_fee,
-            additional_fee_amount=body.additional_fee_amount,
+            customer_fee=_money(body.customer_fee),
+            additional_fee_amount=_money(body.additional_fee_amount),
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
@@ -218,12 +226,12 @@ async def create_exchange(
     try:
         txn = _txn_vm.create_exchange(
             account_id=body.account_id,
-            amount=body.amount,
+            amount=_money(body.amount),
             currency=body.currency,
             screenshot_path=body.screenshot_path,
             created_by=current_user["user_id"],
-            customer_fee=body.customer_fee,
-            additional_fee_amount=body.additional_fee_amount,
+            customer_fee=_money(body.customer_fee),
+            additional_fee_amount=_money(body.additional_fee_amount),
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=employee_id,
@@ -266,15 +274,16 @@ def delete_transaction(
     txn_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Owner-only: permanently delete a transaction record."""
+    """Owner-only guard: hard deletes are disabled for financial records."""
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    from repositories.transaction_repository import TransactionRepository
-    repo = TransactionRepository()
-    deleted = repo.delete(txn_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return {"message": "Transaction deleted", "txn_id": txn_id}
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Transaction hard delete is disabled because it can corrupt balances. "
+            "Use a reversal/void workflow instead."
+        ),
+    )
 
 
 @router.get("/recent")

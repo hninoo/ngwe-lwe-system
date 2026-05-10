@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT NOT NULL DEFAULT 'employee' CHECK(role IN ('owner','employee','cashier')),
     is_active     INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    auth_version  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TRIGGER IF NOT EXISTS trg_users_updated_at
 AFTER UPDATE ON users FOR EACH ROW
@@ -312,7 +313,9 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (4, 'Add companies, service_types; migrate accounts, commission_tiers, and transactions'),
 (5, 'Add is_fee_account flag to accounts'),
 (6, 'Add current_balance to floats; create daily_reconciliation_logs'),
-(7, 'Rebuild cash_float_assignments with new statuses; create vault_transactions');
+(7, 'Rebuild cash_float_assignments with new statuses; create vault_transactions'),
+(8, 'Add Pay_To_Pay service types for Bank companies'),
+(9, 'Add auth_version for token revocation');
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123

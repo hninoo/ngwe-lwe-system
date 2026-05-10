@@ -1,11 +1,11 @@
 from typing import Optional
 
 from models.transaction import Transaction
-from repositories.transaction_operation_base import TransactionOperationRepository
+from repositories.transaction_operation_base import TransactionOperationBase
 
 
-class CashInRepository(TransactionOperationRepository):
-    """Business logic for Cash In: receive digital value and pay physical cash."""
+class CashOutRepository(TransactionOperationBase):
+    """Business logic for Cash Out: receive physical cash and send digital value."""
 
     def create(
         self,
@@ -20,22 +20,21 @@ class CashInRepository(TransactionOperationRepository):
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        denominations: Optional[dict] = None,
     ) -> Transaction:
         self._validate_amount(amount)
         account = self._get_account(account_id)
-        commission = self._calc_commission(account, amount, "send")
+        active_float = self._validate_employee_float(employee_id, amount, denominations)
+        commission = self._calc_commission(account, amount, "receive")
         customer_fee, additional_fee_amount = self._resolve_fee_values(
-            account, amount, "deposit", customer_fee, additional_fee_amount
+            account, amount, "withdraw", customer_fee, additional_fee_amount
         )
         from_company_id = self._get_company_id(account.service_type_id)
 
         with self.atomic():
-            self._account_repo.increment_balance(account_id, -amount)
-            if employee_id is not None:
-                self._float_repo.add_float_balance(employee_id, amount)
-            self._update_fee_account(fee_account_id, customer_fee)
+            self._account_repo.increment_balance(account_id, amount)
             txn_id = self._txn_repo.create({
-                "transaction_type": "deposit",
+                "transaction_type": "withdraw",
                 "account_id": account_id,
                 "customer_name": customer_name,
                 "customer_phone": customer_phone,
@@ -43,7 +42,7 @@ class CashInRepository(TransactionOperationRepository):
                 "commission_amount": commission,
                 "customer_fee": customer_fee,
                 "additional_fee_amount": additional_fee_amount,
-                "balance_change": -amount,
+                "balance_change": amount,
                 "currency": "MMK",
                 "fee_account_id": fee_account_id,
                 "screenshot_path": screenshot_path,
@@ -51,10 +50,14 @@ class CashInRepository(TransactionOperationRepository):
                 "created_by": created_by,
                 "from_company_id": from_company_id,
             })
+            self._process_employee_withdrawal(
+                employee_id, amount, denominations, active_float, txn_id
+            )
+            self._update_fee_account(fee_account_id, customer_fee)
             self._log(created_by, "transaction_created", txn_id, {
-                "type": "deposit",
+                "type": "withdraw",
                 "account_id": account_id,
                 "amount": amount,
-                "balance_delta": -amount,
+                "balance_delta": amount,
             })
         return self._txn_repo.get_by_id(txn_id)

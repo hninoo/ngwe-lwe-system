@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.auth import get_current_user
+from backend.money import normalize_money
 from repositories.exchange_rate_repository import ExchangeRateRepository
 
 router = APIRouter(prefix="/exchange-rates", tags=["exchange_rates"])
@@ -38,11 +39,17 @@ def create_rate(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    try:
+        base_amount = normalize_money(body.base_amount, places=4)
+        buy_rate = normalize_money(body.buy_rate, places=4)
+        sell_rate = normalize_money(body.sell_rate, places=4)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     rate_id = _rate_repo.create({
         "base_currency": body.base_currency,
         "quote_currency": body.quote_currency,
-        "base_amount": body.base_amount,
-        "buy_rate": body.buy_rate,
-        "sell_rate": body.sell_rate,
+        "base_amount": base_amount,
+        "buy_rate": buy_rate,
+        "sell_rate": sell_rate,
     })
     return {"message": "Rate saved", "id": rate_id}

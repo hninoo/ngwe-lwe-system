@@ -11,4 +11,6 @@ class User:
     role: Optional[str] = None  # 'owner' | 'employee' | 'cashier'
     is_active: Optional[bool] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     pin_hash: Optional[str] = None
+    auth_version: int = 0

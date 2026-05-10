@@ -33,7 +33,9 @@ from PyQt6.QtWidgets import (
 )
 
 from i18n import t
+from repositories.transaction_ui_repository import TransactionUiRepository
 from services.api_client import ApiClient
+from views.components.input_validation import install_amount_validator, sanitize_text
 from views.transaction_view import (
     ACCENT_BLUE,
     ACCENT_GREEN,
@@ -64,7 +66,7 @@ from views.transaction_view import (
 from views.widgets.company_selector import AccountSelector, ServiceTypeSelector, add_placeholder
 
 
-class TransactionFormPage(QWidget):
+class BaseFormView(QWidget):
     # ── Sub-class must declare these ──────────────────────────────────────────
     _TXN_HEADERS: list[str] = []
     _TXN_COL_WIDTHS: list[int] = []
@@ -75,13 +77,11 @@ class TransactionFormPage(QWidget):
         api: ApiClient,
         navigate,
         transaction_type: str = "cash_in",
-        operation_repository=None,
-        show_action_buttons: bool = False,
+        repository=None,
     ) -> None:
         super().__init__()
-        self._api = api
         self._navigate = navigate
-        self._operation_repository = operation_repository
+        self._repository = repository or TransactionUiRepository(api)
         self._selected_action: str = normalize_transaction_type(transaction_type)
         self._screenshot_path: Optional[str] = None
         self._accounts_cache: list[dict] = []
@@ -227,6 +227,7 @@ class TransactionFormPage(QWidget):
 
     def _make_amount_input(self) -> QLineEdit:
         self._amount_input = QLineEdit()
+        install_amount_validator(self._amount_input)
         self._amount_input.setPlaceholderText("0")
         self._amount_input.textChanged.connect(self._on_amount_changed)
         # Focus next to fee account after amount; fee_account_combo set later by _make_fee_grid
@@ -353,15 +354,18 @@ class TransactionFormPage(QWidget):
     # ── Float management ────────────────────────────────────────────────────
 
     def load_data(self) -> None:
-        self._load_companies()
-        self._load_my_transactions()
-        user = self._api.user or {}
-        if user.get("role") == "employee":
-            self._set_float_state(self._check_float_status())
+        try:
+            self._load_companies()
+            self._load_my_transactions()
+            user = self._repository.current_user
+            if user.get("role") == "employee":
+                self._set_float_state(self._check_float_status())
+        except Exception:
+            self._show_status(t("err_load_data") if t("err_load_data") != "err_load_data" else "Failed to load data.", error=True)
 
     def _check_float_status(self) -> bool:
         try:
-            floats = self._api.get_floats()
+            floats = self._repository.get_floats()
             return any(f.get("status") == "ACTIVE" for f in floats)
         except Exception:
             return True
@@ -492,7 +496,7 @@ class TransactionFormPage(QWidget):
         if service_type_id is None:
             return None
         try:
-            tier = self._api.lookup_tier(service_type_id, amount)
+            tier = self._repository.lookup_tier(service_type_id, amount)
             if (
                 tier.get("fee_amount_deposit", 0) == 0
                 and tier.get("fee_amount_withdraw", 0) == 0
@@ -545,7 +549,7 @@ class TransactionFormPage(QWidget):
 
     def _get_fresh_balance(self, account_id: int) -> float:
         try:
-            return float(self._api.get_account(account_id).get("balance", 0))
+            return float(self._repository.get_account(account_id).get("balance", 0))
         except Exception:
             return 0.0
 
@@ -621,11 +625,11 @@ class TransactionFormPage(QWidget):
             return
         filtered = self._get_companies_for_action()
         self._company_selector.blockSignals(True)
-        self._company_selector.populate(filtered, self._api)
+        self._company_selector.populate(filtered, self._repository)
         self._company_selector.blockSignals(False)
         if self._to_company_selector is not None:
             self._to_company_selector.blockSignals(True)
-            self._to_company_selector.populate(filtered, self._api)
+            self._to_company_selector.populate(filtered, self._repository)
             self._to_company_selector.blockSignals(False)
         cid = self._company_selector.selected_company_id()
         if cid is not None:
@@ -637,15 +641,15 @@ class TransactionFormPage(QWidget):
 
     def _load_companies(self) -> None:
         try:
-            self._all_companies_cache = self._api.get_companies()
+            self._all_companies_cache = self._repository.get_companies()
             self._repopulate_company_selectors()
         except Exception:
-            pass
+            self._show_status("Failed to load companies.", error=True)
         self._load_fee_accounts()
 
     def _load_fee_accounts(self) -> None:
         try:
-            all_accounts = self._api.get_accounts()
+            all_accounts = self._repository.get_accounts()
             fee_accs = [a for a in all_accounts if int(a.get("is_fee_account") or 0) == 1]
             self._fee_accounts_cache = [FEE_CASH_ITEM] + fee_accs
         except Exception:
@@ -665,7 +669,7 @@ class TransactionFormPage(QWidget):
 
     def _on_company_changed(self, company_id: int) -> None:
         try:
-            service_types = self._api.get_service_types(company_id)
+            service_types = self._repository.get_service_types(company_id)
             if self._selected_action in ("transfer", "exchange"):
                 target = self._selected_action.capitalize()
                 st = next(
@@ -688,7 +692,7 @@ class TransactionFormPage(QWidget):
 
     def _on_service_type_changed(self, service_type_id: int) -> None:
         try:
-            accounts = self._api.get_accounts(service_type_id=service_type_id)
+            accounts = self._repository.get_accounts(service_type_id=service_type_id)
             if self._account_selector is not None:
                 self._account_selector.populate(accounts)
             self._accounts_cache = accounts
@@ -698,7 +702,7 @@ class TransactionFormPage(QWidget):
 
     def _on_to_company_changed(self, company_id: int) -> None:
         try:
-            service_types = self._api.get_service_types(company_id)
+            service_types = self._repository.get_service_types(company_id)
             st = next(
                 (s for s in service_types if s.get("name", "").lower() == "transfer"),
                 None,
@@ -710,7 +714,7 @@ class TransactionFormPage(QWidget):
 
     def _on_to_service_type_changed(self, service_type_id: int) -> None:
         try:
-            accounts = self._api.get_accounts(service_type_id=service_type_id)
+            accounts = self._repository.get_accounts(service_type_id=service_type_id)
             if self._to_account_selector is not None:
                 self._to_account_selector.populate(accounts)
             self._to_accounts_cache = accounts
@@ -719,9 +723,9 @@ class TransactionFormPage(QWidget):
 
     def _load_my_transactions(self) -> None:
         try:
-            self._populate_txn_table(self._api.get_recent_transactions(50))
+            self._populate_txn_table(self._repository.get_recent_transactions(50))
         except Exception:
-            pass
+            self._show_status("Failed to load transactions.", error=True)
 
     # ── Screenshot ──────────────────────────────────────────────────────────
 
@@ -755,18 +759,18 @@ class TransactionFormPage(QWidget):
         action = self._selected_action
         amount = self._parse_amount()
         account = self._get_selected_account()
-        note = self._note_input.toPlainText().strip() if self._note_input else None
+        note = sanitize_text(self._note_input.toPlainText(), 500) if self._note_input else None
         note = note or None
         fee = self._parse_total_fee()
         additional = self._parse_additional_fee()
         fee_acc = self._get_fee_account_id()
 
         if action == "deposit":
-            self._api.create_deposit(
+            self._repository.create_deposit(
                 account_id=account["id"],
                 amount=amount,
-                customer_name=self._customer_name.text().strip() if self._customer_name else "",
-                customer_phone=self._customer_phone.text().strip() if self._customer_phone else "",
+                customer_name=sanitize_text(self._customer_name.text(), 120) if self._customer_name else "",
+                customer_phone=sanitize_text(self._customer_phone.text(), 40) if self._customer_phone else "",
                 screenshot_path=self._screenshot_path,
                 customer_fee=fee,
                 additional_fee_amount=additional,
@@ -774,11 +778,11 @@ class TransactionFormPage(QWidget):
                 note=note,
             )
         elif action == "withdraw":
-            self._api.create_withdraw(
+            self._repository.create_withdraw(
                 account_id=account["id"],
                 amount=amount,
-                customer_name=self._customer_name.text().strip() if self._customer_name else "",
-                customer_phone=self._customer_phone.text().strip() if self._customer_phone else "",
+                customer_name=sanitize_text(self._customer_name.text(), 120) if self._customer_name else "",
+                customer_phone=sanitize_text(self._customer_phone.text(), 40) if self._customer_phone else "",
                 screenshot_path=self._screenshot_path,
                 customer_fee=fee,
                 additional_fee_amount=additional,
@@ -787,7 +791,7 @@ class TransactionFormPage(QWidget):
             )
         elif action == "transfer":
             to_acc_id = self._to_account_selector.selected_account_id() if self._to_account_selector else None
-            self._api.create_transfer(
+            self._repository.create_transfer(
                 from_account_id=account["id"],
                 to_account_id=to_acc_id,
                 amount=amount,
@@ -801,7 +805,7 @@ class TransactionFormPage(QWidget):
             currency = ""
             if self._currency_combo:
                 currency = self._currency_combo.currentData() or self._currency_combo.currentText()
-            self._api.create_exchange(
+            self._repository.create_exchange(
                 account_id=account["id"],
                 amount=amount,
                 currency=currency,
@@ -817,7 +821,7 @@ class TransactionFormPage(QWidget):
         self._load_my_transactions()
 
     def _validate(self) -> Optional[str]:
-        user = self._api.user or {}
+        user = self._repository.current_user
         if user.get("role") == "employee" and self._selected_action in (
             "withdraw",
             "transfer",

@@ -8,6 +8,7 @@ import json
 
 from backend.auth import get_current_user
 from backend.database import atomic, get_cursor
+from backend.money import normalize_money
 from repositories.account_repository import AccountRepository
 from viewmodels.account_viewmodel import AccountViewModel
 
@@ -75,11 +76,15 @@ def create_account(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    try:
+        balance = normalize_money(body.balance)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     account_id = _account_repo.create({
         "service_type_id": body.service_type_id,
         "account_name": body.account_name,
         "phone_number": body.phone_number,
-        "balance": body.balance,
+        "balance": balance,
         "is_fee_account": int(body.is_fee_account),
     })
     return {"message": "Account created", "account_id": account_id}
@@ -126,12 +131,16 @@ def adjust_balance(
         raise HTTPException(status_code=403, detail="Owner only")
     if _account_repo.get_by_id(account_id) is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    try:
+        amount = normalize_money(body.amount)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     with atomic():
         # Re-read inside the write lock so concurrent adjustments don't skew the audit log.
         account = _account_repo.get_by_id(account_id)
         old_balance = account.balance
-        new_balance = round(old_balance + body.amount, 2)
-        _account_repo.increment_balance(account_id, body.amount)
+        new_balance = round(old_balance + amount, 2)
+        _account_repo.increment_balance(account_id, amount)
         with get_cursor(commit=True) as cursor:
             cursor.execute(
                 "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
@@ -141,7 +150,7 @@ def adjust_balance(
                     "balance_adjust",
                     account_id,
                     json.dumps({
-                        "amount": body.amount,
+                        "amount": amount,
                         "old_balance": old_balance,
                         "new_balance": new_balance,
                         "remark": body.remark,
