@@ -1290,8 +1290,8 @@ class CashApprovalDialog(QDialog):
         layout.addWidget(title)
 
         type_color = {
-            "DEPOSIT": ACCENT_GREEN, "WITHDRAW": ACCENT_RED,
-            "TRANSFER": ACCENT_BLUE, "EXCHANGE": ACCENT_YELLOW,
+            "cash_in": ACCENT_GREEN, "cash_out": ACCENT_RED,
+            "transfer": ACCENT_BLUE, "exchange": ACCENT_YELLOW,
         }.get(txn_type, TEXT_PRIMARY)
         # vault direction hint
         direction = t("vault_in_hint") if self._txn.get("transaction_type") == "cash_in" \

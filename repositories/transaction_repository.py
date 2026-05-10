@@ -1,5 +1,4 @@
 from datetime import datetime
-from datetime import datetime
 from typing import Optional
 
 from backend.database import get_cursor
