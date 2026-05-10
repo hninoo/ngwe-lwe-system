@@ -1,9 +1,10 @@
 from dataclasses import asdict
+from decimal import Decimal
 from typing import Optional
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 import json
 
@@ -34,10 +35,22 @@ _pin_limiter = RateLimiter(max_attempts=5, window_seconds=300)
 
 # ── Pydantic request models ──
 
+def _validate_non_negative_denominations(value: dict[str, int]) -> dict[str, int]:
+    for denom, qty in value.items():
+        if qty < 0:
+            raise ValueError(f"Quantity for {denom} must be a non-negative integer")
+    return value
+
+
 class VaultEntryRequest(BaseModel):
     entry_type: str
     denominations: dict[str, int]
     note: Optional[str] = None
+
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
 
 
 class IssueFloatRequest(BaseModel):
@@ -45,16 +58,31 @@ class IssueFloatRequest(BaseModel):
     denominations: dict[str, int]
     note: Optional[str] = None
 
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
+
 
 class ReceiveFloatRequest(BaseModel):
     pin: str
     denominations: dict[str, int]
+
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
 
 
 class InitiateReturnRequest(BaseModel):
     denominations: dict[str, int]
     note: Optional[str] = None
     pin: Optional[str] = None
+
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
 
 
 class ConfirmReturnRequest(BaseModel):
@@ -65,14 +93,28 @@ class ReceivedCashRequest(BaseModel):
     denominations: dict[str, int]
     note: Optional[str] = None
 
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
+
 
 class ConfirmCashInRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str
     denominations: dict[str, int]
     note: Optional[str] = None
 
+    @field_validator("denominations")
+    @classmethod
+    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validate_non_negative_denominations(value)
+
 
 class CancelCashInRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     pin: str
     note: Optional[str] = None
 
@@ -132,6 +174,26 @@ def _verify_cashier_pin_or_401(cashier_id: int, pin: str, key: str) -> None:
         _pin_limiter.record_failure(key)
         raise HTTPException(401, "Invalid cashier PIN")
     _pin_limiter.clear(key)
+
+
+def _validate_cash_in_denominations_total(
+    denominations: dict[int, int],
+    amount: float,
+) -> tuple[Decimal, Decimal, Decimal]:
+    entered_total = sum(Decimal(denom) * Decimal(qty) for denom, qty in denominations.items())
+    expected = Decimal(str(amount or 0))
+    diff = entered_total - expected
+    if entered_total <= 0:
+        raise HTTPException(400, "Denomination total must be greater than zero")
+    if abs(diff) > Decimal(CASH_TOLERANCE_MMK):
+        raise HTTPException(422, detail={
+            "message": "Cash total does not match Cash In amount",
+            "expected": float(expected),
+            "entered": float(entered_total),
+            "difference": float(diff),
+            "tolerance": CASH_TOLERANCE_MMK,
+        })
+    return entered_total, expected, diff
 
 
 # ── Vault endpoints ──
@@ -383,19 +445,9 @@ def confirm_pending_cash_in(
         raise HTTPException(409, f"Invalid status transition: {txn.status} -> COMPLETED")
 
     denoms = _parse_denominations(body.denominations)
-    entered_total = sum(d * q for d, q in denoms.items())
-    expected = int(txn.amount or 0)
-    diff = entered_total - expected
-    if entered_total <= 0:
-        raise HTTPException(400, "Denomination total must be greater than zero")
-    if abs(diff) > CASH_TOLERANCE_MMK:
-        raise HTTPException(422, detail={
-            "message": "Cash total does not match Cash In amount",
-            "expected": expected,
-            "entered": entered_total,
-            "difference": diff,
-            "tolerance": CASH_TOLERANCE_MMK,
-        })
+    entered_total, expected, diff = _validate_cash_in_denominations_total(
+        denoms, txn.amount
+    )
 
     with atomic():
         updated = txn_repo.confirm_pending_cash_in(txn_id, current_user["user_id"])
@@ -404,7 +456,13 @@ def confirm_pending_cash_in(
         from repositories.account_repository import AccountRepository
         account_repo = AccountRepository()
         if txn.fee_account_id is not None and float(txn.customer_fee or 0) > 0:
-            account_repo.increment_balance(txn.fee_account_id, float(txn.customer_fee or 0))
+            if not account_repo.increment_balance(
+                txn.fee_account_id, float(txn.customer_fee or 0)
+            ):
+                raise HTTPException(
+                    500,
+                    f"Fee credit failed: Fee account #{txn.fee_account_id} not found or inactive.",
+                )
         _denom_repo.record_bulk_entry(
             entry_type="vault_in",
             denominations=denoms,
@@ -420,8 +478,9 @@ def confirm_pending_cash_in(
                     txn_id,
                     json.dumps({
                         "amount": txn.amount,
-                        "entered_total": entered_total,
+                        "entered_total": float(entered_total),
                         "vault_entry_type": "vault_in",
+                        "difference": float(diff),
                     }),
                 ),
             )
@@ -452,6 +511,17 @@ def cancel_pending_cash_in(
     try:
         updated = CashInRepository().cancel_pending_cash_in(
             txn_id, current_user["user_id"], body.note
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            500,
+            detail={
+                "message": "Cash In cancellation failed due to reversal safety check.",
+                "error": str(exc),
+                "txn_id": txn_id,
+                "status": "PENDING_CASHIER_CONFIRM",
+                "action_required": "Investigate account status and retry manually.",
+            },
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))

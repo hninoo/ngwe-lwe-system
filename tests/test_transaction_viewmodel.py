@@ -5,12 +5,14 @@ Uses dependency injection (mock repositories) — no live DB required.
 These will be RED until T034 updates TransactionViewModel.
 """
 import sys
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 ROOT = Path(__file__).parent.parent
 if str(ROOT) not in sys.path:
@@ -235,6 +237,92 @@ def test_cancel_pending_cash_in_auto_reverses_digital_balance():
     account_repo.increment_balance.assert_called_once_with(1, 25000.0)
     vm._txn_repo.cancel_pending_cash_in.assert_called_once_with(42, 3, "Wrong amount")
     assert updated.status == "CANCELLED"
+
+
+def test_cancel_pending_cash_in_balance_failure_does_not_cancel():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, _ = _make_vm(account, tier)
+    pending_txn = Transaction(
+        id=42,
+        transaction_type="cash_in",
+        account_id=1,
+        amount=25000.0,
+        status="PENDING_CASHIER_CONFIRM",
+        vault_impact="none",
+        created_by=7,
+    )
+    vm._txn_repo.get_by_id.return_value = pending_txn
+    account_repo.increment_balance.return_value = False
+
+    with pytest.raises(RuntimeError):
+        vm._cash_in_repo.cancel_pending_cash_in(42, 3, "Inactive account")
+
+    vm._txn_repo.cancel_pending_cash_in.assert_not_called()
+
+
+def test_cancel_pending_cash_in_status_race_rolls_back_reversal():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, _ = _make_vm(account, tier)
+    pending_txn = Transaction(
+        id=42,
+        transaction_type="cash_in",
+        account_id=1,
+        amount=25000.0,
+        status="PENDING_CASHIER_CONFIRM",
+        vault_impact="none",
+        created_by=7,
+    )
+    vm._txn_repo.get_by_id.return_value = pending_txn
+    vm._txn_repo.cancel_pending_cash_in.return_value = None
+
+    with pytest.raises(RuntimeError):
+        vm._cash_in_repo.cancel_pending_cash_in(42, 3, "Already handled")
+
+    account_repo.increment_balance.assert_called_once_with(1, Decimal("25000.0"))
+
+
+def test_confirm_cash_in_rejects_negative_denominations():
+    from backend.routes.cashier import ConfirmCashInRequest
+
+    with pytest.raises(ValidationError):
+        ConfirmCashInRequest(
+            pin="1234",
+            denominations={"1000": -1},
+        )
+
+
+def test_cashier_denomination_models_reject_negative_counts():
+    from backend.routes.cashier import (
+        InitiateReturnRequest,
+        IssueFloatRequest,
+        ReceivedCashRequest,
+        ReceiveFloatRequest,
+        VaultEntryRequest,
+    )
+
+    invalid_payloads = [
+        lambda: VaultEntryRequest(entry_type="vault_in", denominations={"1000": -1}),
+        lambda: IssueFloatRequest(employee_id=7, denominations={"1000": -1}),
+        lambda: ReceiveFloatRequest(pin="1234", denominations={"1000": -1}),
+        lambda: InitiateReturnRequest(pin="1234", denominations={"1000": -1}),
+        lambda: ReceivedCashRequest(denominations={"1000": -1}),
+    ]
+
+    for build_request in invalid_payloads:
+        with pytest.raises(ValidationError):
+            build_request()
+
+
+def test_cancel_cash_in_rejects_unexpected_denominations_field():
+    from backend.routes.cashier import CancelCashInRequest
+
+    with pytest.raises(ValidationError):
+        CancelCashInRequest(
+            pin="1234",
+            denominations={"1000": -1},
+        )
 
 
 def test_cash_out_increases_account_and_decreases_drawer():

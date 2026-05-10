@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Optional
 
 from backend.database import get_cursor
@@ -89,11 +90,12 @@ class AccountRepository(BaseRepository):
             "Use increment_balance() via the audited balance-adjust route."
         )
 
-    def increment_balance(self, account_id: int, delta: float) -> bool:
-        """Atomically apply delta (positive or negative) to account balance."""
+    def increment_balance(self, account_id: int, delta: float | Decimal) -> bool:
+        """Atomically apply delta to an active account balance."""
+        delta_decimal = Decimal(str(delta))
         with get_cursor(commit=True) as cursor:
             cursor.execute(
-                "UPDATE accounts SET balance = balance + ? WHERE id = ?",
-                (delta, account_id),
+                "UPDATE accounts SET balance = balance + ? WHERE id = ? AND is_active = 1",
+                (str(delta_decimal), account_id),
             )
             return cursor.rowcount > 0

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Optional
 
 from models.transaction import Transaction
@@ -22,25 +23,29 @@ class CashInRepository(TransactionOperationBase):
         employee_id: Optional[int] = None,
     ) -> Transaction:
         self._validate_amount(amount)
+        amount_decimal = Decimal(str(amount))
         account = self._get_account(account_id)
-        commission = self._calc_commission(account, amount, "send")
+        commission = self._calc_commission(account, float(amount_decimal), "send")
         customer_fee, additional_fee_amount = self._resolve_fee_values(
-            account, amount, "cash_in", customer_fee, additional_fee_amount
+            account, float(amount_decimal), "cash_in", customer_fee, additional_fee_amount
         )
         from_company_id = self._get_company_id(account.service_type_id)
 
         with self.atomic():
-            self._account_repo.increment_balance(account_id, -amount)
+            if not self._account_repo.increment_balance(account_id, -amount_decimal):
+                raise RuntimeError(
+                    f"Unable to deduct Cash In balance for active account #{account_id}."
+                )
             txn_id = self._txn_repo.create({
                 "transaction_type": "cash_in",
                 "account_id": account_id,
                 "customer_name": customer_name,
                 "customer_phone": customer_phone,
-                "amount": amount,
+                "amount": float(amount_decimal),
                 "commission_amount": commission,
                 "customer_fee": customer_fee,
                 "additional_fee_amount": additional_fee_amount,
-                "balance_change": -amount,
+                "balance_change": float(-amount_decimal),
                 "currency": "MMK",
                 "fee_account_id": fee_account_id,
                 "screenshot_path": screenshot_path,
@@ -53,8 +58,8 @@ class CashInRepository(TransactionOperationBase):
             self._log(created_by, "transaction_created", txn_id, {
                 "type": "cash_in",
                 "account_id": account_id,
-                "amount": amount,
-                "balance_delta": -amount,
+                "amount": float(amount_decimal),
+                "balance_delta": float(-amount_decimal),
                 "status": "PENDING_CASHIER_CONFIRM",
                 "vault_impact": "none",
                 "message": (
@@ -78,15 +83,23 @@ class CashInRepository(TransactionOperationBase):
         if txn.status != "PENDING_CASHIER_CONFIRM":
             return None
 
-        reversal_amount = float(txn.amount or 0)
+        reversal_amount = Decimal(str(txn.amount or 0))
         with self.atomic():
-            self._account_repo.increment_balance(txn.account_id, reversal_amount)
+            if not self._account_repo.increment_balance(txn.account_id, reversal_amount):
+                raise RuntimeError(
+                    f"Unable to reverse Cash In balance for active account #{txn.account_id}."
+                )
             updated = self._txn_repo.cancel_pending_cash_in(txn_id, cashier_id, note)
+            if updated is None:
+                raise RuntimeError(
+                    f"Transaction #{txn_id} is no longer pending confirmation. "
+                    "Auto-reversal was rolled back."
+                )
             self._log(cashier_id, "cash_in_auto_reversed", txn_id, {
                 "type": "cash_in",
                 "account_id": txn.account_id,
                 "amount": txn.amount,
-                "balance_delta": reversal_amount,
+                "balance_delta": float(reversal_amount),
                 "status": "CANCELLED",
                 "message": "Auto-reversal credited digital balance back after cashier cancellation.",
             })
