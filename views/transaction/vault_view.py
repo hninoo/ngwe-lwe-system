@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -62,6 +63,19 @@ def _cell(text: str, align=Qt.AlignmentFlag.AlignLeft) -> QTableWidgetItem:
     return item
 
 
+def _compact_action_btn(text: str, color: str) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background-color: {color}; color: {BG_DARK}; "
+        f"border: none; border-radius: 4px; padding: 4px 10px; "
+        f"font-size: 11px; font-weight: bold; }}"
+        f"QPushButton:hover {{ background-color: {color}; }}"
+        f"QPushButton:disabled {{ background-color: #585b70; color: #6c7086; }}"
+    )
+    return btn
+
+
 class ReturnCashDialog(QDialog):
     def __init__(self, repo: VaultRepository, float_data: dict, balance: dict, parent=None) -> None:
         super().__init__(parent)
@@ -72,6 +86,8 @@ class ReturnCashDialog(QDialog):
         self._total_label: Optional[QLabel] = None
         self._pin_input: Optional[QLineEdit] = None
         self._note_input: Optional[QLineEdit] = None
+        self.denominations: dict[str, int] = {}
+        self.note: Optional[str] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -124,12 +140,6 @@ class ReturnCashDialog(QDialog):
         total_row.addWidget(self._total_label)
         layout.addLayout(total_row)
 
-        self._pin_input = QLineEdit()
-        self._pin_input.setPlaceholderText("PIN")
-        self._pin_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._pin_input.setMaxLength(6)
-        layout.addWidget(self._pin_input)
-
         self._note_input = QLineEdit()
         self._note_input.setPlaceholderText(t("note_optional"))
         layout.addWidget(self._note_input)
@@ -151,24 +161,13 @@ class ReturnCashDialog(QDialog):
             self._total_label.setText(f"{total:,} MMK")
 
     def _on_submit(self) -> None:
-        pin = self._pin_input.text().strip() if self._pin_input else ""
-        if len(pin) != 6 or not pin.isdigit():
-            QMessageBox.warning(self, t("error"), t("pin_invalid"))
-            return
         denoms = {str(d): spin.value() for d, spin in self._spinboxes.items()}
         if sum(int(d) * q for d, q in denoms.items()) <= 0:
             QMessageBox.warning(self, t("error"), t("total_nonzero"))
             return
-        try:
-            self._repo.return_float(
-                self._float_data["id"],
-                pin,
-                denoms,
-                self._note_input.text().strip() if self._note_input else None,
-            )
-            self.accept()
-        except Exception as exc:
-            QMessageBox.warning(self, t("error"), str(exc))
+        self.denominations = denoms
+        self.note = self._note_input.text().strip() if self._note_input else None
+        self.accept()
 
 
 class VaultPage(QWidget):
@@ -181,6 +180,7 @@ class VaultPage(QWidget):
         self._history_table: Optional[QTableWidget] = None
         self._active_float: Optional[dict] = None
         self._pending_float: Optional[dict] = None
+        self._pending_reconciliation_float: Optional[dict] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -261,9 +261,9 @@ class VaultPage(QWidget):
         hist = QLabel("Vault History")
         hist.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         layout.addWidget(hist)
-        self._history_table = QTableWidget(0, 7)
+        self._history_table = QTableWidget(0, 8)
         self._history_table.setHorizontalHeaderLabels(
-            ["Date / Time", "Source", "Type", "Amount", "Status", "Reference", "Note"]
+            ["Date / Time", "Source", "Type", "Amount", "Status", "Reference", "Note", "Action"]
         )
         self._history_table.verticalHeader().setVisible(False)
         self._history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -275,10 +275,12 @@ class VaultPage(QWidget):
 
     def load_data(self) -> None:
         try:
-            floats = self._repo.get_my_floats()
+            history = self._repo.fetch_vault_history()
+            floats = history.get("floats", [])
             self._active_float = self._repo.get_active_float()
             self._pending_float = self._repo.get_pending_float()
-            transactions = self._repo.get_cash_affecting_transactions()
+            self._pending_reconciliation_float = self._repo.get_pending_reconciliation_float()
+            transactions = history.get("transactions", [])
             self._populate_denominations()
             self._populate_history(floats, transactions)
         except Exception as exc:
@@ -304,16 +306,35 @@ class VaultPage(QWidget):
         self._history_table.setRowCount(0)
         rows = self._build_float_history_rows(floats)
         rows.extend(self._build_transaction_history_rows(transactions))
-        rows.sort(key=lambda r: r[0], reverse=True)
-        for values in rows:
+        rows.sort(key=lambda r: r["sort_key"], reverse=True)
+        for item in rows:
+            values = item["values"]
             row = self._history_table.rowCount()
             self._history_table.insertRow(row)
             for col, value in enumerate(values):
                 align = Qt.AlignmentFlag.AlignRight if col == 3 else Qt.AlignmentFlag.AlignLeft
                 self._history_table.setItem(row, col, _cell(value, align))
+            self._set_history_action(row, item)
 
-    def _build_float_history_rows(self, floats: list[dict]) -> list[list[str]]:
-        rows: list[list[str]] = []
+    def _history_row(
+        self,
+        values: list[str],
+        *,
+        sort_key: str,
+        row_type: str = "",
+        status: str = "",
+        float_data: Optional[dict] = None,
+    ) -> dict:
+        return {
+            "values": values,
+            "sort_key": sort_key,
+            "row_type": row_type,
+            "status": status,
+            "float": float_data,
+        }
+
+    def _build_float_history_rows(self, floats: list[dict]) -> list[dict]:
+        rows: list[dict] = []
         for f in floats:
             total = float(f.get("total_amount") or 0)
             current = float(f.get("current_balance") or 0)
@@ -324,49 +345,74 @@ class VaultPage(QWidget):
             closed = str(f.get("closed_at", "") or "")
             status = f.get("status", "")
             if created:
-                rows.append([
-                    created[:16],
-                    "Float",
-                    "Issued",
-                    f"{total:,.0f}",
-                    status,
-                    ref,
-                    f"Issued by {f.get('issued_by_name') or ''}".strip(),
-                ])
+                rows.append(self._history_row(
+                    [
+                        created[:16],
+                        "Float",
+                        "Issued",
+                        f"{total:,.0f}",
+                        status,
+                        ref,
+                        f"Issued by {f.get('issued_by_name') or ''}".strip(),
+                    ],
+                    sort_key=created,
+                    row_type="float",
+                    status=status,
+                    float_data=f,
+                ))
             if received:
-                rows.append([
-                    received[:16],
-                    "Float",
-                    "Received",
-                    f"+{total:,.0f}",
-                    status,
-                    ref,
-                    note,
-                ])
+                rows.append(self._history_row(
+                    [
+                        received[:16],
+                        "Float",
+                        "Received",
+                        f"+{total:,.0f}",
+                        status,
+                        ref,
+                        note,
+                    ],
+                    sort_key=received,
+                    row_type="float",
+                    status=status,
+                    float_data=f,
+                ))
             if status == "PENDING_RECONCILIATION":
-                rows.append([
-                    (closed or received or created)[:16],
-                    "Float",
-                    "Return Requested",
-                    f"-{current:,.0f}",
-                    status,
-                    ref,
-                    note,
-                ])
+                return_time = closed or received or created
+                rows.append(self._history_row(
+                    [
+                        return_time[:16],
+                        "Float",
+                        "Return Requested",
+                        f"-{current:,.0f}",
+                        "RETURN_REQUESTED",
+                        ref,
+                        note,
+                    ],
+                    sort_key=return_time,
+                    row_type="float",
+                    status="RETURN_REQUESTED",
+                    float_data=f,
+                ))
             if closed:
-                rows.append([
-                    closed[:16],
-                    "Float",
-                    "Returned",
-                    f"-{float(f.get('closing_total') or current):,.0f}",
-                    status,
-                    ref,
-                    note,
-                ])
+                rows.append(self._history_row(
+                    [
+                        closed[:16],
+                        "Float",
+                        "Returned",
+                        f"-{float(f.get('closing_total') or current):,.0f}",
+                        "COMPLETED",
+                        ref,
+                        note,
+                    ],
+                    sort_key=closed,
+                    row_type="float",
+                    status="COMPLETED",
+                    float_data=f,
+                ))
         return rows
 
-    def _build_transaction_history_rows(self, transactions: list[dict]) -> list[list[str]]:
-        rows: list[list[str]] = []
+    def _build_transaction_history_rows(self, transactions: list[dict]) -> list[dict]:
+        rows: list[dict] = []
         labels = {
             "deposit": "Cash In",
             "withdraw": "Cash Out",
@@ -382,24 +428,103 @@ class VaultPage(QWidget):
             else:
                 signed_amount = f"-{amount:,.0f}"
                 status = "Vault Decreased"
-            rows.append([
-                str(txn.get("created_at", "") or "")[:16],
-                "Transaction",
-                labels.get(txn_type, txn_type.title()),
-                signed_amount,
-                status,
-                f"Txn #{txn.get('id', '')}",
-                txn.get("note") or txn.get("customer_name") or "",
-            ])
+            created = str(txn.get("created_at", "") or "")
+            rows.append(self._history_row(
+                [
+                    created[:16],
+                    "Transaction",
+                    labels.get(txn_type, txn_type.title()),
+                    signed_amount,
+                    status,
+                    f"Txn #{txn.get('id', '')}",
+                    txn.get("note") or txn.get("customer_name") or "",
+                ],
+                sort_key=created,
+                row_type="transaction",
+                status=status,
+            ))
         return rows
 
+    def _set_history_action(self, row: int, item: dict) -> None:
+        if self._history_table is None:
+            return
+        status = item.get("status", "")
+        float_data = item.get("float") or {}
+        role = (self._repo.api.user or {}).get("role")
+        btn = None
+        if status == "PENDING_RECEIPT":
+            btn = _compact_action_btn("Receive", ACCENT_GREEN)
+            btn.clicked.connect(lambda _, fd=dict(float_data): self._receive_float_row(fd))
+        elif status == "RETURN_REQUESTED" and role == "cashier":
+            btn = _compact_action_btn("Confirm Return", ACCENT_BLUE)
+            btn.clicked.connect(lambda _, fd=dict(float_data): self._confirm_return_row(fd))
+        if btn is None:
+            self._history_table.setItem(row, 7, _cell("", Qt.AlignmentFlag.AlignCenter))
+            return
+        wrapper = QWidget()
+        layout = QHBoxLayout(wrapper)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(0)
+        layout.addWidget(btn)
+        layout.addStretch()
+        self._history_table.setCellWidget(row, 7, wrapper)
+
+    def _open_receive_dialog(self, float_data: dict) -> None:
+        float_id = float_data.get("id")
+        if float_id is None:
+            QMessageBox.warning(self, t("error"), "Float ID not found.")
+            return
+        try:
+            detail = self._repo.api.get_float(int(float_id))
+        except Exception:
+            detail = float_data
+        dlg = ReceiveFloatDialog(
+            self._repo.api,
+            detail,
+            parent=self,
+            confirm_callback=lambda pin, fid: self._repo.confirm_receipt(fid, pin),
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def _receive_float_row(self, float_data: dict) -> None:
+        self._open_receive_dialog(float_data)
+
+    def _confirm_return_row(self, float_data: dict) -> None:
+        float_id = float_data.get("id")
+        if float_id is None:
+            QMessageBox.warning(self, t("error"), "Float ID not found.")
+            return
+        pin, ok = QInputDialog.getText(
+            self,
+            "Confirm Return",
+            "Enter cashier PIN to confirm returned cash:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        pin = pin.strip()
+        if len(pin) != 6 or not pin.isdigit():
+            QMessageBox.warning(self, t("error"), t("pin_invalid"))
+            return
+        try:
+            self._repo.api.confirm_float_return(int(float_id), pin)
+            self.load_data()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
+
     def _receive_float(self) -> None:
+        if self._pending_reconciliation_float:
+            QMessageBox.information(
+                self,
+                "Receive Float",
+                "A returned float is pending cashier reconciliation. Please wait for cashier confirmation.",
+            )
+            return
         if not self._pending_float:
             QMessageBox.information(self, "Receive Float", "No pending float to receive.")
             return
-        dlg = ReceiveFloatDialog(self._repo.api, self._pending_float, parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.load_data()
+        self._open_receive_dialog(self._pending_float)
 
     def _return_cash(self) -> None:
         if not self._active_float:
@@ -407,9 +532,26 @@ class VaultPage(QWidget):
             return
         balance = self._repo.get_float_balance(self._active_float["id"])
         dlg = ReturnCashDialog(self._repo, self._active_float, balance, parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        pin, ok = QInputDialog.getText(
+            self,
+            "Return Cash",
+            "Enter PIN to request cash return:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        pin = pin.strip()
+        if len(pin) != 6 or not pin.isdigit():
+            QMessageBox.warning(self, t("error"), t("pin_invalid"))
+            return
+        try:
+            self._repo.return_cash(self._active_float["id"], pin, dlg.denominations, note=dlg.note)
             QMessageBox.information(self, "Return Cash", "Return request sent to cashier.")
             self.load_data()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
 
 
 class VaultView(QMainWindow):

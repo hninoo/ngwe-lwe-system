@@ -366,8 +366,10 @@ class BaseFormView(QWidget):
     def _check_float_status(self) -> bool:
         try:
             floats = self._repository.get_floats()
-            return any(f.get("status") == "ACTIVE" for f in floats)
+            self._active_float = next((f for f in floats if f.get("status") == "ACTIVE"), None)
+            return self._active_float is not None
         except Exception:
+            self._active_float = None
             return True
 
     def _set_float_state(self, has_float: bool) -> None:
@@ -829,6 +831,9 @@ class BaseFormView(QWidget):
         ):
             if not self._check_float_status():
                 return t("err_no_float")
+            float_balance = float((getattr(self, "_active_float", None) or {}).get("current_balance") or 0)
+            if self._parse_amount() > float_balance:
+                return f"Vault Insufficient: available {float_balance:,.0f} MMK."
 
         if (
             self._selected_action in ("deposit", "withdraw")

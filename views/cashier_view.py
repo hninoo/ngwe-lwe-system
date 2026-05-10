@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -43,8 +44,11 @@ from PyQt6.QtWidgets import (
 )
 
 from i18n import t, on_change
+from repositories.profile_repository import ProfileRepository
+from repositories.transaction_ui_repository import TransactionUiRepository
 from services.api_client import ApiClient
 from views.receive_float_dialog import ReceiveFloatDialog
+from views.transaction_view import ProfileView
 from views.widgets.company_selector import add_placeholder
 
 WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
@@ -635,6 +639,7 @@ class ReturnFloatDialog(QDialog):
         self._balance = balance.get("denominations", {}) or {}
         self._spinboxes: dict[int, QSpinBox] = {}
         self._total_label: Optional[QLabel] = None
+        self._pin_input: Optional[QLineEdit] = None
         self._note_input: Optional[QLineEdit] = None
         self._init_ui()
 
@@ -685,6 +690,12 @@ class ReturnFloatDialog(QDialog):
         total_row.addWidget(self._total_label)
         layout.addLayout(total_row)
 
+        self._pin_input = QLineEdit()
+        self._pin_input.setPlaceholderText("PIN")
+        self._pin_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pin_input.setMaxLength(6)
+        layout.addWidget(self._pin_input)
+
         self._note_input = QLineEdit()
         self._note_input.setPlaceholderText(t("note_optional"))
         layout.addWidget(self._note_input)
@@ -711,11 +722,16 @@ class ReturnFloatDialog(QDialog):
         if total <= 0:
             QMessageBox.warning(self, t("error"), t("total_nonzero"))
             return
+        pin = self._pin_input.text().strip() if self._pin_input else ""
+        if len(pin) != 6 or not pin.isdigit():
+            QMessageBox.warning(self, t("error"), t("pin_invalid"))
+            return
         try:
             self._api.initiate_float_return(
                 self._float_data["id"],
                 denoms,
                 self._note_input.text().strip() if self._note_input else None,
+                pin=pin,
             )
             self.accept()
         except Exception as exc:
@@ -1138,7 +1154,9 @@ class ShiftsPage(QWidget):
                 status = f.get("status", "")
                 status_color = {
                     "PENDING": ACCENT_YELLOW,
+                    "PENDING_RECEIPT": ACCENT_YELLOW,
                     "ACTIVE": ACCENT_GREEN,
+                    "PENDING_RECONCILIATION": ACCENT_YELLOW,
                     "CLOSED": TEXT_MUTED,
                 }.get(status, TEXT_PRIMARY)
 
@@ -1158,7 +1176,11 @@ class ShiftsPage(QWidget):
                 self._table.setItem(row, 6, _cell(str(f.get("received_at", "") or "")[:16]))
                 self._table.setItem(row, 7, _cell(str(f.get("closed_at", "") or "")[:16]))
 
-                # Action button in last column
+                # Action buttons in last column
+                action_widget = QWidget()
+                action_layout = QHBoxLayout(action_widget)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.setSpacing(6)
                 view_btn = QPushButton(t("view"))
                 view_btn.setStyleSheet(
                     f"QPushButton {{ background-color: {ACCENT_BLUE}; color: {BG_DARK}; "
@@ -1168,13 +1190,47 @@ class ShiftsPage(QWidget):
                 view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 float_data = f
                 view_btn.clicked.connect(lambda _, fd=float_data: self._show_float_detail(fd))
-                self._table.setCellWidget(row, 8, view_btn)
+                action_layout.addWidget(view_btn)
+                if status == "PENDING_RECONCILIATION":
+                    confirm_btn = QPushButton(t("confirm_receipt_btn"))
+                    confirm_btn.setStyleSheet(
+                        f"QPushButton {{ background-color: {ACCENT_GREEN}; color: {BG_DARK}; "
+                        f"border: none; border-radius: 4px; padding: 4px 12px; font-size: 11px; }}"
+                        f"QPushButton:hover {{ background-color: #94e2d5; }}"
+                    )
+                    confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    confirm_btn.clicked.connect(
+                        lambda _, fid=f.get("id"): self._confirm_return_receipt(fid)
+                    )
+                    action_layout.addWidget(confirm_btn)
+                action_layout.addStretch()
+                self._table.setCellWidget(row, 8, action_widget)
         except Exception:
             pass
 
     def _show_float_detail(self, float_data: dict) -> None:
         dlg = FloatDetailDialog(float_data, parent=self)
         dlg.exec()
+
+    def _confirm_return_receipt(self, float_id: int) -> None:
+        pin, ok = QInputDialog.getText(
+            self,
+            "Confirm Receipt",
+            "Enter cashier PIN to confirm returned cash:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        pin = pin.strip()
+        if len(pin) != 6 or not pin.isdigit():
+            QMessageBox.warning(self, t("error"), t("pin_invalid"))
+            return
+        try:
+            self._api.confirm_float_return(float_id, pin)
+            QMessageBox.information(self, "Confirm Receipt", "Returned cash added to the main vault.")
+            self.load_data()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
 
 
 # ════════════════════════════════════════════
@@ -1571,6 +1627,7 @@ class CashierView(QMainWindow):
             (t("nav_issue_float"), 1),
             (t("nav_shifts"), 2),
             (t("nav_transactions"), 3),
+            ("Profile", 4),
         ]
 
     def __init__(self, api: ApiClient) -> None:
@@ -1621,12 +1678,16 @@ class CashierView(QMainWindow):
         self._issue_page = IssueFloatPage(self._api)
         self._shifts_page = ShiftsPage(self._api)
         self._txns_page = TransactionsReadOnlyPage(self._api)
+        self._transaction_repository = TransactionUiRepository(self._api)
+        self._profile_repository = ProfileRepository(self._transaction_repository)
+        self._profile_page = ProfileView(self._profile_repository, self._switch_page)
 
         self._pages = [
             self._vault_page,
             self._issue_page,
             self._shifts_page,
             self._txns_page,
+            self._profile_page,
         ]
 
         for page in self._pages:

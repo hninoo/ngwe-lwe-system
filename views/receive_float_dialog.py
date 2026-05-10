@@ -1,3 +1,5 @@
+from typing import Callable, Optional
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -65,10 +67,17 @@ DIALOG_STYLE = f"""
 class ReceiveFloatDialog(QDialog):
     """Shown to employee when they have a PENDING float to receive."""
 
-    def __init__(self, api: ApiClient, float_data: dict, parent=None) -> None:
+    def __init__(
+        self,
+        api: ApiClient,
+        float_data: dict,
+        parent=None,
+        confirm_callback: Optional[Callable[[str, int], dict]] = None,
+    ) -> None:
         super().__init__(parent)
         self._api = api
         self._float_data = float_data
+        self._confirm_callback = confirm_callback
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -205,12 +214,15 @@ class ReceiveFloatDialog(QDialog):
 
         try:
             float_id = self._float_data["id"]
-            denoms = {
-                str(d["denomination"]): int(d["quantity"])
-                for d in self._float_data.get("denominations", [])
-                if int(d.get("quantity", 0)) > 0
-            }
-            self._api.receive_float(float_id, pin, denoms)
+            if self._confirm_callback is not None:
+                self._confirm_callback(pin, float_id)
+            else:
+                denoms = {
+                    str(d["denomination"]): int(d["quantity"])
+                    for d in self._float_data.get("denominations", [])
+                    if int(d.get("quantity", 0)) > 0
+                }
+                self._api.receive_float(float_id, pin, denoms)
             self.accept()
         except Exception as e:
             error_text = str(e)
