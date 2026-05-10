@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from typing import Callable
 
 from i18n import t, set_locale, get_locale, on_change
 from services.api_client import ApiClient
@@ -70,9 +71,10 @@ STYLESHEET = f"""
 
 class LoginView(QMainWindow):
 
-    def __init__(self, api_client: ApiClient) -> None:
+    def __init__(self, api_client: ApiClient, dashboard_controller: Callable | None = None) -> None:
         super().__init__()
         self._api = api_client
+        self._dashboard_controller = dashboard_controller
         self._init_ui()
         on_change(self.retranslate_ui)
 
@@ -264,14 +266,19 @@ class LoginView(QMainWindow):
     def _create_role_window(self, role: str | None) -> QMainWindow:
         if role == "owner":
             from views.dashboard_view import DashboardView
-            return DashboardView(self._api)
+            window = DashboardView(self._api)
+            if self._dashboard_controller:
+                self._dashboard_controller(window)
+            return window
 
         if role == "cashier":
             from views.cashier_view import CashierView
             return CashierView(self._api)
 
-        from views.transaction_view import TransactionView
-        main_window = TransactionView(self._api)
+        from views.dashboard_view import DashboardView
+        main_window = DashboardView(self._api)
+        if self._dashboard_controller:
+            self._dashboard_controller(main_window)
         self._check_pending_float(main_window)
         return main_window
 
