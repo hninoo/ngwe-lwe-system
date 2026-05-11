@@ -92,6 +92,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "todays_summary":         {"mm": "ယနေ့ အနှစ်ချုပ်",          "en": "Today's Summary"},
     "account_balances":       {"mm": "အကောင့်လက်ကျန်ငွေ",        "en": "Account Balances"},
     "recent_transactions":    {"mm": "မကြာမီ ငွေလွှဲများ",        "en": "Recent Transactions"},
+    "daily_report_for":       {"mm": "နေ့စဉ် အစီရင်ခံစာ",          "en": "Daily report"},
+    "report_total_transactions": {"mm": "ငွေလွှဲ အရေအတွက်",       "en": "Total transactions"},
+    "report_cash_in":         {"mm": "Cash In",                    "en": "Cash In"},
+    "report_cash_out":        {"mm": "Cash Out",                   "en": "Cash Out"},
+    "report_transfer":        {"mm": "Transfer",                   "en": "Transfer"},
+    "report_exchange":        {"mm": "Exchange",                   "en": "Exchange"},
+    "report_fees":            {"mm": "Fees",                       "en": "Fees"},
+    "report_commission":      {"mm": "Commission",                 "en": "Commission"},
 
     # ── Table column headers ─────────────────────────────
     "col_id":                 {"mm": "ID",                         "en": "ID"},
@@ -105,6 +113,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "col_amount_mmk":         {"mm": "ပမာဏ (MMK)",                "en": "Amount (MMK)"},
     "col_commission":         {"mm": "ကော်မရှင်",                 "en": "Commission"},
     "col_fee":                {"mm": "ကြေး",                      "en": "Fee"},
+    "col_metric":             {"mm": "အချက်အလက်",                  "en": "Metric"},
     "col_fee_mmk":            {"mm": "ကြေး (MMK)",                "en": "Fee (MMK)"},
     "col_screenshot":         {"mm": "ဓာတ်ပုံ",                   "en": "Screenshot"},
     "col_customer":           {"mm": "ဖောက်သည်",                  "en": "Customer"},

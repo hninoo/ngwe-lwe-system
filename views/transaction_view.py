@@ -359,8 +359,8 @@ class CompanyGridSelector(QWidget):
         return self._selected_id
 
 
-from views.transaction.history_view import HistoryView
-from views.transaction.profile_view import ProfileView
+from views.ui.history_view import HistoryView
+from views.ui.profile_view import ProfileView
 
 
 # ════════════════════════════════════════════
@@ -427,10 +427,10 @@ class TransactionView(QMainWindow):
         layout.addWidget(self._stack, 1)
         self.setCentralWidget(central)
 
-        from views.transaction.cash_in_view import CashInView
-        from views.transaction.cash_out_view import CashOutView
-        from views.transaction.transfer_view import TransferView
-        from views.transaction.exchange_view import ExchangeView
+        from views.ui.cash_in_view import CashInView
+        from views.ui.cash_out_view import CashOutView
+        from views.ui.transfer_view import TransferView
+        from views.ui.exchange_view import ExchangeView
 
         self._pages: dict[str, QWidget] = {
             "cash_in": CashInView(self._api, self._navigate, self._repository),

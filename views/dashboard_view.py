@@ -1,6 +1,10 @@
 import json
 import os
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+from enum import Enum
+from typing import Any
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -24,6 +28,22 @@ from PyQt6.QtWidgets import (
 
 from i18n import on_change, t
 from services.api_client import ApiClient
+from views.ui.theme import (
+    ACCENT_BLUE,
+    ACCENT_GREEN,
+    ACCENT_MAUVE,
+    ACCENT_RED,
+    ACCENT_TEAL,
+    ACCENT_YELLOW,
+    BG_CARD,
+    BG_DARK,
+    BG_INPUT,
+    BG_SIDEBAR,
+    BORDER_COLOR,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 from views.admin_page import CommissionTierSubView, ExchangeRateSubView, PasswordSubView
 from views.daily_closing_view import DailyClosingView
 from views.server_info_view import ServerInfoSubView
@@ -34,51 +54,85 @@ from views.settings.company_settings_view import CompanySettingsView
 from views.settings.service_type_settings_view import ServiceTypeSettingsView
 from views.settings.transaction_admin_view import TransactionAdminView
 from views.settings.user_settings_view import UserSettingsView
-from views.transaction_view import (
-    ACCENT_BLUE,
-    ACCENT_GREEN,
-    ACCENT_MAUVE,
-    ACCENT_RED,
-    ACCENT_TEAL,
-    ACCENT_YELLOW,
-    BG_CARD,
-    BG_DARK,
-    BG_INPUT,
-    BORDER_COLOR,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
 
 MMT = timezone(timedelta(hours=6, minutes=30))
 WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
 SIDEBAR_WIDTH = 240
 REFRESH_INTERVAL_MS = 30000
 
-_OWNER_SIDEBAR_GROUPS: list[tuple[str | None, list[tuple[str, int, str]]]] = [
-    (None, [("nav_dashboard", 0, "D")]),
-    ("nav_group_transactions", [
-        ("admin_all_transactions", 1, "T"),
-        ("admin_activity_logs", 2, "L"),
-    ]),
-    ("nav_group_accounts", [("nav_accounts", 3, "A")]),
-    ("nav_group_reports", [("nav_reports", 4, "R")]),
-    ("admin_group_staff", [("nav_users", 5, "U")]),
-    ("admin_group_master", [
-        ("admin_companies", 6, "C"),
-        ("admin_service_types", 7, "S"),
-        ("admin_commission_tiers", 8, "%"),
-        ("admin_exchange_rate", 9, "X"),
-    ]),
-    ("admin_group_operations", [
-        ("admin_cash_floats", 10, "F"),
-        ("nav_daily_closing", 13, "DC"),
-    ]),
-    ("admin_group_system", [
-        ("admin_server_connection", 11, "N"),
-        ("admin_change_password", 12, "P"),
-    ]),
-]
+
+class OwnerPage(Enum):
+    """Type-safe owner dashboard page indexes."""
+
+    DASHBOARD = 0
+    TRANSACTIONS = 1
+    ACTIVITY_LOGS = 2
+    ACCOUNTS = 3
+    REPORTS = 4
+    USERS = 5
+    COMPANIES = 6
+    SERVICE_TYPES = 7
+    COMMISSION_TIERS = 8
+    EXCHANGE_RATE = 9
+    CASH_FLOATS = 10
+    SERVER_CONNECTION = 11
+    CHANGE_PASSWORD = 12
+    DAILY_CLOSING = 13
+
+
+@dataclass(frozen=True)
+class NavItem:
+    """Owner sidebar navigation item."""
+
+    label_key: str
+    page: OwnerPage
+    icon: str
+
+
+@dataclass(frozen=True)
+class NavSection:
+    """Owner sidebar navigation section."""
+
+    label_key: str | None
+    items: tuple[NavItem, ...]
+
+
+OWNER_NAVIGATION: tuple[NavSection, ...] = (
+    NavSection(None, (NavItem("nav_dashboard", OwnerPage.DASHBOARD, "D"),)),
+    NavSection(
+        "nav_group_transactions",
+        (
+            NavItem("admin_all_transactions", OwnerPage.TRANSACTIONS, "T"),
+            NavItem("admin_activity_logs", OwnerPage.ACTIVITY_LOGS, "L"),
+        ),
+    ),
+    NavSection("nav_group_accounts", (NavItem("nav_accounts", OwnerPage.ACCOUNTS, "A"),)),
+    NavSection("nav_group_reports", (NavItem("nav_reports", OwnerPage.REPORTS, "R"),)),
+    NavSection("admin_group_staff", (NavItem("nav_users", OwnerPage.USERS, "U"),)),
+    NavSection(
+        "admin_group_master",
+        (
+            NavItem("admin_companies", OwnerPage.COMPANIES, "C"),
+            NavItem("admin_service_types", OwnerPage.SERVICE_TYPES, "S"),
+            NavItem("admin_commission_tiers", OwnerPage.COMMISSION_TIERS, "%"),
+            NavItem("admin_exchange_rate", OwnerPage.EXCHANGE_RATE, "X"),
+        ),
+    ),
+    NavSection(
+        "admin_group_operations",
+        (
+            NavItem("admin_cash_floats", OwnerPage.CASH_FLOATS, "F"),
+            NavItem("nav_daily_closing", OwnerPage.DAILY_CLOSING, "DC"),
+        ),
+    ),
+    NavSection(
+        "admin_group_system",
+        (
+            NavItem("admin_server_connection", OwnerPage.SERVER_CONNECTION, "N"),
+            NavItem("admin_change_password", OwnerPage.CHANGE_PASSWORD, "P"),
+        ),
+    ),
+)
 
 OWNER_STYLESHEET = f"""
     QMainWindow {{ background-color: {BG_DARK}; }}
@@ -138,6 +192,79 @@ class WebSocketThread(QThread):
                 self._ws.close()
         except Exception:
             pass
+
+
+class ApiFetchThread(QThread):
+    """Run a blocking API callable away from the Qt UI thread."""
+
+    succeeded = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, fetcher: Callable[[], Any], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._fetcher = fetcher
+
+    def run(self) -> None:
+        try:
+            self.succeeded.emit(self._fetcher())
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class DashboardController(QWidget):
+    """Own dashboard timers and WebSocket lifetime."""
+
+    clock_tick = pyqtSignal()
+    refresh_tick = pyqtSignal()
+    websocket_message = pyqtSignal(str)
+
+    def __init__(self, api: ApiClient, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._clock_timer: QTimer | None = None
+        self._refresh_timer: QTimer | None = None
+        self._ws_thread: WebSocketThread | None = None
+
+    def start_clock(self) -> None:
+        """Start one-second clock ticks."""
+        if self._clock_timer is not None:
+            return
+        self._clock_timer = QTimer(self)
+        self._clock_timer.timeout.connect(self.clock_tick)
+        self._clock_timer.start(1000)
+
+    def start_refresh(self, interval_ms: int = REFRESH_INTERVAL_MS) -> None:
+        """Start periodic dashboard refresh ticks."""
+        if self._refresh_timer is not None:
+            return
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self.refresh_tick)
+        self._refresh_timer.start(interval_ms)
+
+    def start_websocket(self) -> None:
+        """Start role-aware WebSocket listener."""
+        if self._ws_thread is not None:
+            return
+
+        def get_ticket() -> str:
+            try:
+                return self._api.get_ws_ticket()
+            except Exception:
+                return ""
+
+        self._ws_thread = WebSocketThread(WS_URL, ticket_fn=get_ticket)
+        self._ws_thread.message_received.connect(self.websocket_message)
+        self._ws_thread.start()
+
+    def stop(self) -> None:
+        """Stop all timers and worker threads."""
+        for timer in (self._clock_timer, self._refresh_timer):
+            if timer is not None:
+                timer.stop()
+        if self._ws_thread is not None:
+            self._ws_thread.stop()
+            self._ws_thread.wait(2000)
+            self._ws_thread = None
 
 
 class DashboardPage(QWidget):
@@ -288,7 +415,8 @@ class DashboardPage(QWidget):
             card.setStyleSheet(
                 f"QFrame {{ background-color: {BG_CARD}; border-radius: 12px; "
                 f"border: 1px solid {BORDER_COLOR}; border-left: 5px solid {color}; }}"
-                f"QFrame:hover {{ background-color: {BG_INPUT}; border: 1px solid {color}; border-left: 5px solid {color}; }}"
+                f"QFrame:hover {{ background-color: {BG_INPUT}; "
+                f"border: 1px solid {color}; border-left: 5px solid {color}; }}"
             )
         layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -381,62 +509,25 @@ def _owner_scrollable_page() -> tuple[QScrollArea, QVBoxLayout]:
     return scroll, layout
 
 
-class OwnerDashboardPage(QWidget):
-    """Owner home dashboard with summary cards, balances, and recent transactions."""
+class StatsRow(QWidget):
+    """Reusable row of owner summary statistic cards."""
 
-    def __init__(self, api: ApiClient) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._api = api
-        self._stat_labels: dict[str, QLabel] = {}
-        self._init_ui()
-
-    def _init_ui(self) -> None:
-        scroll, layout = _owner_scrollable_page()
-        layout.addWidget(self._section_label(t("todays_summary")))
-        layout.addWidget(self._build_stats_row())
-        layout.addWidget(self._section_label(t("account_balances")))
-        self._grid_container = QWidget()
-        self._grid = QGridLayout(self._grid_container)
-        self._grid.setSpacing(12)
-        layout.addWidget(self._grid_container)
-        layout.addWidget(self._section_label(t("recent_transactions")))
-        self._txn_table = self._make_table([
-            t("col_time"),
-            t("col_type"),
-            t("col_account"),
-            t("col_amount"),
-            t("col_commission"),
-            t("col_fee"),
-        ])
-        layout.addWidget(self._txn_table)
-        layout.addStretch()
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
-
-    def _section_label(self, text: str) -> QLabel:
-        label = QLabel(text)
-        label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        label.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        return label
-
-    def _build_stats_row(self) -> QFrame:
-        row = QFrame()
-        layout = QHBoxLayout(row)
+        self._labels: dict[str, QLabel] = {}
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        for key, label, color in [
-            ("total_cash_in", t("total_cash_in"), ACCENT_GREEN),
-            ("total_cash_out", t("total_cash_out"), ACCENT_RED),
-            ("total_transfer", t("transfers"), ACCENT_BLUE),
-            ("total_exchange", t("exchange"), ACCENT_YELLOW),
-            ("fees", t("fees_commission"), ACCENT_MAUVE),
-        ]:
-            layout.addWidget(self._stat_card(key, label, color))
-        return row
+        for key, label_key, color in (
+            ("total_cash_in", "total_cash_in", ACCENT_GREEN),
+            ("total_cash_out", "total_cash_out", ACCENT_RED),
+            ("total_transfer", "transfers", ACCENT_BLUE),
+            ("total_exchange", "exchange", ACCENT_YELLOW),
+            ("fees", "fees_commission", ACCENT_MAUVE),
+        ):
+            layout.addWidget(self._card(key, label_key, color))
 
-    def _stat_card(self, key: str, label: str, color: str) -> QFrame:
+    def _card(self, key: str, label_key: str, color: str) -> QFrame:
         card = QFrame()
         card.setFixedHeight(90)
         card.setStyleSheet(
@@ -445,55 +536,43 @@ class OwnerDashboardPage(QWidget):
         )
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 12, 14, 12)
-        title = QLabel(label)
+        title = QLabel(t(label_key))
         title.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(title)
         value = QLabel("0")
         value.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         value.setStyleSheet(f"color: {color};")
-        self._stat_labels[key] = value
+        self._labels[key] = value
         layout.addWidget(value)
         return card
 
-    def _make_table(self, headers: list[str]) -> QTableWidget:
-        table = QTableWidget(0, len(headers))
-        table.setHorizontalHeaderLabels(headers)
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setMinimumHeight(260)
-        header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        for idx in range(len(headers) - 1):
-            header.setSectionResizeMode(idx, QHeaderView.ResizeMode.ResizeToContents)
-        return table
+    def set_summary(self, summary: dict[str, Any]) -> None:
+        """Render summary totals returned by the dashboard API."""
+        values = {
+            "total_cash_in": float(summary.get("total_cash_in", 0) or 0),
+            "total_cash_out": float(summary.get("total_cash_out", 0) or 0),
+            "total_transfer": float(summary.get("total_transfer", 0) or 0),
+            "total_exchange": float(summary.get("total_exchange", 0) or 0),
+            "fees": (
+                float(summary.get("total_customer_fees", 0) or 0)
+                + float(summary.get("total_commission", 0) or 0)
+            ),
+        }
+        for key, value in values.items():
+            self._labels[key].setText(f"{value:,.0f}")
 
-    def load_data(self) -> None:
-        try:
-            summary = self._api.get_dashboard_summary()
-            self._stat_labels["total_cash_in"].setText(f"{float(summary.get('total_cash_in', 0) or 0):,.0f}")
-            self._stat_labels["total_cash_out"].setText(f"{float(summary.get('total_cash_out', 0) or 0):,.0f}")
-            self._stat_labels["total_transfer"].setText(f"{float(summary.get('total_transfer', 0) or 0):,.0f}")
-            self._stat_labels["total_exchange"].setText(f"{float(summary.get('total_exchange', 0) or 0):,.0f}")
-            fees = float(summary.get("total_customer_fees", 0) or 0) + float(summary.get("total_commission", 0) or 0)
-            self._stat_labels["fees"].setText(f"{fees:,.0f}")
-        except Exception:
-            pass
-        try:
-            self._rebuild_accounts(self._api.get_dashboard_accounts())
-        except Exception:
-            pass
-        try:
-            self._populate_transactions(self._api.get_recent_transactions(20))
-        except Exception:
-            pass
 
-    def update_from_ws(self, accounts: list[dict]) -> None:
-        self._rebuild_accounts(accounts)
-        self.load_data()
+class AccountGrid(QWidget):
+    """Reusable owner account balance grid."""
 
-    def _rebuild_accounts(self, accounts: list[dict]) -> None:
+    def __init__(self) -> None:
+        super().__init__()
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(12)
+
+    def set_accounts(self, accounts: list[dict]) -> None:
+        """Replace account cards with the supplied account list."""
         while self._grid.count():
             item = self._grid.takeAt(0)
             if item.widget():
@@ -511,29 +590,55 @@ class OwnerDashboardPage(QWidget):
         )
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 10, 14, 10)
-        title = QLabel(account.get("account_name", ""))
+        title = QLabel(str(account.get("account_name", "")))
         title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         layout.addWidget(title)
-        phone = QLabel(account.get("phone_number", ""))
+        phone = QLabel(str(account.get("phone_number", "")))
         phone.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(phone)
         balance = float(account.get("balance", 0) or 0)
         balance_label = QLabel(f"{balance:,.0f} MMK")
         balance_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        balance_label.setStyleSheet(f"color: {ACCENT_GREEN if balance >= 0 else ACCENT_RED};")
+        balance_label.setStyleSheet(
+            f"color: {ACCENT_GREEN if balance >= 0 else ACCENT_RED};"
+        )
         layout.addWidget(balance_label)
         return card
 
-    def _populate_transactions(self, transactions: list[dict]) -> None:
-        self._txn_table.setRowCount(len(transactions))
+
+class TransactionTable(QTableWidget):
+    """Reusable owner transaction preview table."""
+
+    def __init__(self) -> None:
+        super().__init__(0, 6)
+        self.setHorizontalHeaderLabels([
+            t("col_time"),
+            t("col_type"),
+            t("col_account"),
+            t("col_amount"),
+            t("col_commission"),
+            t("col_fee"),
+        ])
+        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.setAlternatingRowColors(True)
+        self.verticalHeader().setVisible(False)
+        self.setMinimumHeight(260)
+        header = self.horizontalHeader()
+        header.setStretchLastSection(True)
+        for idx in range(5):
+            header.setSectionResizeMode(idx, QHeaderView.ResizeMode.ResizeToContents)
+
+    def set_transactions(self, transactions: list[dict]) -> None:
+        """Render recent transactions."""
+        self.setRowCount(len(transactions))
         for row, txn in enumerate(transactions):
             created = str(txn.get("created_at", ""))
             if len(created) > 16:
                 created = created[:16]
-            txn_type = txn.get("transaction_type", "")
             values = [
                 created,
-                txn_type,
+                str(txn.get("transaction_type", "")),
                 str(txn.get("account_id", "")),
                 f"{float(txn.get('amount', 0) or 0):,.0f}",
                 f"{float(txn.get('commission_amount', 0) or 0):,.0f}",
@@ -542,7 +647,193 @@ class OwnerDashboardPage(QWidget):
             for col, text in enumerate(values):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self._txn_table.setItem(row, col, item)
+                self.setItem(row, col, item)
+
+
+class OwnerSidebar(QWidget):
+    """Reusable owner navigation sidebar."""
+
+    page_selected = pyqtSignal(object)
+    logout_requested = pyqtSignal()
+
+    def __init__(self, sections: tuple[NavSection, ...]) -> None:
+        super().__init__()
+        self._sections = sections
+        self._buttons: dict[OwnerPage, QPushButton] = {}
+        self.setFixedWidth(SIDEBAR_WIDTH)
+        self.setStyleSheet(f"background-color: {BG_SIDEBAR};")
+        self._build()
+
+    def _build(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._logo = QLabel(t("app_title"))
+        self._logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._logo.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._logo.setStyleSheet(f"color: {ACCENT_BLUE}; padding: 18px 12px;")
+        layout.addWidget(self._logo)
+
+        for section in self._sections:
+            if section.label_key:
+                label = QLabel(t(section.label_key).upper())
+                label.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                label.setStyleSheet(
+                    f"color: {TEXT_MUTED}; padding: 14px 16px 4px 16px;"
+                )
+                layout.addWidget(label)
+            for item in section.items:
+                button = QPushButton(f"  {item.icon}  {t(item.label_key)}")
+                button.setFixedHeight(38)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.setStyleSheet(self._style(False))
+                button.clicked.connect(
+                    lambda _checked=False, page=item.page: self.page_selected.emit(page)
+                )
+                self._buttons[item.page] = button
+                layout.addWidget(button)
+
+        layout.addStretch()
+        logout_btn = QPushButton(f"  X  {t('logout')}")
+        logout_btn.setFixedHeight(42)
+        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        logout_btn.setStyleSheet(
+            f"QPushButton {{ text-align: left; background: transparent; "
+            f"color: {ACCENT_RED}; border: none; border-left: 3px solid transparent; "
+            f"padding-left: 13px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: {BG_CARD}; }}"
+        )
+        logout_btn.clicked.connect(self.logout_requested)
+        layout.addWidget(logout_btn)
+
+    def set_active(self, page: OwnerPage) -> None:
+        """Update active navigation button styling."""
+        for item_page, button in self._buttons.items():
+            button.setStyleSheet(self._style(item_page == page))
+
+    def retranslate(self) -> None:
+        """Update translated labels after locale changes."""
+        self._logo.setText(t("app_title"))
+        for section in self._sections:
+            for item in section.items:
+                self._buttons[item.page].setText(f"  {item.icon}  {t(item.label_key)}")
+
+    @staticmethod
+    def _style(active: bool) -> str:
+        if active:
+            return (
+                f"QPushButton {{ text-align: left; background-color: {BG_CARD}; "
+                f"color: {ACCENT_BLUE}; border: none; border-left: 3px solid {ACCENT_BLUE}; "
+                f"padding-left: 13px; font-size: 13px; }}"
+            )
+        return (
+            f"QPushButton {{ text-align: left; background-color: transparent; "
+            f"color: {TEXT_SECONDARY}; border: none; "
+            f"border-left: 3px solid transparent; padding-left: 13px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background-color: {BG_CARD}; color: {TEXT_PRIMARY}; }}"
+        )
+
+
+class OwnerTopBar(QFrame):
+    """Reusable owner top bar with page title, user name, and clock."""
+
+    def __init__(self, full_name: str) -> None:
+        super().__init__()
+        self.setFixedHeight(60)
+        self.setStyleSheet(
+            f"background-color: {BG_DARK}; border-bottom: 1px solid {BORDER_COLOR};"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(24, 10, 24, 10)
+        self._title = QLabel(t("nav_dashboard"))
+        self._title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        layout.addWidget(self._title)
+        layout.addStretch()
+        user_label = QLabel(full_name)
+        user_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
+        layout.addWidget(user_label)
+        layout.addSpacing(16)
+        self._time_label = QLabel()
+        self._time_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        layout.addWidget(self._time_label)
+
+    def set_title(self, label_key: str) -> None:
+        """Set title from an i18n key."""
+        self._title.setText(t(label_key))
+
+    def update_time(self) -> None:
+        """Refresh displayed Myanmar time."""
+        self._time_label.setText(datetime.now(MMT).strftime("%d-%m-%Y  %I:%M:%S %p"))
+
+
+class OwnerDashboardPage(QWidget):
+    """Owner home dashboard with summary cards, balances, and recent transactions."""
+
+    def __init__(self, api: ApiClient) -> None:
+        super().__init__()
+        self._api = api
+        self._fetch_thread: ApiFetchThread | None = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        scroll, layout = _owner_scrollable_page()
+        layout.addWidget(self._section_label(t("todays_summary")))
+        self._stats = StatsRow()
+        layout.addWidget(self._stats)
+        layout.addWidget(self._section_label(t("account_balances")))
+        self._account_grid = AccountGrid()
+        layout.addWidget(self._account_grid)
+        layout.addWidget(self._section_label(t("recent_transactions")))
+        self._txn_table = TransactionTable()
+        layout.addWidget(self._txn_table)
+        layout.addStretch()
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    def _section_label(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        return label
+
+    def load_data(self) -> None:
+        """Fetch owner home data without blocking the UI thread."""
+        if self._fetch_thread and self._fetch_thread.isRunning():
+            return
+        self._fetch_thread = ApiFetchThread(self._fetch_dashboard_data, self)
+        self._fetch_thread.succeeded.connect(self._apply_dashboard_data)
+        self._fetch_thread.finished.connect(self._clear_fetch_thread)
+        self._fetch_thread.start()
+
+    def update_from_ws(self, accounts: list[dict]) -> None:
+        """Apply pushed account balances and refresh summary asynchronously."""
+        self._account_grid.set_accounts(accounts)
+        self.load_data()
+
+    def stop(self) -> None:
+        """Stop any in-flight data worker."""
+        if self._fetch_thread and self._fetch_thread.isRunning():
+            self._fetch_thread.quit()
+            self._fetch_thread.wait(1000)
+
+    def _fetch_dashboard_data(self) -> dict[str, Any]:
+        return {
+            "summary": self._api.get_dashboard_summary(),
+            "accounts": self._api.get_dashboard_accounts(),
+            "transactions": self._api.get_recent_transactions(20),
+        }
+
+    def _apply_dashboard_data(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        self._stats.set_summary(payload.get("summary", {}) or {})
+        self._account_grid.set_accounts(payload.get("accounts", []) or [])
+        self._txn_table.set_transactions(payload.get("transactions", []) or [])
+
+    def _clear_fetch_thread(self) -> None:
+        self._fetch_thread = None
 
 
 class OwnerReportsPage(QWidget):
@@ -551,6 +842,7 @@ class OwnerReportsPage(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
         self._api = api
+        self._fetch_thread: ApiFetchThread | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 24)
         title = QLabel(t("nav_reports"))
@@ -560,41 +852,64 @@ class OwnerReportsPage(QWidget):
         self._status.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
         layout.addWidget(self._status)
         self._table = QTableWidget(0, 2)
-        self._table.setHorizontalHeaderLabels(["Metric", "Value"])
+        self._table.setHorizontalHeaderLabels([t("col_metric"), t("col_value")])
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self._table)
 
     def load_data(self) -> None:
-        today = datetime.now(MMT).strftime("%Y-%m-%d")
-        try:
-            report = self._api.get_daily_report(today)
-        except Exception as exc:
-            self._status.setText(f"Unable to load daily report: {exc}")
-            self._table.setRowCount(0)
+        """Fetch report data without blocking the UI thread."""
+        if self._fetch_thread and self._fetch_thread.isRunning():
             return
-        self._status.setText(f"Daily report: {today}")
+        today = datetime.now(MMT).strftime("%Y-%m-%d")
+        self._fetch_thread = ApiFetchThread(
+            lambda: {"date": today, "report": self._api.get_daily_report(today)},
+            self,
+        )
+        self._fetch_thread.succeeded.connect(self._apply_report_data)
+        self._fetch_thread.failed.connect(self._show_report_error)
+        self._fetch_thread.finished.connect(self._clear_fetch_thread)
+        self._fetch_thread.start()
+
+    def stop(self) -> None:
+        """Stop any in-flight report worker."""
+        if self._fetch_thread and self._fetch_thread.isRunning():
+            self._fetch_thread.quit()
+            self._fetch_thread.wait(1000)
+
+    def _apply_report_data(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        today = str(payload.get("date", ""))
+        report = payload.get("report", {}) or {}
+        self._status.setText(f"{t('daily_report_for')}: {today}")
         rows = [
-            ("Total transactions", report.get("transaction_count", 0)),
-            ("Cash In", report.get("total_cash_in", 0)),
-            ("Cash Out", report.get("total_cash_out", 0)),
-            ("Transfer", report.get("total_transfer", 0)),
-            ("Exchange", report.get("total_exchange", 0)),
-            ("Fees", report.get("total_customer_fees", 0)),
-            ("Commission", report.get("total_commission", 0)),
+            (t("report_total_transactions"), report.get("transaction_count", 0)),
+            (t("report_cash_in"), report.get("total_cash_in", 0)),
+            (t("report_cash_out"), report.get("total_cash_out", 0)),
+            (t("report_transfer"), report.get("total_transfer", 0)),
+            (t("report_exchange"), report.get("total_exchange", 0)),
+            (t("report_fees"), report.get("total_customer_fees", 0)),
+            (t("report_commission"), report.get("total_commission", 0)),
         ]
         self._table.setRowCount(len(rows))
         for row, (label, value) in enumerate(rows):
             self._table.setItem(row, 0, QTableWidgetItem(str(label)))
             self._table.setItem(row, 1, QTableWidgetItem(f"{float(value or 0):,.0f}"))
 
+    def _show_report_error(self, message: str) -> None:
+        self._status.setText(t("err_load_data") if t("err_load_data") != "err_load_data" else message)
+        self._table.setRowCount(0)
+
+    def _clear_fetch_thread(self) -> None:
+        self._fetch_thread = None
+
 
 class DashboardView(QMainWindow):
     """Role-aware dashboard shell.
 
     Owner gets the full management sidebar. Employee gets the six-card launcher.
-    Cashier should normally be routed to CashierView, but falls back to the
-    launcher if this class is ever constructed directly.
+    Cashier must be routed to CashierView by the login flow.
     """
 
     switch_to_transaction = pyqtSignal(str)
@@ -603,20 +918,18 @@ class DashboardView(QMainWindow):
         super().__init__()
         self._api = api_client
         self._external_navigate = navigate
-        self._ws_thread: WebSocketThread | None = None
-        self._clock: QTimer | None = None
-        self._clock_timer: QTimer | None = None
-        self._refresh_timer: QTimer | None = None
+        self._controller = DashboardController(self._api, self)
         self._daily_closing_view: DailyClosingView | None = None
-        self._nav_buttons: dict[int, QPushButton] = {}
-        self._nav_button_data: dict[int, tuple[str, str]] = {}
         self._current_page = 0
 
         role = (self._api.user or {}).get("role")
+        assert role in ("owner", "cashier", "employee")
         if role == "owner":
             self._build_owner_ui()
-        else:
+        elif role == "employee":
             self._build_employee_ui()
+        else:
+            raise RuntimeError("Cashier users must be routed to CashierView.")
 
     def _build_employee_ui(self) -> None:
         self.setWindowTitle(t("app_title"))
@@ -626,18 +939,18 @@ class DashboardView(QMainWindow):
         )
         self._page = DashboardPage(self._api, self._navigate)
         self.setCentralWidget(self._page)
-        self._clock = QTimer(self)
-        self._clock.timeout.connect(self._page.update_time)
-        self._clock.start(1000)
+        self._controller.clock_tick.connect(self._page.update_time)
+        self._controller.websocket_message.connect(self._on_ws_message)
+        self._controller.start_clock()
         self._page.update_time()
-        self._ws_thread: WebSocketThread | None = None
-        self._start_websocket()
+        self._controller.start_websocket()
 
     def _build_owner_ui(self) -> None:
         fullname = self._api.user.get("full_name", "") if self._api.user else ""
         self.setWindowTitle(f"{t('app_title')} - {fullname}")
         self.setMinimumSize(1200, 750)
         self.setStyleSheet(OWNER_STYLESHEET)
+        self._page_labels: dict[OwnerPage, str] = {}
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -679,109 +992,44 @@ class DashboardView(QMainWindow):
         root.addWidget(right_widget, 1)
 
         self._start_owner_timers()
-        self._start_websocket()
-        self._select_owner_page(0)
+        self._controller.websocket_message.connect(self._on_ws_message)
+        self._controller.start_websocket()
+        self._select_owner_page(OwnerPage.DASHBOARD, load=False)
+        QTimer.singleShot(0, lambda: self._select_owner_page(OwnerPage.DASHBOARD))
         on_change(self._retranslate_owner_ui)
 
     def _build_owner_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setFixedWidth(SIDEBAR_WIDTH)
-        sidebar.setStyleSheet("background-color: #181825;")
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        logo = QLabel(t("app_title"))
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        logo.setStyleSheet(f"color: {ACCENT_BLUE}; padding: 18px 12px;")
-        layout.addWidget(logo)
-
-        for section_key, items in _OWNER_SIDEBAR_GROUPS:
-            if section_key:
-                section = QLabel(t(section_key).upper())
-                section.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
-                section.setStyleSheet(f"color: {TEXT_MUTED}; padding: 14px 16px 4px 16px;")
-                layout.addWidget(section)
-            for item_key, idx, icon in items:
-                btn = QPushButton(f"  {icon}  {t(item_key)}")
-                btn.setFixedHeight(38)
-                btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn.setStyleSheet(self._owner_nav_style(False))
-                btn.clicked.connect(lambda _, i=idx: self._select_owner_page(i))
-                self._nav_buttons[idx] = btn
-                self._nav_button_data[idx] = (item_key, icon)
-                layout.addWidget(btn)
-
-        layout.addStretch()
-        logout_btn = QPushButton(f"  X  {t('logout')}")
-        logout_btn.setFixedHeight(42)
-        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        logout_btn.setStyleSheet(
-            f"QPushButton {{ text-align: left; background: transparent; color: {ACCENT_RED}; "
-            f"border: none; border-left: 3px solid transparent; padding-left: 13px; font-size: 13px; }}"
-            f"QPushButton:hover {{ background-color: {BG_CARD}; }}"
-        )
-        logout_btn.clicked.connect(self._owner_logout)
-        layout.addWidget(logout_btn)
-        return sidebar
+        self._sidebar = OwnerSidebar(OWNER_NAVIGATION)
+        self._sidebar.page_selected.connect(self._select_owner_page)
+        self._sidebar.logout_requested.connect(self._owner_logout)
+        for section in OWNER_NAVIGATION:
+            for item in section.items:
+                self._page_labels[item.page] = item.label_key
+        return self._sidebar
 
     def _build_owner_top_bar(self) -> QFrame:
-        bar = QFrame()
-        bar.setFixedHeight(60)
-        bar.setStyleSheet(f"background-color: {BG_DARK}; border-bottom: 1px solid {BORDER_COLOR};")
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(24, 10, 24, 10)
-        self._page_title = QLabel(t("nav_dashboard"))
-        self._page_title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        layout.addWidget(self._page_title)
-        layout.addStretch()
         fullname = self._api.user.get("full_name", "") if self._api.user else ""
-        user_label = QLabel(fullname)
-        user_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
-        layout.addWidget(user_label)
-        layout.addSpacing(16)
-        self._owner_time_label = QLabel()
-        self._owner_time_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        layout.addWidget(self._owner_time_label)
-        self._update_owner_time()
-        return bar
+        self._top_bar = OwnerTopBar(fullname)
+        self._top_bar.update_time()
+        return self._top_bar
 
-    def _owner_nav_style(self, active: bool) -> str:
-        if active:
-            return (
-                f"QPushButton {{ text-align: left; background-color: {BG_CARD}; color: {ACCENT_BLUE}; "
-                f"border: none; border-left: 3px solid {ACCENT_BLUE}; padding-left: 13px; font-size: 13px; }}"
-            )
-        return (
-            f"QPushButton {{ text-align: left; background-color: transparent; color: {TEXT_SECONDARY}; "
-            f"border: none; border-left: 3px solid transparent; padding-left: 13px; font-size: 13px; }}"
-            f"QPushButton:hover {{ background-color: {BG_CARD}; color: {TEXT_PRIMARY}; }}"
-        )
-
-    def _select_owner_page(self, idx: int) -> None:
-        self._current_page = idx
-        self._stack.setCurrentIndex(idx)
-        for page_idx, button in self._nav_buttons.items():
-            button.setStyleSheet(self._owner_nav_style(page_idx == idx))
-        if idx in self._nav_button_data:
-            key, _icon = self._nav_button_data[idx]
-            self._page_title.setText(t(key))
-        page = self._pages[idx]
-        if hasattr(page, "load_data"):
+    def _select_owner_page(self, page_id: object, load: bool = True) -> None:
+        if not isinstance(page_id, OwnerPage):
+            return
+        self._current_page = page_id.value
+        self._stack.setCurrentIndex(page_id.value)
+        self._sidebar.set_active(page_id)
+        label_key = self._page_labels.get(page_id, "nav_dashboard")
+        self._top_bar.set_title(label_key)
+        page = self._pages[page_id.value]
+        if load and hasattr(page, "load_data"):
             page.load_data()
 
     def _start_owner_timers(self) -> None:
-        self._clock_timer = QTimer(self)
-        self._clock_timer.timeout.connect(self._update_owner_time)
-        self._clock_timer.start(1000)
-
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self._refresh_owner_home)
-        self._refresh_timer.start(REFRESH_INTERVAL_MS)
-
-    def _update_owner_time(self) -> None:
-        self._owner_time_label.setText(datetime.now(MMT).strftime("%d-%m-%Y  %I:%M:%S %p"))
+        self._controller.clock_tick.connect(self._top_bar.update_time)
+        self._controller.refresh_tick.connect(self._refresh_owner_home)
+        self._controller.start_clock()
+        self._controller.start_refresh(REFRESH_INTERVAL_MS)
 
     def _refresh_owner_home(self) -> None:
         if self._current_page == 0 and self._pages:
@@ -792,22 +1040,9 @@ class DashboardView(QMainWindow):
     def _retranslate_owner_ui(self) -> None:
         fullname = self._api.user.get("full_name", "") if self._api.user else ""
         self.setWindowTitle(f"{t('app_title')} - {fullname}")
-        for idx, (key, icon) in self._nav_button_data.items():
-            if idx in self._nav_buttons:
-                self._nav_buttons[idx].setText(f"  {icon}  {t(key)}")
-        if self._current_page in self._nav_button_data:
-            key, _icon = self._nav_button_data[self._current_page]
-            self._page_title.setText(t(key))
-
-    def _start_websocket(self) -> None:
-        def _get_ticket() -> str:
-            try:
-                return self._api.get_ws_ticket()
-            except Exception:
-                return ""
-        self._ws_thread = WebSocketThread(WS_URL, ticket_fn=_get_ticket)
-        self._ws_thread.message_received.connect(self._on_ws_message)
-        self._ws_thread.start()
+        self._sidebar.retranslate()
+        current = OwnerPage(self._current_page)
+        self._top_bar.set_title(self._page_labels.get(current, "nav_dashboard"))
 
     def _refresh_dashboard_page(self) -> None:
         if (self._api.user or {}).get("role") == "owner":
@@ -815,11 +1050,7 @@ class DashboardView(QMainWindow):
             return
         self._page = DashboardPage(self._api, self._navigate)
         self.setCentralWidget(self._page)
-        try:
-            self._clock.timeout.disconnect()
-        except TypeError:
-            pass
-        self._clock.timeout.connect(self._page.update_time)
+        self._controller.clock_tick.connect(self._page.update_time)
         self._page.update_time()
 
     def _on_ws_message(self, raw: str) -> None:
@@ -875,7 +1106,7 @@ class DashboardView(QMainWindow):
             self.close()
             return
         if transaction_type == "vault":
-            from views.transaction.vault_view import VaultView
+            from views.ui.vault_view import VaultView
             self._next = VaultView(self._api)
             self._next.show()
             self.close()
@@ -898,15 +1129,10 @@ class DashboardView(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:
-        if self._clock:
-            self._clock.stop()
-        if self._clock_timer:
-            self._clock_timer.stop()
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-        if self._ws_thread:
-            self._ws_thread.stop()
-            self._ws_thread.wait(2000)
+        for page in getattr(self, "_pages", []):
+            if hasattr(page, "stop"):
+                page.stop()
+        self._controller.stop()
         super().closeEvent(event)
 
 

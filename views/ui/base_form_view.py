@@ -1,5 +1,5 @@
 """
-views/transaction/base_form_view.py
+views/ui/base_form_view.py
 
 Abstract base for all transaction sub-views.  Each concrete sub-view
 (CashInView, CashOutView, TransferView, ExchangeView) overrides

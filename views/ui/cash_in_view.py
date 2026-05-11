@@ -3,7 +3,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QLabel, QLineEdit, QGridLayout, QTableWidgetItem, QWidget
 
 from i18n import t
-from views.transaction.base_form_view import BaseFormView
+from views.ui.base_form_view import BaseFormView
 from views.transaction_view import (
     ACCENT_GREEN,
     ACCENT_RED,

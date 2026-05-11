@@ -2,7 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QTableWidgetItem, QVBoxLayout, QWidget
 
 from i18n import t
-from views.transaction.base_form_view import BaseFormView
+from views.ui.base_form_view import BaseFormView
 from views.transaction_view import (
     ACCENT_BLUE,
     BG_CARD,
