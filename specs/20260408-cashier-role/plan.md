@@ -121,7 +121,7 @@ Tracks the cashier's current physical vault inventory at denomination level.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_denominations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    denomination    INTEGER NOT NULL,          -- e.g. 10000, 5000, 1000, 500, 100
+    denomination    INTEGER NOT NULL,          -- e.g. 20000, 10000, 5000, 1000, 500, 100
     quantity        INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
     updated_by      INTEGER NOT NULL,          -- cashier user_id
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -133,7 +133,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_denom_value ON cash_denominations(den
 **Design notes:**
 - One row per denomination. `quantity` is the current count held in the vault.
 - A separate audit/history table (`cash_denomination_logs`) records every change for accountability.
-- [NEEDS CLARIFICATION: Q1 — What denominations are used in practice? Standard Myanmar kyat notes are 100, 200, 500, 1000, 5000, 10000. Should 50 and 20 kyat coins also be supported, or only paper notes?]
+- [NEEDS CLARIFICATION: Q1 — What denominations are used in practice? Standard Myanmar kyat notes are 100, 200, 500, 1000, 5000, 10000, 20000. Should 50 and 20 kyat coins also be supported, or only paper notes?]
 
 ---
 
@@ -421,7 +421,7 @@ A pure utility (no I/O) used by both the ViewModel and UI:
 ```python
 # utils/denomination_utils.py
 
-STANDARD_DENOMINATIONS = [10000, 5000, 1000, 500, 100]  # descending
+STANDARD_DENOMINATIONS = [20000, 10000, 5000, 1000, 500, 200, 100, 50]  # descending
 
 def calculate_total(entries: list[dict]) -> float:
     """Sum of denomination * quantity for each entry."""

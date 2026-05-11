@@ -50,6 +50,7 @@ from services.api_client import ApiClient
 from views.receive_float_dialog import ReceiveFloatDialog
 from views.transaction_view import ProfileView
 from views.widgets.company_selector import add_placeholder
+from views.widgets.denomination_input import DenominationInputWidget
 
 WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
 
@@ -69,7 +70,7 @@ ACCENT_YELLOW = "#f9e2af"
 BORDER_COLOR = "#313244"
 INPUT_BORDER = "#585b70"
 
-DENOMINATIONS = [50, 100, 200, 500, 1000, 5000, 10000]
+DENOMINATIONS = [50, 100, 200, 500, 1000, 5000, 10000, 20000]
 SIDEBAR_WIDTH = 200
 REFRESH_INTERVAL_MS = 30_000
 CASH_TOLERANCE = 100  # MMK — must match backend CASH_TOLERANCE_MMK
@@ -471,6 +472,137 @@ class FloatDetailDialog(QDialog):
 
 
 # ════════════════════════════════════════════
+# QuickExchangeDialog
+# ════════════════════════════════════════════
+class QuickExchangeDialog(QDialog):
+    """Standalone denomination swap — customer swaps notes without a transaction."""
+
+    def __init__(self, api: ApiClient, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._gives_widget: Optional[DenominationInputWidget] = None
+        self._receives_widget: Optional[DenominationInputWidget] = None
+        self._validation_label: Optional[QLabel] = None
+        self._error_label: Optional[QLabel] = None
+        self._submit_btn: Optional[QPushButton] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle("Quick Exchange")
+        self.setMinimumWidth(720)
+        self.setStyleSheet(STYLESHEET)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        title = _section_label("Quick Exchange")
+        title.setStyleSheet(f"color: {ACCENT_YELLOW};")
+        layout.addWidget(title)
+
+        hint = QLabel(
+            "Swap notes without a transaction — e.g., 10,000 × 1 for 5,000 × 2.\n"
+            "Total Out from Vault MUST equal Total In to Vault."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(hint)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        layout.addWidget(sep)
+
+        widgets_row = QHBoxLayout()
+        widgets_row.setSpacing(16)
+
+        self._gives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Gives (Out from Vault)",
+        )
+        self._gives_widget.total_changed.connect(self._update_validation)
+        widgets_row.addWidget(self._gives_widget)
+
+        vsep = QFrame()
+        vsep.setFrameShape(QFrame.Shape.VLine)
+        vsep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        widgets_row.addWidget(vsep)
+
+        self._receives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Receives (In to Vault)",
+        )
+        self._receives_widget.total_changed.connect(self._update_validation)
+        widgets_row.addWidget(self._receives_widget)
+
+        layout.addLayout(widgets_row)
+
+        self._validation_label = QLabel("Enter denominations on both sides")
+        self._validation_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self._validation_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        layout.addWidget(self._validation_label)
+
+        layout.addWidget(QLabel(t("note_optional")))
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText("e.g., Customer requested change")
+        layout.addWidget(self._note_input)
+
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        self._submit_btn = _accent_btn("Confirm Exchange", ACCENT_YELLOW)
+        self._submit_btn.clicked.connect(self._on_submit)
+        self._submit_btn.setEnabled(False)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(self._submit_btn)
+        layout.addLayout(btn_row)
+
+    def _update_validation(self) -> None:
+        gives = self._gives_widget.total() if self._gives_widget else 0
+        receives = self._receives_widget.total() if self._receives_widget else 0
+        diff = gives - receives
+
+        if gives == 0 and receives == 0:
+            text = "Enter denominations on both sides"
+            color = TEXT_SECONDARY
+            valid = False
+        elif diff == 0:
+            text = f"Gives: {gives:,} MMK  =  Receives: {receives:,} MMK  ✓  Balanced"
+            color = ACCENT_GREEN
+            valid = True
+        else:
+            sign = "+" if diff > 0 else ""
+            text = f"Gives: {gives:,} MMK  |  Receives: {receives:,} MMK  |  Difference: {sign}{diff:,} MMK  ✗"
+            color = ACCENT_RED
+            valid = False
+
+        if self._validation_label:
+            self._validation_label.setText(text)
+            self._validation_label.setStyleSheet(f"color: {color};")
+        if self._submit_btn:
+            self._submit_btn.setEnabled(valid)
+
+    def _on_submit(self) -> None:
+        if not self._gives_widget or not self._receives_widget:
+            return
+        gives = self._gives_widget.breakdown()
+        receives = self._receives_widget.breakdown()
+        note = self._note_input.text().strip() or None
+        try:
+            self._api.quick_exchange(gives, receives, note)
+            self.accept()
+        except Exception as exc:
+            if self._error_label:
+                self._error_label.setText(str(exc))
+                self._error_label.setVisible(True)
+
+
+# ════════════════════════════════════════════
 # Page 0: Vault
 # ════════════════════════════════════════════
 class VaultPage(QWidget):
@@ -496,8 +628,11 @@ class VaultPage(QWidget):
         refresh_btn.clicked.connect(self.load_data)
         entry_btn = _accent_btn(t("record_vault_entry"), ACCENT_GREEN)
         entry_btn.clicked.connect(self._open_vault_entry)
+        exchange_btn = _accent_btn("Quick Exchange", ACCENT_YELLOW)
+        exchange_btn.clicked.connect(self._open_quick_exchange)
         title_row.addWidget(refresh_btn)
         title_row.addWidget(entry_btn)
+        title_row.addWidget(exchange_btn)
         layout.addLayout(title_row)
 
         # Denomination cards grid
@@ -579,6 +714,11 @@ class VaultPage(QWidget):
 
     def _open_vault_entry(self) -> None:
         dlg = VaultEntryDialog(self._api, entry_type="vault_in", parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def _open_quick_exchange(self) -> None:
+        dlg = QuickExchangeDialog(self._api, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.load_data()
 
@@ -738,6 +878,133 @@ class ReturnFloatDialog(QDialog):
             QMessageBox.warning(self, t("error"), str(exc))
 
 
+class DenominationExchangeDialog(QDialog):
+    def __init__(self, api: ApiClient, float_data: dict, balance: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._float_data = float_data
+        self._balance = balance.get("denominations", {}) or {}
+        self._given_combo: Optional[QComboBox] = None
+        self._given_qty: Optional[QSpinBox] = None
+        self._to_widget: Optional[DenominationInputWidget] = None
+        self._diff_label: Optional[QLabel] = None
+        self._note_input: Optional[QLineEdit] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle("Denomination Exchange")
+        self.setMinimumWidth(560)
+        self.setStyleSheet(STYLESHEET)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        layout.addWidget(_section_label("Denomination Exchange"))
+
+        summary = " | ".join(
+            f"{d:,}: {int(self._balance.get(str(d), 0) or 0)}"
+            for d in sorted(DENOMINATIONS, reverse=True)
+        )
+        summary_label = QLabel(f"Float Summary: {summary}")
+        summary_label.setWordWrap(True)
+        summary_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(summary_label)
+
+        given_row = QHBoxLayout()
+        given_row.addWidget(QLabel("Given note"))
+        self._given_combo = QComboBox()
+        for denom in sorted(DENOMINATIONS, reverse=True):
+            self._given_combo.addItem(
+                f"{denom:,} MMK ({int(self._balance.get(str(denom), 0) or 0)} available)",
+                denom,
+            )
+        self._given_combo.currentIndexChanged.connect(lambda _i: self._sync_given_limit())
+        given_row.addWidget(self._given_combo)
+        self._given_qty = QSpinBox()
+        self._given_qty.setRange(0, 0)
+        self._given_qty.valueChanged.connect(lambda _v: self._update_diff())
+        given_row.addWidget(self._given_qty)
+        layout.addLayout(given_row)
+        self._sync_given_limit()
+
+        self._to_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Receive as denominations",
+        )
+        self._to_widget.total_changed.connect(lambda _v: self._update_diff())
+        layout.addWidget(self._to_widget)
+
+        self._diff_label = QLabel("Difference: 0 MMK")
+        self._diff_label.setStyleSheet(f"color: {ACCENT_GREEN}; font-weight: bold;")
+        layout.addWidget(self._diff_label)
+
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText(t("note_optional"))
+        layout.addWidget(self._note_input)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        submit = _accent_btn("Confirm Exchange", ACCENT_GREEN)
+        submit.clicked.connect(self._on_submit)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(submit)
+        layout.addLayout(btn_row)
+
+    def _update_diff(self) -> None:
+        from_total = self._given_total()
+        to_total = self._to_widget.total() if self._to_widget else 0
+        diff = to_total - from_total
+        if self._diff_label:
+            self._diff_label.setText(f"Difference: {diff:+,} MMK")
+            self._diff_label.setStyleSheet(
+                f"color: {ACCENT_GREEN if diff == 0 else ACCENT_RED}; font-weight: bold;"
+            )
+
+    def _given_total(self) -> int:
+        if not self._given_combo or not self._given_qty:
+            return 0
+        return int(self._given_combo.currentData() or 0) * self._given_qty.value()
+
+    def _given_breakdown(self) -> dict[str, int]:
+        if not self._given_combo or not self._given_qty:
+            return {}
+        qty = self._given_qty.value()
+        if qty <= 0:
+            return {}
+        return {str(int(self._given_combo.currentData() or 0)): qty}
+
+    def _sync_given_limit(self) -> None:
+        if not self._given_combo or not self._given_qty:
+            return
+        denom = int(self._given_combo.currentData() or 0)
+        available = int(self._balance.get(str(denom), 0) or 0)
+        self._given_qty.setRange(0, available)
+        self._update_diff()
+
+    def _on_submit(self) -> None:
+        if not self._to_widget:
+            return
+        from_total = self._given_total()
+        to_total = self._to_widget.total()
+        if from_total <= 0 or to_total <= 0:
+            QMessageBox.warning(self, t("error"), t("total_nonzero"))
+            return
+        if from_total != to_total:
+            QMessageBox.warning(self, t("error"), "Exchange totals must match.")
+            return
+        try:
+            self._api.exchange_denominations(
+                from_denominations=self._given_breakdown(),
+                to_denominations=self._to_widget.breakdown(),
+                float_id=self._float_data.get("id"),
+                note=self._note_input.text().strip() if self._note_input else None,
+            )
+            self.accept()
+        except Exception as exc:
+            QMessageBox.warning(self, t("error"), str(exc))
+
+
 class EmployeeVaultPage(QWidget):
     def __init__(self, api: ApiClient, go_back=None) -> None:
         super().__init__()
@@ -765,9 +1032,12 @@ class EmployeeVaultPage(QWidget):
         receive_btn.clicked.connect(self._receive_pending_float)
         return_btn = _accent_btn("Return Cash", ACCENT_YELLOW)
         return_btn.clicked.connect(self._return_active_float)
+        exchange_btn = _accent_btn("Exchange Notes", ACCENT_BLUE)
+        exchange_btn.clicked.connect(self._exchange_denominations)
         title_row.addWidget(refresh_btn)
         title_row.addWidget(receive_btn)
         title_row.addWidget(return_btn)
+        title_row.addWidget(exchange_btn)
         if self._go_back:
             back_btn = _accent_btn("Back", ACCENT_BLUE)
             back_btn.clicked.connect(self._go_back)
@@ -886,6 +1156,16 @@ class EmployeeVaultPage(QWidget):
         dlg = ReturnFloatDialog(self._api, self._active_float, balance, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             QMessageBox.information(self, "Return Cash", "Return request sent to cashier.")
+            self.load_data()
+
+    def _exchange_denominations(self) -> None:
+        if not self._active_float:
+            QMessageBox.information(self, "Exchange Notes", "No active vault cash to exchange.")
+            return
+        balance = self._api.get_float_denomination_balance(self._active_float["id"])
+        dlg = DenominationExchangeDialog(self._api, self._active_float, balance, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            QMessageBox.information(self, "Exchange Notes", "Denomination exchange recorded.")
             self.load_data()
 
 
@@ -1237,27 +1517,30 @@ class ShiftsPage(QWidget):
 # Cash Approval Dialog
 # ════════════════════════════════════════════
 class CashApprovalDialog(QDialog):
-    """Cashier enters denomination breakdown when approving a transaction."""
+    """Cashier enters physical denomination breakdown (gives + receives) when approving a transaction."""
 
     def __init__(self, api: ApiClient, txn: dict, parent=None) -> None:
         super().__init__(parent)
         self._api = api
         self._txn = txn
         self._expected: int = int(txn.get("amount", 0))
-        self._spinboxes: dict[int, QSpinBox] = {}
-        self._total_label: Optional[QLabel] = None
+        self._txn_type: str = txn.get("transaction_type", "")
+        self._gives_widget: Optional[DenominationInputWidget] = None
+        self._receives_widget: Optional[DenominationInputWidget] = None
+        self._net_label: Optional[QLabel] = None
         self._diff_label: Optional[QLabel] = None
         self._submit_btn: Optional[QPushButton] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
-        txn_type = self._txn.get("transaction_type", "").upper()
+        txn_type_upper = self._txn_type.upper()
         amount = self._txn.get("amount", 0)
         customer = self._txn.get("customer_name", "—")
         txn_id = self._txn.get("id", "?")
+        fee = float(self._txn.get("customer_fee") or 0) + float(self._txn.get("additional_fee_amount") or 0)
 
         self.setWindowTitle(t("cash_approval_window", txn_id=txn_id))
-        self.setFixedWidth(460)
+        self.setMinimumWidth(720)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {BG_DARK}; }}
             QWidget {{ color: {TEXT_PRIMARY}; background-color: {BG_DARK}; }}
@@ -1292,13 +1575,12 @@ class CashApprovalDialog(QDialog):
         type_color = {
             "cash_in": ACCENT_GREEN, "cash_out": ACCENT_RED,
             "transfer": ACCENT_BLUE, "exchange": ACCENT_YELLOW,
-        }.get(txn_type, TEXT_PRIMARY)
-        # vault direction hint
-        direction = t("vault_in_hint") if self._txn.get("transaction_type") == "cash_in" \
-            else t("vault_out_hint")
+        }.get(self._txn_type, TEXT_PRIMARY)
+        direction = t("vault_in_hint") if self._txn_type == "cash_in" else t("vault_out_hint")
+        fee_str = f"  |  Fee: {fee:,.0f} MMK" if fee > 0 else ""
         info = QLabel(
-            f"Type: <span style='color:{type_color}'>{txn_type}</span>  |  "
-            f"Amount: <b>{amount:,.0f} MMK</b>  |  Customer: {customer}<br>"
+            f"Type: <span style='color:{type_color}'>{txn_type_upper}</span>  |  "
+            f"Amount: <b>{amount:,.0f} MMK</b>{fee_str}  |  Customer: {customer}<br>"
             f"<span style='color:{TEXT_MUTED}; font-size:11px;'>{direction}</span>"
         )
         info.setTextFormat(Qt.TextFormat.RichText)
@@ -1310,50 +1592,40 @@ class CashApprovalDialog(QDialog):
         sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
         layout.addWidget(sep)
 
-        # Denomination grid
-        grid = QGridLayout()
-        grid.setSpacing(8)
-        grid.addWidget(QLabel(t("col_denomination")), 0, 0)
-        grid.addWidget(QLabel(t("col_quantity")), 0, 1)
-        grid.addWidget(QLabel(t("col_value")), 0, 2)
+        # Two denomination widgets side by side
+        is_cash_in = (self._txn_type == "cash_in")
+        widgets_row = QHBoxLayout()
+        widgets_row.setSpacing(16)
 
-        for i, denom in enumerate(DENOMINATIONS):
-            row_i = i + 1
-            d_lbl = QLabel(f"{denom:,} MMK")
-            d_lbl.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        self._gives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Gives (Out from Vault)",
+        )
+        self._gives_widget.total_changed.connect(self._on_denomination_changed)
+        widgets_row.addWidget(self._gives_widget)
 
-            spin = QSpinBox()
-            spin.setRange(0, 99_999_999)
-            spin.setValue(0)
-            spin.setFixedWidth(130)
-            self._spinboxes[denom] = spin
+        vsep = QFrame()
+        vsep.setFrameShape(QFrame.Shape.VLine)
+        vsep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        widgets_row.addWidget(vsep)
 
-            val_lbl = QLabel("0")
-            val_lbl.setStyleSheet(f"color: {ACCENT_YELLOW};")
-            val_lbl.setFixedWidth(100)
-            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._receives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Receives (In to Vault)",
+        )
+        self._receives_widget.total_changed.connect(self._on_denomination_changed)
+        widgets_row.addWidget(self._receives_widget)
 
-            spin.valueChanged.connect(
-                lambda v, d=denom, lbl=val_lbl: (
-                    lbl.setText(f"{d * v:,}"),
-                    self._update_total(),
-                )
-            )
-            grid.addWidget(d_lbl, row_i, 0)
-            grid.addWidget(spin, row_i, 1)
-            grid.addWidget(val_lbl, row_i, 2)
+        layout.addLayout(widgets_row)
 
-        layout.addLayout(grid)
-
-        # Separator before summary
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
         layout.addWidget(sep2)
 
-        # Expected row
+        net_formula = "Receives − Gives" if is_cash_in else "Gives − Receives"
         expected_row = QHBoxLayout()
-        exp_title = QLabel(t("expected_label"))
+        exp_title = QLabel(f"Expected ({net_formula}):")
         exp_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         exp_title.setStyleSheet(f"color: {TEXT_SECONDARY};")
         exp_val = QLabel(f"{self._expected:,} MMK")
@@ -1364,20 +1636,18 @@ class CashApprovalDialog(QDialog):
         expected_row.addWidget(exp_val)
         layout.addLayout(expected_row)
 
-        # Entered total row
-        total_row = QHBoxLayout()
-        total_lbl = QLabel(t("entered_label"))
-        total_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        total_lbl.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        self._total_label = QLabel("0 MMK")
-        self._total_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self._total_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        total_row.addWidget(total_lbl)
-        total_row.addStretch()
-        total_row.addWidget(self._total_label)
-        layout.addLayout(total_row)
+        net_row = QHBoxLayout()
+        net_title = QLabel("Actual Net:")
+        net_title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        net_title.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        self._net_label = QLabel("0 MMK")
+        self._net_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self._net_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        net_row.addWidget(net_title)
+        net_row.addStretch()
+        net_row.addWidget(self._net_label)
+        layout.addLayout(net_row)
 
-        # Difference row
         diff_row = QHBoxLayout()
         diff_title = QLabel(t("difference_label"))
         diff_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
@@ -1389,19 +1659,16 @@ class CashApprovalDialog(QDialog):
         diff_row.addWidget(self._diff_label)
         layout.addLayout(diff_row)
 
-        # Note
         layout.addWidget(QLabel(t("note_optional")))
         self._note_input = QLineEdit()
         self._note_input.setPlaceholderText(t("morning_receipt_ph"))
         layout.addWidget(self._note_input)
 
-        # Error
         self._error_label = QLabel("")
         self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
         self._error_label.setVisible(False)
         layout.addWidget(self._error_label)
 
-        # Buttons
         btn_row = QHBoxLayout()
         cancel_btn = QPushButton(t("cancel"))
         cancel_btn.setStyleSheet(
@@ -1412,21 +1679,22 @@ class CashApprovalDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         self._submit_btn = QPushButton(t("confirm_cash_btn"))
         self._submit_btn.clicked.connect(self._on_submit)
+        self._submit_btn.setEnabled(False)
         btn_row.addWidget(cancel_btn)
         btn_row.addStretch()
         btn_row.addWidget(self._submit_btn)
         layout.addLayout(btn_row)
 
-        # Submit disabled until denominations match
-        self._submit_btn.setEnabled(False)
-
-    def _update_total(self) -> None:
-        entered = sum(d * self._spinboxes[d].value() for d in DENOMINATIONS)
-        diff = entered - self._expected
+    def _on_denomination_changed(self) -> None:
+        gives = self._gives_widget.total() if self._gives_widget else 0
+        receives = self._receives_widget.total() if self._receives_widget else 0
+        is_cash_in = (self._txn_type == "cash_in")
+        net = (receives - gives) if is_cash_in else (gives - receives)
+        diff = net - self._expected
         within_tolerance = abs(diff) <= CASH_TOLERANCE
 
-        if self._total_label:
-            self._total_label.setText(f"{entered:,} MMK")
+        if self._net_label:
+            self._net_label.setText(f"{net:,} MMK")
 
         if self._diff_label:
             if diff == 0:
@@ -1442,18 +1710,20 @@ class CashApprovalDialog(QDialog):
                 self._diff_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px;")
 
         if self._submit_btn:
-            self._submit_btn.setEnabled(within_tolerance and entered > 0)
+            self._submit_btn.setEnabled(within_tolerance and (gives > 0 or receives > 0))
 
     def _on_submit(self) -> None:
-        denoms = {str(d): self._spinboxes[d].value() for d in DENOMINATIONS}
+        if not self._gives_widget or not self._receives_widget:
+            return
+        gives = self._gives_widget.breakdown()
+        receives = self._receives_widget.breakdown()
         note = self._note_input.text().strip() or None
         if self._submit_btn:
             self._submit_btn.setEnabled(False)
         try:
-            self._api.approve_transaction(self._txn["id"], denoms, note)
+            self._api.approve_transaction(self._txn["id"], gives, receives, note)
             self.accept()
         except Exception as e:
-            # Parse structured backend error (422 mismatch detail)
             msg = str(e)
             try:
                 import requests as _req
@@ -1465,7 +1735,7 @@ class CashApprovalDialog(QDialog):
                         dif = detail.get("difference", 0)
                         msg = (
                             f"{detail['message']}\n"
-                            f"Expected: {int(exp):,}  |  Entered: {int(ent):,}  |  "
+                            f"Expected: {int(exp):,}  |  Net: {int(ent):,}  |  "
                             f"Diff: {int(dif):+,} MMK"
                         )
             except Exception:
@@ -1485,42 +1755,70 @@ class PendingCashInConfirmDialog(QDialog):
         self._api = api
         self._txn = txn
         self._expected = int(txn.get("amount", 0))
-        self._spinboxes: dict[int, QSpinBox] = {}
-        self._total_label: Optional[QLabel] = None
+        self._gives_widget: Optional[DenominationInputWidget] = None
+        self._receives_widget: Optional[DenominationInputWidget] = None
+        self._net_label: Optional[QLabel] = None
         self._diff_label: Optional[QLabel] = None
         self._pin_input: Optional[QLineEdit] = None
         self._note_input: Optional[QLineEdit] = None
         self._error_label: Optional[QLabel] = None
+        self._submit_btn: Optional[QPushButton] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
         self.setWindowTitle("Confirm Pending Cash In")
-        self.setFixedWidth(460)
+        self.setMinimumWidth(720)
         self.setStyleSheet(STYLESHEET)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
+
         layout.addWidget(_section_label(f"Cash In Txn #{self._txn.get('id', '')}"))
-        layout.addWidget(QLabel(f"Expected: {self._expected:,.0f} MMK"))
+        info = QLabel(
+            f"Expected (Receives − Gives): <b>{self._expected:,.0f} MMK</b>  |  "
+            f"Customer: {self._txn.get('customer_name', '—')}"
+        )
+        info.setTextFormat(Qt.TextFormat.RichText)
+        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
+        layout.addWidget(info)
 
-        grid = QGridLayout()
-        grid.addWidget(QLabel(t("col_denomination")), 0, 0)
-        grid.addWidget(QLabel(t("col_quantity")), 0, 1)
-        grid.addWidget(QLabel(t("col_value")), 0, 2)
-        for i, denom in enumerate(DENOMINATIONS):
-            row = i + 1
-            grid.addWidget(QLabel(f"{denom:,} MMK"), row, 0)
-            spin = QSpinBox()
-            spin.setRange(0, 99_999_999)
-            spin.valueChanged.connect(lambda _v: self._update_total())
-            self._spinboxes[denom] = spin
-            grid.addWidget(spin, row, 1)
-            grid.addWidget(QLabel(""), row, 2)
-        layout.addLayout(grid)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        layout.addWidget(sep)
 
-        self._total_label = QLabel("0 MMK")
-        self._diff_label = QLabel("")
-        layout.addWidget(self._total_label)
+        # Two denomination widgets side by side
+        widgets_row = QHBoxLayout()
+        widgets_row.setSpacing(16)
+
+        self._gives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Gives (Out from Vault)",
+        )
+        self._gives_widget.total_changed.connect(self._update_total)
+        widgets_row.addWidget(self._gives_widget)
+
+        vsep = QFrame()
+        vsep.setFrameShape(QFrame.Shape.VLine)
+        vsep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        widgets_row.addWidget(vsep)
+
+        self._receives_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Cashier Receives (In to Vault)",
+        )
+        self._receives_widget.total_changed.connect(self._update_total)
+        widgets_row.addWidget(self._receives_widget)
+
+        layout.addLayout(widgets_row)
+
+        self._net_label = QLabel("Net (Receives − Gives): 0 MMK")
+        self._net_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self._net_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+        layout.addWidget(self._net_label)
+
+        self._diff_label = QLabel(f"Difference: 0 MMK  ✓")
+        self._diff_label.setStyleSheet(f"color: {ACCENT_GREEN};")
         layout.addWidget(self._diff_label)
 
         self._pin_input = QLineEdit()
@@ -1541,34 +1839,43 @@ class PendingCashInConfirmDialog(QDialog):
         btn_row = QHBoxLayout()
         cancel = _accent_btn(t("cancel"), TEXT_MUTED)
         cancel.clicked.connect(self.reject)
-        submit = _accent_btn("Confirm Cash In", ACCENT_GREEN)
-        submit.clicked.connect(self._on_submit)
+        self._submit_btn = _accent_btn("Confirm Cash In", ACCENT_GREEN)
+        self._submit_btn.clicked.connect(self._on_submit)
+        self._submit_btn.setEnabled(False)
         btn_row.addWidget(cancel)
         btn_row.addStretch()
-        btn_row.addWidget(submit)
+        btn_row.addWidget(self._submit_btn)
         layout.addLayout(btn_row)
         self._update_total()
 
     def _update_total(self) -> None:
-        total = sum(d * spin.value() for d, spin in self._spinboxes.items())
-        diff = total - self._expected
-        if self._total_label:
-            self._total_label.setText(f"Total Counted: {total:,.0f} MMK")
+        gives = self._gives_widget.total() if self._gives_widget else 0
+        receives = self._receives_widget.total() if self._receives_widget else 0
+        net = receives - gives
+        diff = net - self._expected
+        within_tolerance = abs(diff) <= CASH_TOLERANCE
+
+        if self._net_label:
+            self._net_label.setText(f"Net (Receives − Gives): {net:,.0f} MMK")
         if self._diff_label:
-            self._diff_label.setText(f"Difference: {diff:+,.0f} MMK")
-            self._diff_label.setStyleSheet(
-                f"color: {ACCENT_GREEN if abs(diff) <= CASH_TOLERANCE else ACCENT_RED};"
-            )
+            sign = "+" if diff > 0 else ""
+            status = "✓" if within_tolerance else "✗"
+            color = ACCENT_GREEN if within_tolerance else ACCENT_RED
+            self._diff_label.setText(f"Difference: {sign}{diff:,.0f} MMK  {status}")
+            self._diff_label.setStyleSheet(f"color: {color};")
+        if self._submit_btn:
+            self._submit_btn.setEnabled(within_tolerance and (gives > 0 or receives > 0))
 
     def _on_submit(self) -> None:
         pin = self._pin_input.text().strip() if self._pin_input else ""
         if len(pin) != 6 or not pin.isdigit():
             self._show_error(t("pin_invalid"))
             return
-        denoms = {str(d): spin.value() for d, spin in self._spinboxes.items()}
+        gives = self._gives_widget.breakdown() if self._gives_widget else {}
+        receives = self._receives_widget.breakdown() if self._receives_widget else {}
         note = self._note_input.text().strip() if self._note_input else None
         try:
-            self._api.confirm_cash_in(self._txn["id"], pin, denoms, note=note)
+            self._api.confirm_cash_in(self._txn["id"], pin, gives, receives, note=note)
             self.accept()
         except Exception as exc:
             self._show_error(str(exc))
@@ -1577,6 +1884,130 @@ class PendingCashInConfirmDialog(QDialog):
         if self._error_label:
             self._error_label.setText(message)
             self._error_label.setVisible(True)
+
+
+class TransactionPaymentDialog(QDialog):
+    """Record customer fee payment and change denominations."""
+
+    def __init__(self, api: ApiClient, txn: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._api = api
+        self._txn = txn
+        self._fee = int(float(txn.get("customer_fee") or 0))
+        self._vault_balance: dict[str, int] = {}
+        self._received_widget: Optional[DenominationInputWidget] = None
+        self._change_widget: Optional[DenominationInputWidget] = None
+        self._change_label: Optional[QLabel] = None
+        self._error_label: Optional[QLabel] = None
+        self._note_input: Optional[QLineEdit] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        self.setWindowTitle(f"Record Fee Payment #{self._txn.get('id', '')}")
+        self.setMinimumWidth(560)
+        self.setStyleSheet(STYLESHEET)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        layout.addWidget(_section_label("Cashier Payment"))
+        layout.addWidget(QLabel(f"Fee due: {self._fee:,.0f} MMK"))
+
+        try:
+            vault = self._api.get_vault_denominations()
+            self._vault_balance = vault.get("denominations", {}) or {}
+        except Exception:
+            self._vault_balance = {}
+        vault_text = " | ".join(
+            f"{d:,}: {int(self._vault_balance.get(str(d), 0) or 0)}"
+            for d in sorted(DENOMINATIONS, reverse=True)
+        )
+        vault_label = QLabel(f"Vault Summary: {vault_text}")
+        vault_label.setWordWrap(True)
+        vault_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(vault_label)
+
+        self._received_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Received from customer",
+        )
+        self._received_widget.total_changed.connect(self._update_change)
+        layout.addWidget(self._received_widget)
+
+        self._change_label = QLabel("Change due: 0 MMK")
+        self._change_label.setStyleSheet(f"color: {ACCENT_YELLOW}; font-weight: bold;")
+        layout.addWidget(self._change_label)
+
+        max_change = {
+            str(d): int(self._vault_balance.get(str(d), 0) or 0)
+            for d in DENOMINATIONS
+        }
+        self._change_widget = DenominationInputWidget(
+            sorted(DENOMINATIONS, reverse=True),
+            title="Change to customer",
+            max_quantities=max_change,
+        )
+        layout.addWidget(self._change_widget)
+
+        self._note_input = QLineEdit()
+        self._note_input.setPlaceholderText(t("note_optional"))
+        layout.addWidget(self._note_input)
+
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        submit = _accent_btn("Record Payment", ACCENT_GREEN)
+        submit.clicked.connect(self._on_submit)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(submit)
+        layout.addLayout(btn_row)
+
+    def _suggest_change(self, amount: int, received: dict[str, int]) -> dict[str, int]:
+        remaining = amount
+        result: dict[str, int] = {}
+        for denom in sorted(DENOMINATIONS, reverse=True):
+            available = int(self._vault_balance.get(str(denom), 0) or 0)
+            available += int(received.get(str(denom), 0) or 0)
+            qty = min(remaining // denom, available)
+            if qty > 0:
+                result[str(denom)] = qty
+                remaining -= denom * qty
+        return result if remaining == 0 else {}
+
+    def _update_change(self, received_total: int) -> None:
+        change_due = max(0, received_total - self._fee)
+        if self._change_label:
+            self._change_label.setText(f"Change due: {change_due:,} MMK")
+        if self._change_widget and self._received_widget:
+            self._change_widget.set_breakdown(
+                self._suggest_change(change_due, self._received_widget.breakdown())
+            )
+
+    def _on_submit(self) -> None:
+        if not self._received_widget:
+            return
+        received = self._received_widget.breakdown()
+        change = self._change_widget.breakdown() if self._change_widget else {}
+        note = self._note_input.text().strip() if self._note_input else None
+        try:
+            self._api.record_transaction_payment(
+                self._txn["id"],
+                received_denominations=received,
+                fee_amount=self._fee,
+                change_denominations=change,
+                note=note,
+            )
+            self.accept()
+        except Exception as exc:
+            if self._error_label:
+                self._error_label.setText(str(exc))
+                self._error_label.setVisible(True)
 
 
 class PendingApprovalsPage(QWidget):
@@ -1805,6 +2236,17 @@ class TransactionsReadOnlyPage(QWidget):
                 txn_copy = dict(tx)
                 btn.clicked.connect(lambda _, td=txn_copy: self._on_approve(td))
                 self._table.setCellWidget(row, 8, btn)
+            elif approved and float(fee or 0) > 0 and not tx.get("change_denominations"):
+                btn = QPushButton("Fee Payment")
+                btn.setStyleSheet(
+                    f"QPushButton {{ background:{ACCENT_YELLOW}; color:{BG_DARK}; "
+                    f"border:none; border-radius:4px; padding:4px 10px; font-size:11px; font-weight:bold; }}"
+                    f"QPushButton:hover {{ background:#f8d878; }}"
+                )
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                txn_copy = dict(tx)
+                btn.clicked.connect(lambda _, td=txn_copy: self._on_payment(td))
+                self._table.setCellWidget(row, 8, btn)
             elif approved:
                 approved_at = str(tx.get("cash_approved_at", ""))[:16]
                 self._table.setItem(row, 8, _cell(approved_at, Qt.AlignmentFlag.AlignCenter))
@@ -1813,6 +2255,11 @@ class TransactionsReadOnlyPage(QWidget):
 
     def _on_approve(self, txn: dict) -> None:
         dlg = CashApprovalDialog(self._api, txn, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.load_data()
+
+    def _on_payment(self, txn: dict) -> None:
+        dlg = TransactionPaymentDialog(self._api, txn, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.load_data()
 

@@ -326,9 +326,16 @@ class ApiClient:
         """Return all transactions for a given date (YYYY-MM-DD)."""
         return self._get("/transactions/by-date", params={"date": date})
 
-    def approve_transaction(self, txn_id: int, denominations: dict, note: str | None = None) -> dict:
+    def approve_transaction(
+        self,
+        txn_id: int,
+        gives: dict,
+        receives: dict,
+        note: str | None = None,
+    ) -> dict:
         return self._post(f"/cashier/transactions/{txn_id}/approve", {
-            "denominations": denominations,
+            "gives": gives,
+            "receives": receives,
             "note": note,
         })
 
@@ -339,12 +346,21 @@ class ApiClient:
         self,
         txn_id: int,
         pin: str,
-        denominations: dict,
+        gives: dict,
+        receives: dict,
         note: str | None = None,
     ) -> dict:
         return self._post(f"/cashier/transactions/{txn_id}/confirm-cash-in", {
             "pin": pin,
-            "denominations": denominations,
+            "gives": gives,
+            "receives": receives,
+            "note": note,
+        })
+
+    def quick_exchange(self, gives: dict, receives: dict, note: str | None = None) -> dict:
+        return self._post("/cashier/quick-exchange", {
+            "gives": gives,
+            "receives": receives,
             "note": note,
         })
 
@@ -584,3 +600,44 @@ class ApiClient:
     def get_vault_inventory(self) -> dict:
         """Full denomination inventory across main vault and all employee floats."""
         return self._get("/cashier/vault/inventory")
+
+    def get_denominations(self) -> list[dict]:
+        """Configured MMK note denominations."""
+        return self._get("/cashier/denominations")
+
+    def get_vault_denominations(self) -> dict:
+        """Main vault denomination balance for change-making."""
+        return self._get("/cashier/vault/denominations")
+
+    def exchange_denominations(
+        self,
+        from_denominations: dict[str, int],
+        to_denominations: dict[str, int],
+        employee_id: Optional[int] = None,
+        float_id: Optional[int] = None,
+        exchange_type: str = "BREAK_DOWN",
+        note: Optional[str] = None,
+    ) -> dict:
+        return self._post("/cashier/denomination/exchange", {
+            "employee_id": employee_id,
+            "float_id": float_id,
+            "exchange_type": exchange_type,
+            "from_denominations": from_denominations,
+            "to_denominations": to_denominations,
+            "note": note,
+        })
+
+    def record_transaction_payment(
+        self,
+        txn_id: int,
+        received_denominations: dict[str, int],
+        fee_amount: Optional[int] = None,
+        change_denominations: Optional[dict[str, int]] = None,
+        note: Optional[str] = None,
+    ) -> dict:
+        return self._post(f"/cashier/transactions/{txn_id}/payment", {
+            "fee_amount": fee_amount,
+            "received_denominations": received_denominations,
+            "change_denominations": change_denominations,
+            "note": note,
+        })

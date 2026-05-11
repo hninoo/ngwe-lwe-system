@@ -1,7 +1,7 @@
 import json
 import math
 import sqlite3
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from backend.database import atomic, get_cursor
 from models.account import Account
@@ -11,7 +11,9 @@ from repositories.commission_tier_repository import CommissionTierRepository
 from repositories.exchange_rate_repository import ExchangeRateRepository
 from repositories.service_type_repository import ServiceTypeRepository
 from repositories.transaction_repository import TransactionRepository
-from services.vault_service import VaultService
+
+if TYPE_CHECKING:
+    from services.vault_service import VaultService
 
 
 class TransactionOperationBase:
@@ -25,7 +27,7 @@ class TransactionOperationBase:
         commission_tier_repo: Optional[CommissionTierRepository] = None,
         service_type_repo: Optional[ServiceTypeRepository] = None,
         float_repo: Optional[CashFloatRepository] = None,
-        vault_service: Optional[VaultService] = None,
+        vault_service: Optional["VaultService"] = None,
     ) -> None:
         self._txn_repo = transaction_repo or TransactionRepository()
         self._account_repo = account_repo or AccountRepository()
@@ -33,7 +35,10 @@ class TransactionOperationBase:
         self._tier_repo = commission_tier_repo or CommissionTierRepository()
         self._service_type_repo = service_type_repo or ServiceTypeRepository()
         self._float_repo = float_repo or CashFloatRepository()
-        self._vault_service = vault_service or VaultService(float_repo=self._float_repo)
+        if vault_service is None:
+            from services.vault_service import VaultService
+            vault_service = VaultService(float_repo=self._float_repo)
+        self._vault_service = vault_service
 
     def _validate_amount(self, amount: float) -> None:
         if amount <= 0:

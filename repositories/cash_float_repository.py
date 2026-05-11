@@ -202,6 +202,26 @@ class CashFloatRepository:
                             f"(float #{float_id}). Please retry."
                         )
 
+    def add_denominations(self, float_id: int, denominations: dict[int, int]) -> None:
+        """Add denomination quantities to a float, creating rows as needed."""
+        with get_cursor(commit=True) as cursor:
+            for denom, qty in denominations.items():
+                if qty <= 0:
+                    continue
+                cursor.execute(
+                    """UPDATE cash_float_denominations
+                       SET quantity = quantity + ?
+                       WHERE float_id = ? AND denomination = ?""",
+                    (qty, float_id, denom),
+                )
+                if cursor.rowcount == 0:
+                    cursor.execute(
+                        """INSERT INTO cash_float_denominations
+                           (float_id, denomination, quantity)
+                           VALUES (?, ?, ?)""",
+                        (float_id, denom, qty),
+                    )
+
     def get_denomination_balance(self, float_id: int) -> dict[int, int]:
         """Return current per-denomination quantities for a float."""
         with get_cursor() as cursor:

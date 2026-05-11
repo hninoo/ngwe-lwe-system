@@ -222,7 +222,7 @@ class DailyClosingView(QWidget):
         phys_lo.addWidget(inv_hdr)
 
         self._inventory_table = _make_table(
-            [t("col_employee")] + [f"{d:,}" for d in (50, 100, 200, 500, 1000, 5000, 10000)] + ["Total"]
+            [t("col_employee")] + [f"{d:,}" for d in (50, 100, 200, 500, 1000, 5000, 10000, 20000)] + ["Total"]
         )
         self._inventory_table.setMaximumHeight(160)
         phys_lo.addWidget(self._inventory_table)
@@ -343,7 +343,7 @@ class DailyClosingView(QWidget):
         # ── Denomination inventory table ──────────────────────────────────────
         inventory = snap.get("denomination_inventory", {})
         emp_inventory = inventory.get("employee_floats", [])
-        denoms_order = (50, 100, 200, 500, 1000, 5000, 10000)
+        denoms_order = (50, 100, 200, 500, 1000, 5000, 10000, 20000)
         rows_inv = []
         main_vault_denoms = inventory.get("main_vault", {})
         if main_vault_denoms:

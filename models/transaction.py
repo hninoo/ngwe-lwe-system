@@ -29,5 +29,7 @@ class Transaction:
     vault_impact: Optional[str] = None
     confirmed_by: Optional[int] = None
     confirmed_at: Optional[str] = None
+    change_given: Optional[float] = 0.0
+    change_denominations: Optional[str] = None
     from_company_id: Optional[int] = None   # FK → companies (set for all transaction types)
     to_company_id: Optional[int] = None     # FK → companies (set for transfer/exchange)

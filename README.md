@@ -1,216 +1,360 @@
-# Ngwe Lwe (ငွေလွှဲ)
+# Ngwe Lwe System
 
-Myanmar Money Transfer Business Management System — a desktop application for managing money transfer operations with real-time owner monitoring, employee transaction handling, and cashier cash float management.
+Ngwe Lwe is a Myanmar money-transfer management system for small teams. It uses a PyQt6 desktop client, a FastAPI backend, SQLite storage, and role-aware WebSocket events for real-time cashier/employee/owner coordination.
+
+The current codebase is optimized for a single-branch or small-office deployment with fewer than 10 users. SQLite is intentionally kept, with `BEGIN IMMEDIATE` atomic transactions, WAL mode, and repository-level balance guards to keep financial writes serialized and auditable.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+| --- | --- |
 | Desktop UI | PyQt6 |
 | Backend API | FastAPI + Uvicorn |
 | Database | SQLite 3 |
-| Real-time | WebSocket |
+| Real-time sync | FastAPI WebSocket |
+| Auth | HMAC-SHA256 bearer tokens + one-time WebSocket tickets |
+| Password/PIN hashing | bcrypt |
 | Language | Python 3.10+ |
-| i18n | Myanmar / English bilingual |
+| i18n | Myanmar / English |
 
 ## Architecture
 
-**MVVM + Repository Pattern**
+```text
+PyQt6 Views
+    -> ViewModels
+    -> Services/ApiClient
+    -> FastAPI Routes
+    -> Repositories
+    -> SQLite
 
-```
-Views (PyQt6) → ViewModels → Repositories → SQLite
-                    ↓
-              Services (API Client, WebSocket)
+FastAPI Routes
+    -> Repository business operations
+    -> WebSocket ConnectionManager
+    -> Role/user-targeted desktop refresh events
 ```
 
-```
-ngwe-lwe-system/
-├── backend/                # FastAPI server
-│   ├── main.py             # App setup, WebSocket endpoint
-│   ├── database.py         # SQLite connection + migrations
-│   ├── database.sql        # Schema + seed data
-│   ├── auth.py             # HMAC-SHA256 token auth
-│   ├── websocket_manager.py
-│   └── routes/             # REST API endpoints
-├── models/                 # Data classes
-├── repositories/           # Database access layer
-├── viewmodels/             # Business logic + UI state
-├── views/                  # PyQt6 UI components
-├── services/               # API client
-├── i18n/                   # Myanmar/English translations
-├── main.py                 # Desktop app entry point
-├── requirements.txt
-└── .env
+Key directories:
+
+```text
+backend/                 FastAPI app, auth, database, routes, WebSocket manager
+models/                  Dataclasses shared by repositories and viewmodels
+repositories/            Database access and transaction business rules
+services/                Desktop API client and vault service helpers
+viewmodels/              UI-facing state and business orchestration
+views/                   PyQt6 screens and dialogs
+views/transaction/       Transaction forms and employee vault views
+views/settings/          Owner/admin settings pages
+i18n/                    Myanmar/English translations
+tests/                   Repository, route, migration, and integration tests
 ```
 
 ## Roles
 
-### Owner
-Full access: dashboard monitoring, account management, user management, exchange rates, commission tiers, reports, company and service-type hierarchy, fee account configuration.
+| Role | Responsibilities |
+| --- | --- |
+| Owner | Dashboard, accounts, users, companies, service types, exchange rates, commission tiers, reports, reconciliation, and audit logs. |
+| Employee | Creates Cash In, Cash Out, Transfer, and Exchange transactions after receiving an active cash float. |
+| Cashier | Issues/receives/returns employee floats, manages main vault denominations, confirms pending Cash In cash receipt, and approves cash workflows. |
 
-### Employee
-Transaction entry only: CashIn, CashOut, Transfer, Exchange. Selects account, amount, customer details, attaches screenshot, and submits.
+Cashiers cannot create normal transactions. Employees must have an active float before transaction entry.
 
-### Cashier
-Cash float management: issues float to employees, approves cash for transactions, records vault entries, closes float sessions. Limited to cash operations — no transaction entry.
+## Core Workflows
 
-## Features
+### Cash In
 
-- **Three roles:** Owner, Employee, Cashier
-- **4 transaction types:** CashIn, CashOut, Transfer, Exchange (MMK/THB)
-- **Company / service-type hierarchy:** Companies group service types; accounts belong to service types
-- **Fee accounts:** Accounts flagged `is_fee_account=1` appear in the fee dropdown on transactions
-- **Commission tiers:** Dynamic fee/commission lookup by service, account type, and amount range
-- **Cash float & vault:** Cashier issues/closes float sessions, records vault denomination logs
-- **Real-time sync:** WebSocket broadcasts balance updates to owner dashboard
-- **Mandatory screenshots** for all transactions
-- **Activity audit trail** for all user actions
-- **Bilingual UI:** Myanmar and English, switchable at runtime
+Cash In follows the banking-standard teller model: physical cash comes in, digital balance goes out.
+
+1. Employee creates Cash In.
+2. Account digital balance is deducted immediately inside an atomic transaction.
+3. Transaction is saved as `PENDING_CASHIER_CONFIRM` with `vault_impact = none`.
+4. Cashiers receive a `cash_in_pending` WebSocket event.
+5. Cashier confirms with PIN and denomination breakdown.
+6. Main vault is credited by denomination and transaction becomes `COMPLETED`.
+7. If cashier cancels, `CashInRepository.cancel_pending_cash_in()` reverses the digital deduction first. If reversal fails because the account is inactive or missing, cancellation raises `RuntimeError` and the atomic transaction rolls back.
+
+### Cash Out
+
+Cash Out credits digital value and deducts employee float cash.
+
+1. Employee must have an active float.
+2. Float sufficiency and denomination checks run inside the atomic block.
+3. Account balance is credited only when the account is active.
+4. Employee mini-vault denominations/current balance are deducted.
+5. Transaction completes immediately.
+
+### Transfers and Exchange
+
+Transfers and exchanges use the same repository pattern, server-side fee resolution, active float checks for employees, and role-aware WebSocket broadcasts for dashboards.
+
+### Float Lifecycle
+
+```text
+Cashier issues float
+    -> Employee receives with PIN and denomination verification
+    -> Employee uses active float for cash workflows
+    -> Employee initiates return with denomination breakdown
+    -> Cashier confirms return with PIN
+    -> Main vault is credited and float closes
+```
+
+### Denomination Exchange And Change
+
+Cashiers and employees can record denomination-only exchanges without changing the float total. The backend validates that the outgoing and incoming note totals match, checks that the active float has the note being given and the main vault has the notes being returned, then atomically moves denominations between the employee float and main vault. Each exchange is saved in `denomination_exchanges` and activity logs.
+
+Cashiers can also record fee payments with change:
+
+1. Cashier enters notes received from the customer.
+2. Backend calculates `change_due = received_total - fee_amount`.
+3. If change denominations are not supplied, the backend calculates them using available vault notes.
+4. Main vault denominations are updated atomically: received notes are added and change notes are subtracted.
+5. `transaction_payment_denominations` stores paid and returned quantities per note.
+
+## Money Rules
+
+- Currency math at route boundaries is normalized through `backend.money.normalize_money()`.
+- Repository balance mutations use `Decimal(str(value))` where precision matters.
+- `AccountRepository.increment_balance()` only updates active accounts:
+
+```sql
+UPDATE accounts
+SET balance = balance + ?
+WHERE id = ? AND is_active = 1
+```
+
+- Fees are derived server-side from commission tiers. Client-supplied fee override fields are ignored by the repository fee resolver.
+- MMK fee rounding is centralized in `TransactionOperationBase.round_fee()`:
+  - `amount <= 0` returns `0`
+  - remainder `<= 20` rounds down to the nearest 100
+  - remainder `> 20` rounds up to the nearest 100
+  - minimum positive fee is `100` MMK
+
+## Real-Time Sync
+
+WebSocket authentication uses a short-lived one-time ticket:
+
+1. Client authenticates with `/auth/login`.
+2. Client calls `POST /ws-ticket`.
+3. Server issues a 30-second single-use ticket carrying `user_id` and `role`.
+4. Client connects to `/ws?ticket=<ticket>`.
+5. `ConnectionManager` stores the user context and can broadcast to:
+   - all connected clients
+   - one role
+   - multiple roles
+   - one user
+
+Important event types currently emitted:
+
+| Event | Target |
+| --- | --- |
+| `cash_in_pending` | Cashiers |
+| `cash_in_confirmed` | Transaction creator |
+| `cash_in_cancelled` | Transaction creator |
+| `pending_cash_in_update` | Cashiers and owner |
+| `new_transaction` | Cashiers and owner |
+| `balance_update` | Cashiers and owner |
+| `float_issued` | Assigned employee |
+| `float_received` | Cashiers and owner |
+| `float_return_initiated` | Cashiers and owner |
+| `float_return_confirmed` | Assigned employee |
+| `float_update` | Cashiers and owner |
+| `transaction_approved` | Transaction creator |
+| `transaction_update` | Cashiers and owner |
+
+The desktop client runs WebSocket workers in `views/dashboard_view.py` and `views/cashier_view.py`, using Qt signals to update UI state safely from background threads.
+
+## Security Controls
+
+- Strong `APP_SECRET` required at startup; weak placeholders are rejected.
+- Bearer token payload includes `auth_version`; user deactivation, role changes, password resets, and credential updates can revoke existing tokens.
+- Login uses bcrypt and runs a dummy bcrypt check for missing users to reduce username-enumeration timing leaks.
+- Login and PIN flows use in-memory rate limiting.
+- WebSocket tickets are short-lived and single-use.
+- Role checks are enforced on owner/cashier/employee routes.
+- Cashier PIN is required for high-risk cash operations.
+- Negative denomination counts are rejected by Pydantic validators and route parsing.
+- Cash In confirmation denomination totals must match the transaction amount within `CASH_TOLERANCE_MMK = 500`.
+- Screenshot paths accepted by transaction routes must be server-owned paths under `uploads/screenshots`; absolute paths, drive-letter paths, and `..` traversal are rejected.
+- Hard transaction deletes are disabled; use reversal/cancel workflows instead.
+- Activity logs capture financial and administrative actions.
+
+Operational note: the rate limiter, WebSocket ticket store, and WebSocket connection manager are in-memory. Run a single Uvicorn worker unless these are moved to SQLite or Redis.
 
 ## Setup
 
-### 1. Create virtual environment
+Create and activate a virtual environment:
 
-```bash
+```powershell
 python -m venv venv
-
-# Windows
 venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
 ```
 
-### 2. Install dependencies
+Install dependencies:
 
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment
+Configure environment variables in `.env` or the process environment:
 
-Copy or edit `.env`:
-
-```
-APP_SECRET=your_secret_key_here
+```text
+APP_SECRET=<random string of at least 32 characters>
 API_BASE_URL=http://127.0.0.1:8000
+WS_URL=ws://127.0.0.1:8000/ws
 DB_PATH=ngwe_lwe.db
+CORS_ALLOW_ORIGINS=http://127.0.0.1,http://localhost
 ```
 
-### 4. Initialize database
+Initialize or migrate the database:
 
-The database is created automatically on first run via SQLite migrations. To seed from scratch:
-
-```bash
+```powershell
 python -c "from backend.database import init_db; init_db()"
 ```
 
-## Running
+The app also calls `init_db()` on backend startup.
 
-Start both the backend API and the desktop app:
+## Running In Development
 
-**Terminal 1 — Backend:**
+Start the backend:
 
-```bash
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```powershell
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-**Terminal 2 — Desktop App:**
+Start the desktop client:
 
-```bash
+```powershell
 python main.py
 ```
 
-### Demo Credentials
+The desktop launcher can also run in host/client mode:
 
-| Role | Username | Password |
-|------|----------|----------|
-| Owner | `owner` | `admin123` |
-| Employee | `employee` | `employee123` |
-| Cashier | `cashier` | `cashier123` |
+- Host mode starts the local Uvicorn server in a background Qt thread.
+- Client mode connects to a LAN server from saved config or a startup dialog.
 
-## API Endpoints
+API docs are available at:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/login` | Login |
-| POST | `/auth/logout` | Logout |
-| GET | `/companies/` | List companies |
-| POST | `/companies/` | Create company (owner) |
-| PATCH | `/companies/{id}` | Update company (owner) |
-| GET | `/companies/{id}/logo` | Get company logo |
-| POST | `/companies/{id}/logo` | Upload company logo (owner) |
-| GET | `/companies/{id}/service-types` | List service types for company |
-| POST | `/companies/{id}/service-types` | Create service type (owner) |
-| PATCH | `/service-types/{id}` | Update service type (owner) |
-| DELETE | `/service-types/{id}` | Deactivate service type (owner) |
-| GET | `/accounts/` | List accounts |
-| POST | `/accounts/` | Create account (owner) |
-| GET | `/accounts/{id}` | Get account |
-| PATCH | `/accounts/{id}` | Update account (owner) |
-| DELETE | `/accounts/{id}` | Deactivate account (owner) |
-| PATCH | `/accounts/{id}/balance` | Set balance (owner) |
-| POST | `/accounts/{id}/balance-adjust` | Adjust balance with log (owner) |
-| POST | `/transactions/cash_in` | Create cash_in |
-| POST | `/transactions/cash_out` | Create cash_out |
-| POST | `/transactions/transfer` | Create transfer |
-| POST | `/transactions/exchange` | Create currency exchange |
-| GET | `/transactions/` | List transactions with filters (owner) |
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Testing
+
+Run the full test suite:
+
+```powershell
+python -m pytest -q
+```
+
+Useful focused checks:
+
+```powershell
+python -m pytest -q tests/test_transaction_viewmodel.py tests/test_integration.py
+python -m compileall -q .
+```
+
+## Main API Surface
+
+Authentication and WebSocket:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | `/auth/login` | Login and receive bearer token |
+| POST | `/auth/logout` | Logout response endpoint |
+| POST | `/ws-ticket` | Issue one-time WebSocket ticket |
+| WS | `/ws?ticket=...` | Role/user-aware real-time events |
+| GET | `/health` | Health check and active WebSocket count |
+
+Transactions:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | `/transactions/cash_in` | Create pending Cash In |
+| POST | `/transactions/cash_out` | Create Cash Out |
+| POST | `/transactions/transfer` | Create Transfer |
+| POST | `/transactions/exchange` | Create Exchange |
+| GET | `/transactions/` | Owner transaction listing with filters |
 | GET | `/transactions/recent` | Recent transactions |
-| GET | `/transactions/by-date` | Transactions by date |
-| DELETE | `/transactions/{id}` | Delete transaction (owner) |
-| GET | `/dashboard/summary` | Today's summary (owner) |
-| GET | `/dashboard/accounts` | All accounts (owner) |
-| GET | `/exchange-rates/latest` | Current exchange rates |
-| POST | `/exchange-rates/` | Update rates (owner) |
-| GET | `/commission-tiers/` | List commission tiers |
-| GET | `/commission-tiers/lookup` | Lookup tier for amount |
-| PUT | `/commission-tiers/{id}` | Update commission tier (owner) |
-| DELETE | `/commission-tiers/{id}` | Delete commission tier (owner) |
-| GET | `/users/` | List users (owner) |
-| POST | `/users/` | Create user (owner) |
-| PATCH | `/users/{id}` | Update user (owner) |
-| POST | `/users/{id}/reset-password` | Reset password (owner) |
-| PATCH | `/users/{id}/active` | Activate / deactivate user (owner) |
-| POST | `/users/{id}/pin` | Set cashier PIN |
-| POST | `/users/change-password` | Change own password |
-| GET | `/cashier/vault` | Get vault balance |
-| POST | `/cashier/vault/entry` | Record vault cash_in / adjustment |
+| GET | `/transactions/by-date` | Transactions for a date |
+| DELETE | `/transactions/{txn_id}` | Disabled hard delete guard |
+
+Cashier and vault:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/cashier/employees` | Employees visible to cashier |
+| GET | `/cashier/vault` | Main vault summary |
+| POST | `/cashier/vault/entry` | Record vault cash-in/adjustment |
 | GET | `/cashier/vault/logs` | Vault denomination logs |
-| GET | `/cashier/floats` | List float assignments |
-| POST | `/cashier/floats` | Issue float to employee (cashier) |
-| GET | `/cashier/floats/my-pending` | Employee's pending float |
-| GET | `/cashier/floats/{id}` | Get float assignment |
-| POST | `/cashier/floats/{id}/receive` | Employee receive float with PIN |
-| POST | `/cashier/floats/{id}/close` | Close float session |
-| POST | `/cashier/transactions/{txn_id}/approve` | Approve cash for transaction |
-| GET | `/reports/daily` | Daily report (owner) |
-| GET | `/activity-logs/` | Activity audit log (owner) |
-| WS | `/ws` | Real-time balance updates |
-| GET | `/health` | Health check |
+| GET | `/cashier/vault/inventory` | Main vault plus employee float inventory |
+| GET | `/cashier/vault/denominations` | Main vault denomination balance for change |
+| GET | `/cashier/denominations` | Configured MMK note denominations |
+| POST | `/cashier/denomination/exchange` | Exchange denominations in an active employee float |
+| GET | `/cashier/floats` | Float assignments |
+| POST | `/cashier/floats` | Issue float |
+| GET | `/cashier/floats/my-pending` | Employee pending float |
+| GET | `/cashier/floats/{float_id}` | Float detail |
+| GET | `/cashier/floats/{float_id}/denominations` | Float denomination balance |
+| POST | `/cashier/floats/{float_id}/receive` | Employee receives float |
+| POST | `/cashier/floats/{float_id}/initiate-return` | Employee initiates return |
+| POST | `/cashier/floats/{float_id}/confirm-return` | Cashier confirms return |
+| GET | `/cashier/pending-cash-ins` | Pending Cash In list |
+| POST | `/cashier/transactions/{txn_id}/confirm-cash-in` | Confirm pending Cash In |
+| POST | `/cashier/transactions/{txn_id}/cancel-cash-in` | Cancel and reverse pending Cash In |
+| POST | `/cashier/transactions/{txn_id}/approve` | Approve supported cash workflows |
+| POST | `/cashier/transactions/{txn_id}/payment` | Record customer fee payment and change |
 
-API docs available at `http://127.0.0.1:8000/docs` (Swagger UI).
+Administration:
 
-## Transaction Workflow
+| Area | Endpoints |
+| --- | --- |
+| Accounts | `/accounts/`, `/accounts/{id}`, `/accounts/{id}/balance-adjust` |
+| Users | `/users/`, `/users/{id}`, `/users/{id}/reset-password`, `/users/{id}/pin`, `/users/change-password`, `/users/change-pin` |
+| Companies | `/companies/`, `/companies/{id}`, `/companies/{id}/logo`, `/companies/{id}/service-types` |
+| Service types | `/service-types/{id}` |
+| Commission tiers | `/commission-tiers/`, `/commission-tiers/lookup`, `/commission-tiers/{id}` |
+| Exchange rates | `/exchange-rates/latest`, `/exchange-rates/` |
+| Dashboard | `/dashboard/summary`, `/dashboard/accounts` |
+| Reports | `/reports/daily` |
+| Reconciliation | `/reconciliation/current`, `/reconciliation/close-day`, `/reconciliation/history` |
+| Activity logs | `/activity-logs/` |
 
-1. Employee logs in and selects transaction type
-2. Fills in account, amount, customer details
-3. Selects fee account (Cash or flagged fee account)
-4. Attaches screenshot (mandatory)
-5. Submits — backend looks up commission tier, calculates fees, updates balances
-6. WebSocket broadcasts update to owner dashboard in real-time
+## Database
 
-## Database Schema
+The database is created from `backend/database.sql` on first run and migrated by numbered migrations in `backend/database.py`.
 
-- **users** — Owner, employee, and cashier accounts
-- **companies** — Top-level company groupings
-- **service_types** — Service types belonging to companies
-- **accounts** — Phone numbers per service type with balances; `is_fee_account` flag marks fee collection accounts
-- **transactions** — All transaction records (immutable)
-- **commission_tiers** — Fee/commission lookup by amount range
-- **exchange_rates** — MMK/THB currency rates
-- **daily_summary** — Auto-calculated daily totals
-- **cash_float_assignments** — Float assignments issued from cashier to employees
-- **cash_denomination_logs** — Denomination-level entries for vault and float movements
-- **activity_logs** — Immutable audit trail
-- **schema_version** — Migration tracking
+Important tables:
+
+- `users`
+- `companies`
+- `service_types`
+- `accounts`
+- `transactions`
+- `commission_tiers`
+- `exchange_rates`
+- `cash_float_assignments`
+- `cash_float_denominations`
+- `cash_denomination_logs`
+- `note_denominations`
+- `vault_denomination_balances`
+- `transaction_payment_denominations`
+- `denomination_exchanges`
+- `vault_transactions`
+- `daily_reconciliation_logs`
+- `activity_logs`
+- `schema_version`
+
+SQLite is configured with foreign keys enabled and WAL mode. Multi-step financial writes should use `backend.database.atomic()`.
+
+## Build Notes
+
+PyInstaller specs are included:
+
+- `NgweLweServer.spec`
+- `NgweLweClient.spec`
+
+Installer scripts are included:
+
+- `setup.iss`
+- `setup_server.iss`
+
+Use `scripts/build_all.bat` as the starting point for packaged builds.

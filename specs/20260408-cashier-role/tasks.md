@@ -46,7 +46,7 @@ The core cashier feature has been implemented. The table below shows the overall
 - `cash_float_assignments.status` uses `PENDING / ACTIVE / CLOSED` (not `open / closed / partial_return`).
 - `cash_denomination_logs.entry_type` uses `vault_in / vault_out / float_returned / adjustment` (not the plan's event_type vocabulary).
 - `cash_denomination_logs` has a `float_id` FK to `cash_float_assignments` (no `reference_type` column).
-- Denominations supported: 50, 100, 200, 500, 1000, 5000, 10000 (coins included — Q1 resolved).
+- Denominations supported: 50, 100, 200, 500, 1000, 5000, 10000, 20000 (coins included — Q1 resolved).
 - `PATCH /users/{id}/role` endpoint was not implemented (only PIN and create-with-role exist).
 
 ---
@@ -216,7 +216,7 @@ All test tasks depend on T004. Tasks T005–T012 are marked [P] because they tar
 ```python
 # utils/denomination_utils.py
 
-STANDARD_DENOMINATIONS = [10000, 5000, 1000, 500, 200, 100, 50]  # descending, matches DB CHECK
+STANDARD_DENOMINATIONS = [20000, 10000, 5000, 1000, 500, 200, 100, 50]  # descending, matches DB CHECK
 
 def calculate_total(entries: list[dict]) -> float:
     """Sum of denomination * quantity for each entry."""
@@ -378,7 +378,7 @@ def change_user_role(self, user_id: int, role: str) -> dict:
   - How to create a cashier user (owner panel → Employees → Create User → Role: Cashier).
   - How to set a cashier PIN (`POST /users/{id}/pin` or via owner UI once T019 implemented).
   - The float lifecycle: Issue → Receive (with PIN) → CashOuts → Close.
-  - The denominations supported: 50, 100, 200, 500, 1000, 5000, 10000 MMK.
+  - The denominations supported: 50, 100, 200, 500, 1000, 5000, 10000, 20000 MMK.
 - **Acceptance**: README is accurate, readable, and covers the cashier workflow end-to-end.
 
 ### T024 — Final regression test: existing owner/employee flows [P]
@@ -399,7 +399,7 @@ def change_user_role(self, user_id: int, role: str) -> dict:
 - **Status**: NOT DONE
 - **Why**: The plan still shows Status: "Draft — Awaiting Clarification" and 11 `[NEEDS CLARIFICATION]` items. These must be resolved now that implementation choices are visible.
 - **Action**: For each question, document the decision actually implemented:
-  - Q1: Denominations 50, 100, 200, 500, 1000, 5000, 10000 (coins included — completed in DB CHECK constraint).
+  - Q1: Denominations 50, 100, 200, 500, 1000, 5000, 10000, 20000 (coins included — completed in DB CHECK constraint).
   - Q2: CashIn entry is freestanding (not 1:1 to transaction_id) — `cash_denomination_logs` uses `entry_type='vault_in'`, no reference_id FK.
   - Q3: No auto-suggest implemented (manual entry used; `utils/denomination_utils.py` will add suggest capability for future use).
   - Q4: Cashier sees read-only transaction list via `TransactionsReadOnlyPage` in `CashierView`.

@@ -38,6 +38,8 @@ class TransactionRepository(BaseRepository):
             vault_impact=row.get("vault_impact"),
             confirmed_by=row.get("confirmed_by"),
             confirmed_at=row.get("confirmed_at"),
+            change_given=float(row.get("change_given") or 0),
+            change_denominations=row.get("change_denominations"),
             from_company_id=row.get("from_company_id"),
             to_company_id=row.get("to_company_id"),
         )

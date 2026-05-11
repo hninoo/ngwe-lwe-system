@@ -130,7 +130,7 @@ def _migrate_002(conn):
         CREATE TABLE IF NOT EXISTS cash_denomination_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             entry_type TEXT NOT NULL CHECK(entry_type IN ('vault_in','vault_out','float_returned','adjustment')),
-            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
             quantity INTEGER NOT NULL,
             float_id INTEGER,
             created_by INTEGER NOT NULL,
@@ -142,7 +142,7 @@ def _migrate_002(conn):
         CREATE TABLE IF NOT EXISTS cash_float_denominations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             float_id INTEGER NOT NULL,
-            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
             quantity INTEGER NOT NULL,
             FOREIGN KEY (float_id) REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE CASCADE
         );
@@ -734,7 +734,7 @@ def _migrate_007(conn):
                                'return_initiate','return_confirm','adjustment'
                            )),
             float_id       INTEGER,
-            denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+            denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
             quantity       INTEGER NOT NULL CHECK(quantity > 0),
             transaction_id INTEGER,
             performed_by   INTEGER NOT NULL,
@@ -808,6 +808,229 @@ def _migrate_010(conn):
     conn.commit()
 
 
+def _migrate_011(conn):
+    """Create denomination payment tables and transaction change fields."""
+    for sql in [
+        "ALTER TABLE transactions ADD COLUMN change_given REAL NOT NULL DEFAULT 0",
+        "ALTER TABLE transactions ADD COLUMN change_denominations TEXT",
+    ]:
+        try:
+            conn.execute(sql)
+        except Exception as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS note_denominations (
+            id          INTEGER PRIMARY KEY,
+            value       INTEGER NOT NULL UNIQUE CHECK(value IN (50,100,200,500,1000,5000,10000,20000)),
+            label_mm    TEXT NOT NULL,
+            label_en    TEXT NOT NULL,
+            is_active   INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS vault_denomination_balances (
+            denomination_id INTEGER PRIMARY KEY,
+            quantity        INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+            total_value     INTEGER NOT NULL DEFAULT 0 CHECK(total_value >= 0),
+            last_updated    TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (denomination_id) REFERENCES note_denominations(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS transaction_payment_denominations (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_id    INTEGER NOT NULL,
+            denomination_id   INTEGER NOT NULL,
+            quantity_paid     INTEGER NOT NULL DEFAULT 0 CHECK(quantity_paid >= 0),
+            quantity_returned INTEGER NOT NULL DEFAULT 0 CHECK(quantity_returned >= 0),
+            created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (transaction_id)  REFERENCES transactions(id) ON DELETE CASCADE,
+            FOREIGN KEY (denomination_id) REFERENCES note_denominations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_payment_denoms_txn
+            ON transaction_payment_denominations(transaction_id);
+    """)
+    seed_rows = [
+        (50, "50 Kyats", "50 Kyats"),
+        (100, "100 Kyats", "100 Kyats"),
+        (200, "200 Kyats", "200 Kyats"),
+        (500, "500 Kyats", "500 Kyats"),
+        (1000, "1,000 Kyats", "1,000 Kyats"),
+        (5000, "5,000 Kyats", "5,000 Kyats"),
+        (10000, "10,000 Kyats", "10,000 Kyats"),
+        (20000, "20,000 Kyats", "20,000 Kyats"),
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO note_denominations "
+        "(id, value, label_mm, label_en, is_active) VALUES (?, ?, ?, ?, 1)",
+        [(value, value, label_mm, label_en) for value, label_mm, label_en in seed_rows],
+    )
+    conn.execute("""
+        INSERT OR IGNORE INTO vault_denomination_balances
+            (denomination_id, quantity, total_value)
+        SELECT id, 0, 0 FROM note_denominations
+    """)
+    conn.execute("""
+        UPDATE vault_denomination_balances
+        SET quantity = COALESCE((
+            SELECT SUM(CASE
+                WHEN l.entry_type IN ('vault_in','float_returned') THEN l.quantity
+                WHEN l.entry_type = 'vault_out' THEN -l.quantity
+                ELSE l.quantity
+            END)
+            FROM cash_denomination_logs l
+            WHERE l.denomination = vault_denomination_balances.denomination_id
+        ), 0),
+        total_value = denomination_id * COALESCE((
+            SELECT SUM(CASE
+                WHEN l.entry_type IN ('vault_in','float_returned') THEN l.quantity
+                WHEN l.entry_type = 'vault_out' THEN -l.quantity
+                ELSE l.quantity
+            END)
+            FROM cash_denomination_logs l
+            WHERE l.denomination = vault_denomination_balances.denomination_id
+        ), 0),
+        last_updated = datetime('now')
+    """)
+    conn.commit()
+
+
+def _migrate_012(conn):
+    """Add 20,000 MMK note support to denomination CHECK constraints."""
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cash_denomination_logs_v12 (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_type   TEXT NOT NULL CHECK(entry_type IN ('vault_in','vault_out','float_returned','adjustment')),
+            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
+            quantity     INTEGER NOT NULL,
+            float_id     INTEGER,
+            created_by   INTEGER NOT NULL,
+            note         TEXT,
+            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (float_id)   REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE SET NULL
+        );
+        INSERT INTO cash_denomination_logs_v12
+            (id, entry_type, denomination, quantity, float_id, created_by, note, created_at)
+        SELECT id, entry_type, denomination, quantity, float_id, created_by, note, created_at
+        FROM cash_denomination_logs;
+        DROP TABLE cash_denomination_logs;
+        ALTER TABLE cash_denomination_logs_v12 RENAME TO cash_denomination_logs;
+        CREATE INDEX IF NOT EXISTS idx_denom_log_created ON cash_denomination_logs(created_at);
+
+        CREATE TABLE IF NOT EXISTS cash_float_denominations_v12 (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            float_id     INTEGER NOT NULL,
+            denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
+            quantity     INTEGER NOT NULL,
+            FOREIGN KEY (float_id) REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE CASCADE
+        );
+        INSERT INTO cash_float_denominations_v12
+            (id, float_id, denomination, quantity)
+        SELECT id, float_id, denomination, quantity
+        FROM cash_float_denominations;
+        DROP TABLE cash_float_denominations;
+        ALTER TABLE cash_float_denominations_v12 RENAME TO cash_float_denominations;
+        CREATE INDEX IF NOT EXISTS idx_float_denom_float ON cash_float_denominations(float_id);
+
+        CREATE TABLE IF NOT EXISTS vault_transactions_v12 (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            txn_type       TEXT NOT NULL CHECK(txn_type IN (
+                               'float_issue','float_receipt','cash_out',
+                               'return_initiate','return_confirm','adjustment'
+                           )),
+            float_id       INTEGER,
+            denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
+            quantity       INTEGER NOT NULL CHECK(quantity > 0),
+            transaction_id INTEGER,
+            performed_by   INTEGER NOT NULL,
+            verified_by    INTEGER,
+            note           TEXT,
+            created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (float_id)       REFERENCES cash_float_assignments(id),
+            FOREIGN KEY (performed_by)   REFERENCES users(id),
+            FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+        );
+        INSERT INTO vault_transactions_v12
+            (id, txn_type, float_id, denomination, quantity, transaction_id,
+             performed_by, verified_by, note, created_at)
+        SELECT id, txn_type, float_id, denomination, quantity, transaction_id,
+               performed_by, verified_by, note, created_at
+        FROM vault_transactions;
+        DROP TABLE vault_transactions;
+        ALTER TABLE vault_transactions_v12 RENAME TO vault_transactions;
+        CREATE INDEX IF NOT EXISTS idx_vault_txn_float   ON vault_transactions(float_id);
+        CREATE INDEX IF NOT EXISTS idx_vault_txn_created ON vault_transactions(created_at);
+
+        CREATE TABLE IF NOT EXISTS note_denominations_v12 (
+            id          INTEGER PRIMARY KEY,
+            value       INTEGER NOT NULL UNIQUE CHECK(value IN (50,100,200,500,1000,5000,10000,20000)),
+            label_mm    TEXT NOT NULL,
+            label_en    TEXT NOT NULL,
+            is_active   INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO note_denominations_v12
+            (id, value, label_mm, label_en, is_active, created_at)
+        SELECT id, value, label_mm, label_en, is_active, created_at
+        FROM note_denominations;
+        DROP TABLE note_denominations;
+        ALTER TABLE note_denominations_v12 RENAME TO note_denominations;
+    """)
+    conn.execute(
+        "INSERT OR IGNORE INTO note_denominations "
+        "(id, value, label_mm, label_en, is_active) VALUES (20000, 20000, ?, ?, 1)",
+        ("20,000 Kyats", "20,000 Kyats"),
+    )
+    conn.execute("""
+        INSERT OR IGNORE INTO vault_denomination_balances
+            (denomination_id, quantity, total_value)
+        VALUES (20000, 0, 0)
+    """)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+
+
+def _migrate_014(conn):
+    """Add transaction_id column to cash_denomination_logs for denomination settlement tracking."""
+    try:
+        conn.execute(
+            "ALTER TABLE cash_denomination_logs ADD COLUMN transaction_id INTEGER "
+            "REFERENCES transactions(id) ON UPDATE CASCADE ON DELETE SET NULL"
+        )
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+
+def _migrate_013(conn):
+    """Create denomination exchange audit table."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS denomination_exchanges (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            cashier_id         INTEGER,
+            employee_id        INTEGER NOT NULL,
+            float_id           INTEGER,
+            exchange_type      TEXT NOT NULL DEFAULT 'BREAK_DOWN'
+                               CHECK(exchange_type IN ('BREAK_DOWN','COMBINE','CHANGE')),
+            given_denom        INTEGER NOT NULL CHECK(given_denom IN (50,100,200,500,1000,5000,10000,20000)),
+            given_quantity     INTEGER NOT NULL CHECK(given_quantity > 0),
+            received_breakdown TEXT NOT NULL,
+            total_amount       INTEGER NOT NULL CHECK(total_amount > 0),
+            timestamp          TEXT NOT NULL DEFAULT (datetime('now')),
+            note               TEXT,
+            FOREIGN KEY (cashier_id)  REFERENCES users(id),
+            FOREIGN KEY (employee_id) REFERENCES users(id),
+            FOREIGN KEY (float_id)    REFERENCES cash_float_assignments(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_denom_exchange_employee
+            ON denomination_exchanges(employee_id, timestamp);
+    """)
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -826,6 +1049,10 @@ def _run_migrations(conn):
         (8, "Add Pay_To_Pay service types for Bank companies", _migrate_008),
         (9, "Add auth_version for token revocation", _migrate_009),
         (10, "Add transaction status and vault impact fields", _migrate_010),
+        (11, "Add denomination payment and vault balance tables", _migrate_011),
+        (12, "Add 20,000 MMK denomination support", _migrate_012),
+        (13, "Add denomination exchange audit table", _migrate_013),
+        (14, "Add transaction_id to denomination logs for settlement tracking", _migrate_014),
     ]:
         if version not in applied:
             fn(conn)

@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS transactions (
                         CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none')),
     confirmed_by        INTEGER,
     confirmed_at        TEXT,
+    change_given        REAL NOT NULL DEFAULT 0,
+    change_denominations TEXT,
     FOREIGN KEY (account_id)      REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (to_account_id)   REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     FOREIGN KEY (fee_account_id)  REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -233,16 +235,18 @@ CREATE INDEX IF NOT EXISTS idx_float_employee ON cash_float_assignments(employee
 -- 11. cash_denomination_logs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS cash_denomination_logs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_type   TEXT NOT NULL CHECK(entry_type IN ('vault_in','vault_out','float_returned','adjustment')),
-    denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
-    quantity     INTEGER NOT NULL,
-    float_id     INTEGER,
-    created_by   INTEGER NOT NULL,
-    note         TEXT,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-    FOREIGN KEY (float_id)   REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE SET NULL
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_type     TEXT NOT NULL CHECK(entry_type IN ('vault_in','vault_out','float_returned','adjustment')),
+    denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
+    quantity       INTEGER NOT NULL,
+    float_id       INTEGER,
+    transaction_id INTEGER,
+    created_by     INTEGER NOT NULL,
+    note           TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (created_by)     REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (float_id)       REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON UPDATE CASCADE ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_denom_log_created ON cash_denomination_logs(created_at);
 
@@ -252,7 +256,7 @@ CREATE INDEX IF NOT EXISTS idx_denom_log_created ON cash_denomination_logs(creat
 CREATE TABLE IF NOT EXISTS cash_float_denominations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     float_id     INTEGER NOT NULL,
-    denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+    denomination INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
     quantity     INTEGER NOT NULL,
     FOREIGN KEY (float_id) REFERENCES cash_float_assignments(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
@@ -268,7 +272,7 @@ CREATE TABLE IF NOT EXISTS vault_transactions (
                        'return_initiate','return_confirm','adjustment'
                    )),
     float_id       INTEGER,
-    denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000)),
+    denomination   INTEGER NOT NULL CHECK(denomination IN (50,100,200,500,1000,5000,10000,20000)),
     quantity       INTEGER NOT NULL CHECK(quantity > 0),
     transaction_id INTEGER,
     performed_by   INTEGER NOT NULL,
@@ -283,7 +287,60 @@ CREATE INDEX IF NOT EXISTS idx_vault_txn_float   ON vault_transactions(float_id)
 CREATE INDEX IF NOT EXISTS idx_vault_txn_created ON vault_transactions(created_at);
 
 -- ============================================================
--- 14. daily_reconciliation_logs
+-- 14. denomination/change management
+-- ============================================================
+CREATE TABLE IF NOT EXISTS note_denominations (
+    id          INTEGER PRIMARY KEY,
+    value       INTEGER NOT NULL UNIQUE CHECK(value IN (50,100,200,500,1000,5000,10000,20000)),
+    label_mm    TEXT NOT NULL,
+    label_en    TEXT NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS vault_denomination_balances (
+    denomination_id INTEGER PRIMARY KEY,
+    quantity        INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+    total_value     INTEGER NOT NULL DEFAULT 0 CHECK(total_value >= 0),
+    last_updated    TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (denomination_id) REFERENCES note_denominations(id)
+);
+
+CREATE TABLE IF NOT EXISTS transaction_payment_denominations (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id    INTEGER NOT NULL,
+    denomination_id   INTEGER NOT NULL,
+    quantity_paid     INTEGER NOT NULL DEFAULT 0 CHECK(quantity_paid >= 0),
+    quantity_returned INTEGER NOT NULL DEFAULT 0 CHECK(quantity_returned >= 0),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (transaction_id)  REFERENCES transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (denomination_id) REFERENCES note_denominations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_denoms_txn
+    ON transaction_payment_denominations(transaction_id);
+
+CREATE TABLE IF NOT EXISTS denomination_exchanges (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    cashier_id         INTEGER,
+    employee_id        INTEGER NOT NULL,
+    float_id           INTEGER,
+    exchange_type      TEXT NOT NULL DEFAULT 'BREAK_DOWN'
+                       CHECK(exchange_type IN ('BREAK_DOWN','COMBINE','CHANGE')),
+    given_denom        INTEGER NOT NULL CHECK(given_denom IN (50,100,200,500,1000,5000,10000,20000)),
+    given_quantity     INTEGER NOT NULL CHECK(given_quantity > 0),
+    received_breakdown TEXT NOT NULL,
+    total_amount       INTEGER NOT NULL CHECK(total_amount > 0),
+    timestamp          TEXT NOT NULL DEFAULT (datetime('now')),
+    note               TEXT,
+    FOREIGN KEY (cashier_id)  REFERENCES users(id),
+    FOREIGN KEY (employee_id) REFERENCES users(id),
+    FOREIGN KEY (float_id)    REFERENCES cash_float_assignments(id)
+);
+CREATE INDEX IF NOT EXISTS idx_denom_exchange_employee
+    ON denomination_exchanges(employee_id, timestamp);
+
+-- ============================================================
+-- 15. daily_reconciliation_logs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS daily_reconciliation_logs (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -324,7 +381,23 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (7, 'Rebuild cash_float_assignments with new statuses; create vault_transactions'),
 (8, 'Add Pay_To_Pay service types for Bank companies'),
 (9, 'Add auth_version for token revocation'),
-(10, 'Add transaction status and vault impact fields');
+(10, 'Add transaction status and vault impact fields'),
+(11, 'Add denomination payment and vault balance tables'),
+(12, 'Add 20,000 MMK denomination support'),
+(13, 'Add denomination exchange audit table');
+
+INSERT OR IGNORE INTO note_denominations (id, value, label_mm, label_en, is_active) VALUES
+(50, 50, '50 Kyats', '50 Kyats', 1),
+(100, 100, '100 Kyats', '100 Kyats', 1),
+(200, 200, '200 Kyats', '200 Kyats', 1),
+(500, 500, '500 Kyats', '500 Kyats', 1),
+(1000, 1000, '1,000 Kyats', '1,000 Kyats', 1),
+(5000, 5000, '5,000 Kyats', '5,000 Kyats', 1),
+(10000, 10000, '10,000 Kyats', '10,000 Kyats', 1),
+(20000, 20000, '20,000 Kyats', '20,000 Kyats', 1);
+
+INSERT OR IGNORE INTO vault_denomination_balances (denomination_id, quantity, total_value)
+SELECT id, 0, 0 FROM note_denominations;
 
 -- Users  (bcrypt, cost 12)
 -- owner: admin123 / employee: employee123 / cashier: cashier123
