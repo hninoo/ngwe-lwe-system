@@ -105,6 +105,46 @@ def test_cash_in_flow_end_to_end(client, owner_headers, seeded_db):
     assert new_balance == pre_bal_val - 10000.0
 
 
+def test_cash_in_rejects_unsafe_screenshot_path(client, owner_headers, seeded_db):
+    account_id = _get_first_active_account_id(seeded_db)
+
+    resp = client.post(
+        "/transactions/cash_in",
+        headers=owner_headers,
+        json={
+            "account_id": account_id,
+            "amount": 10000.0,
+            "customer_name": "Test Customer",
+            "customer_phone": "09123456789",
+            "screenshot_path": "../../Windows/win.ini",
+        },
+    )
+
+    assert resp.status_code == 422
+
+
+def test_cash_in_ignores_client_fee_override(client, owner_headers, seeded_db):
+    account_id = _get_first_active_account_id(seeded_db)
+
+    resp = client.post(
+        "/transactions/cash_in",
+        headers=owner_headers,
+        json={
+            "account_id": account_id,
+            "amount": 10000.0,
+            "customer_name": "Test Customer",
+            "customer_phone": "09123456789",
+            "customer_fee": 999999.0,
+            "additional_fee_amount": 999999.0,
+        },
+    )
+
+    assert resp.status_code in (200, 201), resp.text
+    body = resp.json()
+    assert body["customer_fee"] != 999999.0
+    assert body["additional_fee_amount"] != 999999.0
+
+
 def test_transfer_flow_cross_company(client, owner_headers, seeded_db):
     """POST transfer → both balances updated, response includes from/to company IDs."""
     pay_accounts = _get_accounts_by_company_category(seeded_db, "Pay")

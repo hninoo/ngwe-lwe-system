@@ -6,6 +6,9 @@ from models.user import User
 from repositories.user_repository import UserRepository
 
 
+DUMMY_PASSWORD_HASH = "$2b$12$BCSuJ5bKz6mRnNUvWUdQZ.4OCEqjsCEwNZk0b7hss3DNfTseZClnG"
+
+
 class AuthViewModel:
 
     def __init__(self, user_repo: Optional[UserRepository] = None) -> None:
@@ -31,6 +34,7 @@ class AuthViewModel:
     def login(self, username: str, password: str) -> bool:
         stored_hash = self._user_repo.get_password_hash(username)
         if stored_hash is None:
+            bcrypt.checkpw(password.encode(), DUMMY_PASSWORD_HASH.encode())
             return False
 
         if not bcrypt.checkpw(password.encode(), stored_hash.encode()):

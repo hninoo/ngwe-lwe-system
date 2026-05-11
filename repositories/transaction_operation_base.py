@@ -79,8 +79,6 @@ class TransactionOperationBase:
         customer_fee: float,
         additional_fee_amount: float,
     ) -> tuple[float, float]:
-        if customer_fee > 0 or additional_fee_amount > 0:
-            return customer_fee, additional_fee_amount
         tier = self._get_tier(account, amount)
         if tier is None:
             return 0.0, 0.0

@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from pathlib import PurePosixPath
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -75,6 +76,26 @@ class ExchangeRequest(BaseModel):
 _txn_repo_direct = None  # lazy import to avoid circular
 
 
+def _validate_screenshot_path(path: Optional[str]) -> Optional[str]:
+    if path is None:
+        return None
+    clean = str(path).strip().replace("\\", "/")
+    if not clean:
+        return None
+    parts = PurePosixPath(clean).parts
+    if (
+        clean.startswith("/")
+        or ":" in clean
+        or ".." in parts
+        or parts[:2] != ("uploads", "screenshots")
+    ):
+        raise HTTPException(
+            422,
+            "Invalid screenshot_path. Use a server-generated uploads/screenshots path.",
+        )
+    return clean
+
+
 def _money(value: float) -> float:
     try:
         return normalize_money(value)
@@ -92,13 +113,16 @@ async def _broadcast_balances() -> None:
         "source": "transaction",
         "accounts": [asdict(a) for a in accounts],
     }
-    await ws_manager.broadcast(payload)
+    await ws_manager.broadcast_to_roles(["owner", "cashier"], payload)
 
 
 async def _broadcast_new_transaction(txn_dict: dict) -> None:
     if ws_manager is None:
         return
-    await ws_manager.broadcast({"type": "new_transaction", "transaction": txn_dict})
+    await ws_manager.broadcast_to_roles(
+        ["owner", "cashier"],
+        {"type": "new_transaction", "transaction": txn_dict},
+    )
 
 
 async def _broadcast_cash_in_pending(txn_dict: dict) -> None:
@@ -135,7 +159,7 @@ async def create_cash_in(
             amount=_money(body.amount),
             customer_name=body.customer_name,
             customer_phone=body.customer_phone,
-            screenshot_path=body.screenshot_path,
+            screenshot_path=_validate_screenshot_path(body.screenshot_path),
             created_by=current_user["user_id"],
             customer_fee=_money(body.customer_fee),
             additional_fee_amount=_money(body.additional_fee_amount),
@@ -171,7 +195,7 @@ async def create_cash_out(
             amount=_money(body.amount),
             customer_name=body.customer_name,
             customer_phone=body.customer_phone,
-            screenshot_path=body.screenshot_path,
+            screenshot_path=_validate_screenshot_path(body.screenshot_path),
             created_by=current_user["user_id"],
             customer_fee=_money(body.customer_fee),
             additional_fee_amount=_money(body.additional_fee_amount),
@@ -209,7 +233,7 @@ async def create_transfer(
             from_account_id=body.from_account_id,
             to_account_id=body.to_account_id,
             amount=_money(body.amount),
-            screenshot_path=body.screenshot_path,
+            screenshot_path=_validate_screenshot_path(body.screenshot_path),
             created_by=current_user["user_id"],
             customer_fee=_money(body.customer_fee),
             additional_fee_amount=_money(body.additional_fee_amount),
@@ -247,7 +271,7 @@ async def create_exchange(
             account_id=body.account_id,
             amount=_money(body.amount),
             currency=body.currency,
-            screenshot_path=body.screenshot_path,
+            screenshot_path=_validate_screenshot_path(body.screenshot_path),
             created_by=current_user["user_id"],
             customer_fee=_money(body.customer_fee),
             additional_fee_amount=_money(body.additional_fee_amount),
