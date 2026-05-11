@@ -1,6 +1,8 @@
+import json
+import os
 from datetime import datetime, timezone, timedelta
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QFrame,
@@ -34,6 +36,44 @@ from views.transaction_view import (
 )
 
 MMT = timezone(timedelta(hours=6, minutes=30))
+WS_URL = os.getenv("WS_URL", "ws://127.0.0.1:8000/ws")
+
+
+class WebSocketThread(QThread):
+    message_received = pyqtSignal(str)
+
+    def __init__(self, url: str, ticket_fn=None) -> None:
+        super().__init__()
+        self._base_url = url
+        self._ticket_fn = ticket_fn
+        self._running = True
+        self._ws = None
+
+    def run(self) -> None:
+        try:
+            import websockets.sync.client as ws_client
+            ticket = self._ticket_fn() if self._ticket_fn else ""
+            connect_url = f"{self._base_url}?ticket={ticket}" if ticket else self._base_url
+            with ws_client.connect(connect_url) as ws:
+                self._ws = ws
+                while self._running:
+                    try:
+                        msg = ws.recv(timeout=5)
+                        self.message_received.emit(msg)
+                    except TimeoutError:
+                        pass
+        except Exception:
+            pass
+        finally:
+            self._ws = None
+
+    def stop(self) -> None:
+        self._running = False
+        try:
+            if self._ws is not None:
+                self._ws.close()
+        except Exception:
+            pass
 
 
 class DashboardPage(QWidget):
@@ -282,6 +322,61 @@ class DashboardView(QMainWindow):
         self._clock.timeout.connect(self._page.update_time)
         self._clock.start(1000)
         self._page.update_time()
+        self._ws_thread: WebSocketThread | None = None
+        self._start_websocket()
+
+    def _start_websocket(self) -> None:
+        def _get_ticket() -> str:
+            try:
+                return self._api.get_ws_ticket()
+            except Exception:
+                return ""
+        self._ws_thread = WebSocketThread(WS_URL, ticket_fn=_get_ticket)
+        self._ws_thread.message_received.connect(self._on_ws_message)
+        self._ws_thread.start()
+
+    def _refresh_dashboard_page(self) -> None:
+        self._page = DashboardPage(self._api, self._navigate)
+        self.setCentralWidget(self._page)
+        try:
+            self._clock.timeout.disconnect()
+        except TypeError:
+            pass
+        self._clock.timeout.connect(self._page.update_time)
+        self._page.update_time()
+
+    def _on_ws_message(self, raw: str) -> None:
+        try:
+            data = json.loads(raw)
+            msg_type = data.get("type")
+            if msg_type in {"float_issued", "float_return_confirmed"}:
+                self._refresh_dashboard_page()
+                QMessageBox.information(
+                    self,
+                    "Vault Update",
+                    data.get("message", "Your vault status has changed."),
+                )
+            elif msg_type == "cash_in_confirmed":
+                QMessageBox.information(
+                    self,
+                    "Cash In Confirmed",
+                    data.get("message", "Your Cash In has been confirmed."),
+                )
+            elif msg_type == "cash_in_cancelled":
+                self._refresh_dashboard_page()
+                QMessageBox.warning(
+                    self,
+                    "Cash In Cancelled",
+                    data.get("message", "Your Cash In was cancelled."),
+                )
+            elif msg_type == "transaction_approved":
+                QMessageBox.information(
+                    self,
+                    "Transaction Approved",
+                    data.get("message", "Your transaction has been approved."),
+                )
+        except Exception:
+            pass
 
     def _navigate(self, page: int, transaction_type: str | None = None) -> None:
         if page == -1:
@@ -306,6 +401,13 @@ class DashboardView(QMainWindow):
         self._next._navigate(page, transaction_type)
         self._next.show()
         self.close()
+
+    def closeEvent(self, event) -> None:
+        self._clock.stop()
+        if self._ws_thread:
+            self._ws_thread.stop()
+            self._ws_thread.wait(2000)
+        super().closeEvent(event)
 
 
 __all__ = ["DashboardPage", "DashboardView"]

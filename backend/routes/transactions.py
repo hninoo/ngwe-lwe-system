@@ -8,6 +8,7 @@ from backend.auth import get_current_user
 from backend.money import normalize_money
 from backend.websocket_manager import ConnectionManager
 from repositories.cash_float_repository import CashFloatRepository
+from repositories.user_repository import UserRepository
 from viewmodels.account_viewmodel import AccountViewModel
 from viewmodels.transaction_viewmodel import TransactionViewModel, InsufficientFloatError, InsufficientDenominationError
 
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 _txn_vm = TransactionViewModel()
 _account_vm = AccountViewModel()
 _float_repo = CashFloatRepository()
+_user_repo = UserRepository()
 
 # Set from main.py at startup
 ws_manager: Optional[ConnectionManager] = None
@@ -102,7 +104,18 @@ async def _broadcast_new_transaction(txn_dict: dict) -> None:
 async def _broadcast_cash_in_pending(txn_dict: dict) -> None:
     if ws_manager is None:
         return
-    await ws_manager.broadcast({"type": "cash_in_pending", "transaction": txn_dict})
+    creator = _user_repo.get_by_id(int(txn_dict.get("created_by") or 0))
+    await ws_manager.broadcast_to_role(
+        "cashier",
+        {
+            "type": "cash_in_pending",
+            "txn_id": txn_dict.get("id"),
+            "amount": txn_dict.get("amount"),
+            "employee_name": creator.full_name if creator else str(txn_dict.get("created_by") or ""),
+            "timestamp": txn_dict.get("created_at"),
+            "transaction": txn_dict,
+        },
+    )
 
 
 @router.post("/cash_in")

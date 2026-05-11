@@ -11,6 +11,7 @@ import json
 from backend.auth import get_current_user
 from backend.database import atomic, get_cursor
 from backend.rate_limit import RateLimiter
+from backend.websocket_manager import ConnectionManager
 from repositories.cash_denomination_repository import CashDenominationRepository, DENOMINATIONS
 from repositories.cash_float_repository import CashFloatRepository
 from repositories.transaction_repository import TransactionRepository
@@ -31,6 +32,7 @@ _float_repo = CashFloatRepository()
 _user_repo = UserRepository()
 _vault_service = VaultService(float_repo=_float_repo, denom_repo=_denom_repo)
 _pin_limiter = RateLimiter(max_attempts=5, window_seconds=300)
+ws_manager: Optional[ConnectionManager] = None
 
 
 # ── Pydantic request models ──
@@ -196,6 +198,18 @@ def _validate_cash_in_denominations_total(
     return entered_total, expected, diff
 
 
+def _publish_ws(method_name: str, *args) -> None:
+    if ws_manager is None:
+        return
+    method = getattr(ws_manager, method_name)
+    try:
+        import anyio
+        anyio.from_thread.run(method, *args)
+    except RuntimeError:
+        import asyncio
+        asyncio.run(method(*args))
+
+
 # ── Vault endpoints ──
 
 @router.get("/vault")
@@ -276,7 +290,25 @@ def issue_float(
         )
     except Exception as e:
         raise _service_error(e)
-    return asdict(cash_float)
+    result = asdict(cash_float)
+    _publish_ws(
+        "broadcast_to_user",
+        body.employee_id,
+        {
+            "type": "float_issued",
+            "float": result,
+            "message": "You have received a new cash float. Please confirm receipt.",
+        },
+    )
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "float_update",
+            "float": result,
+        },
+    )
+    return result
 
 
 @router.get("/floats/my-pending")
@@ -349,7 +381,17 @@ def receive_float(
     except (DenominationMismatchError, FloatStateError) as e:
         raise HTTPException(422, str(e))
     _pin_limiter.clear(key)
-    return asdict(updated)
+    result = asdict(updated)
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "float_received",
+            "float": result,
+            "message": f"Employee #{current_user['user_id']} confirmed float receipt.",
+        },
+    )
+    return result
 
 
 @router.post("/floats/{float_id}/initiate-return")
@@ -379,7 +421,17 @@ def initiate_float_return(
     except Exception as e:
         raise _service_error(e)
     _pin_limiter.clear(key)
-    return asdict(updated)
+    result = asdict(updated)
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "float_return_initiated",
+            "float": result,
+            "message": "An employee has initiated a float return.",
+        },
+    )
+    return result
 
 
 @router.post("/floats/{float_id}/confirm-return")
@@ -408,7 +460,27 @@ def confirm_float_return(
     except FloatStateError as e:
         raise HTTPException(409, str(e))
     _pin_limiter.clear(key)
-    return asdict(updated)
+    result = asdict(updated)
+    employee_id = result.get("employee_id")
+    if employee_id:
+        _publish_ws(
+            "broadcast_to_user",
+            int(employee_id),
+            {
+                "type": "float_return_confirmed",
+                "float": result,
+                "message": "Your float return has been confirmed by cashier.",
+            },
+        )
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "float_update",
+            "float": result,
+        },
+    )
+    return result
 
 
 
@@ -484,7 +556,26 @@ def confirm_pending_cash_in(
                     }),
                 ),
             )
-    return asdict(updated)
+    result = asdict(updated)
+    _publish_ws(
+        "broadcast_to_user",
+        int(txn.created_by),
+        {
+            "type": "cash_in_confirmed",
+            "transaction": result,
+            "message": f"Your Cash In #{txn_id} has been confirmed by cashier.",
+        },
+    )
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "pending_cash_in_update",
+            "transaction_id": txn_id,
+            "transaction": result,
+        },
+    )
+    return result
 
 
 @router.post("/transactions/{txn_id}/cancel-cash-in")
@@ -527,7 +618,27 @@ def cancel_pending_cash_in(
         raise HTTPException(400, str(exc))
     if updated is None:
         raise HTTPException(409, "Cash In is no longer pending confirmation")
-    return asdict(updated)
+    result = asdict(updated)
+    _publish_ws(
+        "broadcast_to_user",
+        int(txn.created_by),
+        {
+            "type": "cash_in_cancelled",
+            "transaction_id": txn_id,
+            "transaction": result,
+            "message": f"Your Cash In #{txn_id} was cancelled by cashier.",
+        },
+    )
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "pending_cash_in_update",
+            "transaction_id": txn_id,
+            "transaction": result,
+        },
+    )
+    return result
 
 
 @router.post("/transactions/{txn_id}/approve")
@@ -612,4 +723,22 @@ def approve_transaction(
                 ),
             )
 
-    return asdict(updated)
+    result = asdict(updated)
+    _publish_ws(
+        "broadcast_to_user",
+        int(txn.created_by),
+        {
+            "type": "transaction_approved",
+            "transaction": result,
+            "message": f"Your transaction #{txn_id} has been approved.",
+        },
+    )
+    _publish_ws(
+        "broadcast_to_roles",
+        ["cashier", "owner"],
+        {
+            "type": "transaction_update",
+            "transaction": result,
+        },
+    )
+    return result

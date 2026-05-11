@@ -52,8 +52,9 @@ app.add_middleware(
 ws_manager = ConnectionManager()
 ticket_store = TicketStore(ttl=30)
 
-# Inject ws_manager into transactions route
+# Inject ws_manager into routes that publish real-time events
 transactions.ws_manager = ws_manager
+cashier.ws_manager = ws_manager
 
 app.include_router(auth.router)
 app.include_router(companies.router)
@@ -73,15 +74,20 @@ app.include_router(reconciliation.router)
 @app.post("/ws-ticket")
 def get_ws_ticket(current_user: dict = Depends(get_current_user)) -> dict:
     """Issue a short-lived one-time ticket for WebSocket auth (avoids JWT in logs)."""
-    return {"ticket": ticket_store.issue()}
+    user_info = {
+        "user_id": current_user["user_id"],
+        "role": current_user["role"],
+    }
+    return {"ticket": ticket_store.issue(user_info)}
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, ticket: str = "") -> None:
-    if not ticket or not ticket_store.consume(ticket):
+    user_info = ticket_store.consume(ticket) if ticket else None
+    if not user_info:
         await websocket.close(code=1008, reason="Invalid or expired ticket")
         return
-    await ws_manager.connect(websocket)
+    await ws_manager.connect(websocket, user_info)
     try:
         while True:
             await websocket.receive_text()

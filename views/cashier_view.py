@@ -1997,15 +1997,34 @@ class CashierView(QMainWindow):
     def _on_ws_message(self, raw: str) -> None:
         try:
             data = json.loads(raw)
-            if data.get("type") == "new_transaction":
+            msg_type = data.get("type")
+            if msg_type == "new_transaction":
                 txn = data.get("transaction", {})
                 self._txns_page.on_new_transaction(txn)
                 # Update WS badge to confirm live
                 self._txns_page._ws_badge.setStyleSheet(
                     f"color: {ACCENT_GREEN}; font-size: 11px;"
                 )
-            elif data.get("type") == "cash_in_pending":
+            elif msg_type == "cash_in_pending":
                 self._pending_approvals_page.load_data()
+                self.statusBar().showMessage(
+                    f"New Cash In pending: #{data.get('txn_id')} - {float(data.get('amount') or 0):,.0f} MMK",
+                    6000,
+                )
+            elif msg_type in {"float_received", "float_update"}:
+                self._shifts_page.load_data()
+                self._vault_page.load_data()
+            elif msg_type == "float_return_initiated":
+                self._shifts_page.load_data()
+                QMessageBox.information(
+                    self,
+                    "Float Return",
+                    data.get("message", "An employee has initiated a float return."),
+                )
+            elif msg_type == "pending_cash_in_update":
+                self._pending_approvals_page.load_data()
+            elif msg_type == "transaction_update":
+                self._txns_page.load_data()
         except Exception:
             pass
 
