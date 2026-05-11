@@ -72,6 +72,19 @@ Cash In follows the banking-standard teller model: physical cash comes in, digit
 6. Main vault is credited by denomination and transaction becomes `COMPLETED`.
 7. If cashier cancels, `CashInRepository.cancel_pending_cash_in()` reverses the digital deduction first. If reversal fails because the account is inactive or missing, cancellation raises `RuntimeError` and the atomic transaction rolls back.
 
+Cash In with overpayment keeps the cashier net-only. When a customer gives more cash than the deposit amount, the employee returns change from their own active float before submitting the pending Cash In. The cashier later confirms and credits the main vault for the net transaction amount only.
+
+Example: customer deposits `25,000` MMK but gives `30,000` MMK. The employee returns `5,000` MMK from their float, the K Pay account is deducted by `25,000`, and the cashier confirms `25,000` into the main vault.
+
+Creation payload fields:
+
+- `amount`: net deposit and digital account deduction.
+- `amount_received`: physical cash received from the customer.
+- `received_breakdown`: customer cash denominations.
+- `change_breakdown`: change denominations paid from the employee float.
+
+Backend validation requires `amount_received >= amount`, received denominations to equal `amount_received`, change denominations to equal `amount_received - amount`, and sufficient employee float denominations for the change. The float change deduction, digital account deduction, pending transaction creation, and overpayment activity log are performed inside one atomic transaction.
+
 ### Cash Out
 
 Cash Out credits digital value and deducts employee float cash.
@@ -173,6 +186,7 @@ The desktop client runs WebSocket workers in `views/dashboard_view.py` and `view
 - Cashier PIN is required for high-risk cash operations.
 - Negative denomination counts are rejected by Pydantic validators and route parsing.
 - Cash In confirmation denomination totals must match the transaction amount within `CASH_TOLERANCE_MMK = 500`.
+- Cash In overpayment change is deducted from the employee float; the cashier handles only the net Cash In amount.
 - Screenshot paths accepted by transaction routes must be server-owned paths under `uploads/screenshots`; absolute paths, drive-letter paths, and `..` traversal are rejected.
 - Hard transaction deletes are disabled; use reversal/cancel workflows instead.
 - Activity logs capture financial and administrative actions.
@@ -268,7 +282,7 @@ Transactions:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| POST | `/transactions/cash_in` | Create pending Cash In |
+| POST | `/transactions/cash_in` | Create pending Cash In; optional overpayment fields deduct change from employee float |
 | POST | `/transactions/cash_out` | Create Cash Out |
 | POST | `/transactions/transfer` | Create Transfer |
 | POST | `/transactions/exchange` | Create Exchange |

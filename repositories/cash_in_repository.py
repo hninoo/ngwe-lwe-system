@@ -1,12 +1,53 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from models.transaction import Transaction
+from repositories.cash_denomination_repository import DENOMINATIONS
 from repositories.transaction_operation_base import TransactionOperationBase
 
 
 class CashInRepository(TransactionOperationBase):
     """Business logic for Cash In: receive digital value and pay physical cash."""
+
+    @staticmethod
+    def _normalize_breakdown(raw: Any, field_name: str) -> dict[int, int]:
+        if raw is None:
+            return {}
+        items: list[tuple[Any, Any]]
+        if isinstance(raw, dict):
+            items = list(raw.items())
+        elif isinstance(raw, list):
+            items = []
+            for entry in raw:
+                if not isinstance(entry, dict):
+                    raise ValueError(f"{field_name} entries must be objects.")
+                denom = entry.get("denomination_id", entry.get("denomination"))
+                qty = entry.get("quantity", entry.get("qty"))
+                items.append((denom, qty))
+        else:
+            raise ValueError(f"{field_name} must be a denomination map or list.")
+
+        result: dict[int, int] = {}
+        for denom_raw, qty_raw in items:
+            try:
+                denom = int(denom_raw)
+                qty = int(qty_raw)
+            except (TypeError, ValueError):
+                raise ValueError(f"{field_name} contains an invalid denomination entry.")
+            if denom not in DENOMINATIONS:
+                raise ValueError(f"Invalid denomination in {field_name}: {denom}.")
+            if qty < 0:
+                raise ValueError(f"{field_name} quantity for {denom} cannot be negative.")
+            if qty > 0:
+                result[denom] = result.get(denom, 0) + qty
+        return result
+
+    @staticmethod
+    def _breakdown_total(denominations: dict[int, int]) -> Decimal:
+        return sum(
+            Decimal(denom) * Decimal(qty)
+            for denom, qty in denominations.items()
+        )
 
     def create(
         self,
@@ -21,9 +62,43 @@ class CashInRepository(TransactionOperationBase):
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        amount_received: Optional[float] = None,
+        received_breakdown: Any = None,
+        change_breakdown: Any = None,
     ) -> Transaction:
         self._validate_amount(amount)
         amount_decimal = Decimal(str(amount))
+        received_decimal = (
+            Decimal(str(amount_received))
+            if amount_received is not None
+            else amount_decimal
+        )
+        if received_decimal < amount_decimal:
+            raise ValueError("amount_received must be greater than or equal to amount.")
+
+        received_denoms = self._normalize_breakdown(received_breakdown, "received_breakdown")
+        change_denoms = self._normalize_breakdown(change_breakdown, "change_breakdown")
+        change_due = received_decimal - amount_decimal
+
+        if received_denoms and self._breakdown_total(received_denoms) != received_decimal:
+            raise ValueError("received_breakdown total must equal amount_received.")
+        if change_due > 0:
+            if not received_denoms:
+                raise ValueError("received_breakdown is required when amount_received exceeds amount.")
+            if self._breakdown_total(change_denoms) != change_due:
+                raise ValueError("change_breakdown total must equal amount_received minus amount.")
+            if employee_id is None:
+                raise ValueError("Employee float is required to give Cash In overpayment change.")
+            active_float = self._validate_employee_float(
+                employee_id,
+                float(change_due),
+                change_denoms,
+            )
+        elif change_denoms:
+            raise ValueError("change_breakdown is only allowed when amount_received exceeds amount.")
+        else:
+            active_float = None
+
         account = self._get_account(account_id)
         commission = self._calc_commission(account, float(amount_decimal), "send")
         customer_fee, additional_fee_amount = self._resolve_fee_values(
@@ -67,6 +142,27 @@ class CashInRepository(TransactionOperationBase):
                     "Awaiting cashier confirmation for physical cash handover."
                 ),
             })
+            if change_due > 0:
+                self._process_employee_cash_out(
+                    employee_id,
+                    float(change_due),
+                    change_denoms,
+                    active_float,
+                    transaction_id=txn_id,
+                )
+                self._log(created_by, "cash_in_overpayment_change_given", txn_id, {
+                    "type": "cash_in",
+                    "account_id": account_id,
+                    "amount": float(amount_decimal),
+                    "amount_received": float(received_decimal),
+                    "change_due": float(change_due),
+                    "received_breakdown": {str(k): v for k, v in received_denoms.items()},
+                    "change_breakdown": {str(k): v for k, v in change_denoms.items()},
+                    "message": (
+                        "Employee returned overpayment change from their float. "
+                        "Cashier must confirm the net Cash In amount only."
+                    ),
+                })
         return self._txn_repo.get_by_id(txn_id)
 
     def cancel_pending_cash_in(

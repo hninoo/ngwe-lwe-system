@@ -1,6 +1,6 @@
 from dataclasses import asdict
 from pathlib import PurePosixPath
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -27,6 +27,7 @@ ws_manager: Optional[ConnectionManager] = None
 class CashInRequest(BaseModel):
     account_id: int
     amount: float = Field(gt=0)
+    amount_received: Optional[float] = Field(default=None, ge=0)
     customer_name: str
     customer_phone: str
     screenshot_path: Optional[str] = None
@@ -34,6 +35,8 @@ class CashInRequest(BaseModel):
     additional_fee_amount: float = Field(default=0.0, ge=0)
     fee_account_id: Optional[int] = None
     note: Optional[str] = None
+    received_breakdown: Optional[Any] = None
+    change_breakdown: Optional[Any] = None
 
 
 class CashOutRequest(BaseModel):
@@ -166,7 +169,12 @@ async def create_cash_in(
             fee_account_id=body.fee_account_id,
             note=body.note,
             employee_id=current_user["user_id"] if current_user["role"] == "employee" else None,
+            amount_received=_money(body.amount_received) if body.amount_received is not None else None,
+            received_breakdown=body.received_breakdown,
+            change_breakdown=body.change_breakdown,
         )
+    except (InsufficientFloatError, InsufficientDenominationError) as exc:
+        raise HTTPException(409, detail=f"Insufficient Mini Vault balance for Cash In change: {exc}")
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     txn_dict = asdict(txn)

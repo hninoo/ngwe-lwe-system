@@ -34,6 +34,12 @@ class TransactionUiRepository:
     def get_floats(self) -> list[dict]:
         return self._api.get_floats()
 
+    def get_denominations(self) -> list[dict]:
+        return self._api.get_denominations()
+
+    def get_float_denomination_balance(self, float_id: int) -> dict:
+        return self._api.get_float_denomination_balance(float_id)
+
     def lookup_tier(self, service_type_id: int, amount: float) -> dict:
         return self._api.lookup_tier(service_type_id, amount)
 

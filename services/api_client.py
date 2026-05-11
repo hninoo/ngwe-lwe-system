@@ -209,10 +209,14 @@ class ApiClient:
         additional_fee_amount: float = 0.0,
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
+        amount_received: Optional[float] = None,
+        received_breakdown: Optional[dict[str, int] | list[dict]] = None,
+        change_breakdown: Optional[dict[str, int] | list[dict]] = None,
     ) -> dict:
         return self._post("/transactions/cash_in", {
             "account_id": account_id,
             "amount": amount,
+            "amount_received": amount_received,
             "customer_name": customer_name,
             "customer_phone": customer_phone,
             "screenshot_path": screenshot_path,
@@ -220,6 +224,8 @@ class ApiClient:
             "additional_fee_amount": additional_fee_amount,
             "fee_account_id": fee_account_id,
             "note": note,
+            "received_breakdown": received_breakdown,
+            "change_breakdown": change_breakdown,
         })
 
     def create_cash_out(

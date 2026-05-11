@@ -89,6 +89,9 @@ class TransactionViewModel:
         fee_account_id: Optional[int] = None,
         note: Optional[str] = None,
         employee_id: Optional[int] = None,
+        amount_received: Optional[float] = None,
+        received_breakdown: Optional[dict] = None,
+        change_breakdown: Optional[dict] = None,
     ) -> Transaction:
         return self._cash_in_repo.create(
             account_id=account_id,
@@ -102,6 +105,9 @@ class TransactionViewModel:
             fee_account_id=fee_account_id,
             note=note,
             employee_id=employee_id,
+            amount_received=amount_received,
+            received_breakdown=received_breakdown,
+            change_breakdown=change_breakdown,
         )
 
     def create_cash_out(

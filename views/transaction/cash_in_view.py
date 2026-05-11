@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QGridLayout, QTableWidgetItem, QWidget
+from PyQt6.QtWidgets import QLabel, QLineEdit, QGridLayout, QTableWidgetItem, QWidget
 
 from i18n import t
 from views.transaction.base_form_view import BaseFormView
@@ -13,6 +13,7 @@ from views.transaction_view import (
     format_datetime,
 )
 from views.widgets.company_selector import ServiceTypeSelector, add_placeholder
+from views.widgets.denomination_input import DenominationInputWidget
 
 
 class CashInView(BaseFormView):
@@ -75,7 +76,119 @@ class CashInView(BaseFormView):
 
         lo.addLayout(grid)
         lo.addLayout(self._make_fee_grid())
+        lo.addWidget(field_label("Overpayment Change"))
+        overpay_grid = QGridLayout()
+        overpay_grid.setContentsMargins(0, 0, 0, 0)
+        overpay_grid.setHorizontalSpacing(12)
+        overpay_grid.setVerticalSpacing(10)
+        for col in range(12):
+            overpay_grid.setColumnStretch(col, 1)
+
+        self._amount_received_input = QLineEdit()
+        self._amount_received_input.setPlaceholderText("0")
+        self._amount_received_input.textChanged.connect(self._update_overpayment_hint)
+        overpay_grid.addWidget(
+            self._gcell(field_label("Amount Received"), self._amount_received_input),
+            0, 0, 1, 4,
+        )
+
+        self._overpayment_hint = QLabel("No overpayment change")
+        self._overpayment_hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        overpay_grid.addWidget(self._overpayment_hint, 0, 4, 1, 8)
+
+        denoms = self._load_denominations()
+        self._received_breakdown = DenominationInputWidget(
+            denoms,
+            title="Customer cash received",
+        )
+        self._change_breakdown = DenominationInputWidget(
+            denoms,
+            title="Change from employee float",
+        )
+        self._received_breakdown.total_changed.connect(lambda _total: self._update_overpayment_hint())
+        self._change_breakdown.total_changed.connect(lambda _total: self._update_overpayment_hint())
+        overpay_grid.addWidget(self._received_breakdown, 1, 0, 1, 6)
+        overpay_grid.addWidget(self._change_breakdown, 1, 6, 1, 6)
+        lo.addLayout(overpay_grid)
         self._make_note_screenshot(lo)
+
+    def _load_denominations(self) -> list[int]:
+        try:
+            rows = self._repository.get_denominations()
+            values = [
+                int(row.get("value", row.get("id")))
+                for row in rows
+                if int(row.get("is_active", 1) or 0) == 1
+            ]
+            return sorted(values, reverse=True) or [20000, 10000, 5000, 1000, 500, 200, 100, 50]
+        except Exception:
+            return [20000, 10000, 5000, 1000, 500, 200, 100, 50]
+
+    def _parse_amount_received(self) -> float:
+        try:
+            return float(self._amount_received_input.text().replace(",", ""))
+        except (AttributeError, ValueError):
+            return 0.0
+
+    def _on_amount_changed(self) -> None:
+        super()._on_amount_changed()
+        self._update_overpayment_hint()
+
+    def _update_overpayment_hint(self) -> None:
+        amount = self._parse_amount()
+        received = self._parse_amount_received()
+        change_due = max(received - amount, 0)
+        if received <= 0:
+            text = "No overpayment change"
+            color = TEXT_MUTED
+        else:
+            received_total = self._received_breakdown.total()
+            change_total = self._change_breakdown.total()
+            text = (
+                f"Change due: {change_due:,.0f} MMK | "
+                f"Received breakdown: {received_total:,.0f} | "
+                f"Change breakdown: {change_total:,.0f}"
+            )
+            color = ACCENT_GREEN if change_due == change_total and received == received_total else ACCENT_RED
+        self._overpayment_hint.setText(text)
+        self._overpayment_hint.setStyleSheet(f"color: {color}; font-size: 12px;")
+
+    def _cash_in_overpayment_payload(self) -> dict:
+        received = self._parse_amount_received()
+        amount = self._parse_amount()
+        if received <= amount:
+            return {}
+        return {
+            "amount_received": received,
+            "received_breakdown": self._received_breakdown.breakdown(),
+            "change_breakdown": self._change_breakdown.breakdown(),
+        }
+
+    def _validate_cash_in_overpayment(self) -> str | None:
+        amount = self._parse_amount()
+        received = self._parse_amount_received()
+        if received <= 0:
+            return None
+        if received < amount:
+            return "Amount received must be greater than or equal to Cash In amount."
+        if received == amount:
+            return None
+        change_due = received - amount
+        if self._received_breakdown.total() != int(received):
+            return "Received breakdown total must match Amount Received."
+        if self._change_breakdown.total() != int(change_due):
+            return "Change breakdown total must match overpayment change due."
+        return None
+
+    def _clear_cash_in_overpayment(self) -> None:
+        if hasattr(self, "_amount_received_input"):
+            self._amount_received_input.clear()
+        if hasattr(self, "_received_breakdown"):
+            self._received_breakdown.clear()
+        if hasattr(self, "_change_breakdown"):
+            self._change_breakdown.clear()
+        if hasattr(self, "_overpayment_hint"):
+            self._update_overpayment_hint()
 
     # ── Table ────────────────────────────────────────────────────────────────
 

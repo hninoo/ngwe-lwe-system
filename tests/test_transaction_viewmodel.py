@@ -184,6 +184,61 @@ def test_employee_cash_in_is_pending_and_does_not_touch_mini_vault():
     assert created["vault_impact"] == "none"
 
 
+def test_employee_cash_in_overpayment_deducts_change_from_float():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, float_repo = _make_vm(account, tier)
+    active_float = SimpleNamespace(id=5, employee_id=7, status="ACTIVE", current_balance=10000.0)
+    float_repo.get_active_float_for_employee.return_value = active_float
+    float_repo.get_float.return_value = active_float
+    float_repo.get_denomination_balance.return_value = {5000: 2}
+    vm._vault_service._vault_txn_repo = MagicMock()
+
+    with patch("repositories.transaction_operation_base.TransactionOperationBase._log"):
+        vm.create_cash_in(
+            account_id=1,
+            amount=25000.0,
+            amount_received=30000.0,
+            received_breakdown=[{"denomination_id": 10000, "quantity": 3}],
+            change_breakdown=[{"denomination_id": 5000, "quantity": 1}],
+            customer_name="A",
+            customer_phone="09",
+            created_by=7,
+            employee_id=7,
+        )
+
+    account_repo.increment_balance.assert_any_call(1, -25000.0)
+    float_repo.deduct_denominations.assert_called_once_with(5, {5000: 1})
+    float_repo.deduct_float_balance.assert_called_once_with(7, 5000.0)
+    created = vm._txn_repo.create.call_args.args[0]
+    assert created["amount"] == 25000.0
+    assert created["status"] == "PENDING_CASHIER_CONFIRM"
+    assert created["vault_impact"] == "none"
+
+
+def test_employee_cash_in_overpayment_requires_matching_change_breakdown():
+    account = _make_account(service_type_id=1)
+    tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)
+    vm, _, account_repo, float_repo = _make_vm(account, tier)
+
+    with pytest.raises(ValueError, match="change_breakdown total"):
+        vm.create_cash_in(
+            account_id=1,
+            amount=25000.0,
+            amount_received=30000.0,
+            received_breakdown={"10000": 3},
+            change_breakdown={"1000": 1},
+            customer_name="A",
+            customer_phone="09",
+            created_by=7,
+            employee_id=7,
+        )
+
+    account_repo.increment_balance.assert_not_called()
+    float_repo.deduct_denominations.assert_not_called()
+    vm._txn_repo.create.assert_not_called()
+
+
 def test_owner_cash_in_starts_pending_checker_flow():
     account = _make_account(service_type_id=1)
     tier = _make_tier(1, comm_cash_in=0.0, comm_cash_out=0.0)

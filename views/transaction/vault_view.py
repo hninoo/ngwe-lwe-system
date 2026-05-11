@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
+
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -86,8 +86,10 @@ class ReturnCashDialog(QDialog):
         self._spinboxes: dict[int, QSpinBox] = {}
         self._total_label: Optional[QLabel] = None
         self._pin_input: Optional[QLineEdit] = None
+        self._error_label: Optional[QLabel] = None
         self._note_input: Optional[QLineEdit] = None
         self.denominations: dict[str, int] = {}
+        self.pin: str = ""
         self.note: Optional[str] = None
         self._init_ui()
 
@@ -145,6 +147,25 @@ class ReturnCashDialog(QDialog):
         self._note_input.setPlaceholderText(t("note_optional"))
         layout.addWidget(self._note_input)
 
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        layout.addWidget(sep)
+
+        pin_lbl = QLabel("PIN")
+        pin_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px;")
+        layout.addWidget(pin_lbl)
+        self._pin_input = QLineEdit()
+        self._pin_input.setPlaceholderText("••••••")
+        self._pin_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pin_input.setMaxLength(6)
+        layout.addWidget(self._pin_input)
+
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
         row = QHBoxLayout()
         cancel = _accent_btn(t("cancel"), TEXT_MUTED)
         cancel.clicked.connect(self.reject)
@@ -166,8 +187,137 @@ class ReturnCashDialog(QDialog):
         if sum(int(d) * q for d, q in denoms.items()) <= 0:
             QMessageBox.warning(self, t("error"), t("total_nonzero"))
             return
+        pin = self._pin_input.text().strip() if self._pin_input else ""
+        if len(pin) != 6 or not pin.isdigit():
+            if self._error_label:
+                self._error_label.setText(t("pin_invalid"))
+                self._error_label.setVisible(True)
+            return
         self.denominations = denoms
+        self.pin = pin
         self.note = self._note_input.text().strip() if self._note_input else None
+        self.accept()
+
+
+class ConfirmReturnDialog(QDialog):
+    """Cashier confirms employee float return — shows denomination breakdown + PIN."""
+
+    def __init__(self, float_data: dict, balance_data: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._float_data = float_data
+        self._balance = balance_data.get("denominations", {}) or {}
+        self._total = int(balance_data.get("total", 0) or 0)
+        self.pin: str = ""
+        self._pin_input: Optional[QLineEdit] = None
+        self._error_label: Optional[QLabel] = None
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        float_id = self._float_data.get("id", "?")
+        employee = self._float_data.get("employee_name", "?")
+        self.setWindowTitle(f"Confirm Return — Float #{float_id}")
+        self.setFixedWidth(480)
+        self.setStyleSheet(
+            f"QDialog {{ background-color: {BG_DARK}; }}"
+            f"QWidget {{ color: {TEXT_PRIMARY}; background-color: {BG_DARK}; }}"
+            f"QLabel {{ background-color: transparent; }}"
+            f"QTableWidget {{ background-color: {BG_CARD}; border: 1px solid {BORDER_COLOR}; "
+            f"border-radius: 6px; gridline-color: {BORDER_COLOR}; font-size: 12px; }}"
+            f"QTableWidget::item {{ padding: 6px; background-color: transparent; }}"
+            f"QHeaderView::section {{ background-color: {BG_DARK}; color: {TEXT_SECONDARY}; "
+            f"border: none; padding: 6px; font-weight: bold; }}"
+            f"QLineEdit {{ background-color: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+            f"border: 1px solid {INPUT_BORDER}; border-radius: 6px; padding: 8px 12px; }}"
+        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+
+        title = QLabel("Confirm Cash Return")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {ACCENT_BLUE};")
+        layout.addWidget(title)
+
+        info = QLabel(f"Employee: {employee}  |  Float #{float_id}")
+        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        layout.addWidget(info)
+
+        active = sorted(
+            [(int(k), int(v)) for k, v in self._balance.items() if int(v) > 0],
+            key=lambda x: x[0],
+            reverse=True,
+        )
+        if active:
+            table = QTableWidget(len(active), 3)
+            table.setHorizontalHeaderLabels([t("col_denomination"), t("col_quantity"), t("col_value")])
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+            table.verticalHeader().setVisible(False)
+            table.setMaximumHeight(min(220, 40 + len(active) * 32))
+            hdr = table.horizontalHeader()
+            hdr.setStretchLastSection(True)
+            hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            for row_idx, (denom, qty) in enumerate(active):
+                d_item = QTableWidgetItem(f"{denom:,} MMK")
+                d_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                q_item = QTableWidgetItem(str(qty))
+                q_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                v_item = QTableWidgetItem(f"{denom * qty:,}")
+                v_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_idx, 0, d_item)
+                table.setItem(row_idx, 1, q_item)
+                table.setItem(row_idx, 2, v_item)
+            layout.addWidget(table)
+
+        total_row = QHBoxLayout()
+        total_row.addWidget(QLabel("Total Return"))
+        total_row.addStretch()
+        total_lbl = QLabel(f"{self._total:,} MMK")
+        total_lbl.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        total_lbl.setStyleSheet(f"color: {ACCENT_GREEN};")
+        total_row.addWidget(total_lbl)
+        layout.addLayout(total_row)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
+        layout.addWidget(sep)
+
+        pin_lbl = QLabel("Cashier PIN")
+        pin_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px;")
+        layout.addWidget(pin_lbl)
+        self._pin_input = QLineEdit()
+        self._pin_input.setPlaceholderText("••••••")
+        self._pin_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pin_input.setMaxLength(6)
+        self._pin_input.returnPressed.connect(self._on_confirm)
+        layout.addWidget(self._pin_input)
+
+        self._error_label = QLabel("")
+        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
+        self._error_label.setVisible(False)
+        layout.addWidget(self._error_label)
+
+        btn_row = QHBoxLayout()
+        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
+        cancel.clicked.connect(self.reject)
+        confirm = _accent_btn("Confirm Return", ACCENT_BLUE)
+        confirm.clicked.connect(self._on_confirm)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(confirm)
+        layout.addLayout(btn_row)
+        self._pin_input.setFocus()
+
+    def _on_confirm(self) -> None:
+        pin = self._pin_input.text().strip() if self._pin_input else ""
+        if len(pin) != 6 or not pin.isdigit():
+            if self._error_label:
+                self._error_label.setText(t("pin_invalid"))
+                self._error_label.setVisible(True)
+            return
+        self.pin = pin
         self.accept()
 
 
@@ -673,20 +823,15 @@ class VaultPage(QWidget):
         if float_id is None:
             QMessageBox.warning(self, t("error"), "Float ID not found.")
             return
-        pin, ok = QInputDialog.getText(
-            self,
-            "Confirm Return",
-            "Enter cashier PIN to confirm returned cash:",
-            QLineEdit.EchoMode.Password,
-        )
-        if not ok:
-            return
-        pin = pin.strip()
-        if len(pin) != 6 or not pin.isdigit():
-            QMessageBox.warning(self, t("error"), t("pin_invalid"))
+        try:
+            balance_data = self._repo.get_float_balance(int(float_id))
+        except Exception:
+            balance_data = {}
+        dlg = ConfirmReturnDialog(float_data, balance_data, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            self._repo.api.confirm_float_return(int(float_id), pin)
+            self._repo.api.confirm_float_return(int(float_id), dlg.pin)
             self.load_data()
         except Exception as exc:
             QMessageBox.warning(self, t("error"), str(exc))

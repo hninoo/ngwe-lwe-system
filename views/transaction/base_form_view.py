@@ -184,6 +184,15 @@ class BaseFormView(QWidget):
     def _setup_fields(self, lo: QVBoxLayout) -> None:
         """Override in each sub-view to add type-specific fields."""
 
+    def _cash_in_overpayment_payload(self) -> dict:
+        return {}
+
+    def _validate_cash_in_overpayment(self) -> Optional[str]:
+        return None
+
+    def _clear_cash_in_overpayment(self) -> None:
+        return None
+
     # ── Shared field-building helpers ───────────────────────────────────────
 
     @staticmethod
@@ -769,6 +778,7 @@ class BaseFormView(QWidget):
         fee_acc = self._get_fee_account_id()
 
         if action == "cash_in":
+            overpayment_payload = self._cash_in_overpayment_payload()
             if self._repository.current_user.get("role") == "employee":
                 response = QMessageBox.warning(
                     self,
@@ -790,6 +800,7 @@ class BaseFormView(QWidget):
                 additional_fee_amount=additional,
                 fee_account_id=fee_acc,
                 note=note,
+                **overpayment_payload,
             )
         elif action == "cash_out":
             self._repository.create_cash_out(
@@ -875,6 +886,10 @@ class BaseFormView(QWidget):
                 return t("err_customer_name")
             if self._customer_phone and not self._customer_phone.text().strip():
                 return t("err_customer_phone")
+            if self._selected_action == "cash_in":
+                overpayment_error = self._validate_cash_in_overpayment()
+                if overpayment_error:
+                    return overpayment_error
 
         if self._selected_action == "transfer":
             if self._to_account_selector is None:
@@ -934,6 +949,7 @@ class BaseFormView(QWidget):
         if self._screenshot_label:
             self._screenshot_label.setText(t("no_file_selected"))
             self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        self._clear_cash_in_overpayment()
 
     def _show_status(self, msg: str, error: bool = False) -> None:
         self._status_label.setText(msg)
