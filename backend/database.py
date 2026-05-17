@@ -1230,6 +1230,97 @@ def _migrate_018(conn):
     conn.commit()
 
 
+def _migrate_019(conn):
+    """Rebuild transactions with canonical cash_in/cash_out type constraints."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'"
+    ).fetchone()
+    schema_sql = (row["sql"] if row else "") or ""
+    if "cash_in" in schema_sql and "cash_out" in schema_sql:
+        return
+
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS transactions_v19 (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            transaction_type      TEXT NOT NULL
+                                  CHECK(transaction_type IN ('cash_in','cash_out','transfer','exchange')),
+            account_id            INTEGER NOT NULL,
+            to_account_id         INTEGER,
+            from_company_id       INTEGER,
+            to_company_id         INTEGER,
+            customer_name         TEXT,
+            customer_phone        TEXT,
+            amount                REAL NOT NULL,
+            commission_amount     REAL NOT NULL DEFAULT 0.00,
+            customer_fee          REAL NOT NULL DEFAULT 0.00,
+            additional_fee_amount REAL NOT NULL DEFAULT 0.00,
+            balance_change        REAL NOT NULL DEFAULT 0.00,
+            currency              TEXT NOT NULL DEFAULT 'MMK',
+            exchange_rate         REAL,
+            fee_account_id        INTEGER,
+            screenshot_path       TEXT,
+            note                  TEXT,
+            created_by            INTEGER NOT NULL,
+            created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+            cash_approved_by      INTEGER,
+            cash_approved_at      TEXT,
+            status                TEXT NOT NULL DEFAULT 'COMPLETED'
+                                  CHECK(status IN ('PENDING_CASHIER_CONFIRM','COMPLETED','CANCELLED')),
+            vault_impact          TEXT
+                                  CHECK(vault_impact IN ('mini_vault_decrease','main_vault_increase','none')),
+            confirmed_by          INTEGER,
+            confirmed_at          TEXT,
+            change_given          REAL NOT NULL DEFAULT 0,
+            change_denominations  TEXT,
+            FOREIGN KEY (account_id)      REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (to_account_id)   REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (fee_account_id)  REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (created_by)      REFERENCES users(id)    ON UPDATE CASCADE ON DELETE RESTRICT,
+            FOREIGN KEY (from_company_id) REFERENCES companies(id),
+            FOREIGN KEY (to_company_id)   REFERENCES companies(id)
+        );
+
+        INSERT INTO transactions_v19 (
+            id, transaction_type, account_id, to_account_id,
+            from_company_id, to_company_id, customer_name, customer_phone,
+            amount, commission_amount, customer_fee, additional_fee_amount,
+            balance_change, currency, exchange_rate, fee_account_id,
+            screenshot_path, note, created_by, created_at,
+            cash_approved_by, cash_approved_at, status, vault_impact,
+            confirmed_by, confirmed_at, change_given, change_denominations
+        )
+        SELECT
+            id,
+            CASE transaction_type
+                WHEN 'deposit' THEN 'cash_in'
+                WHEN 'withdraw' THEN 'cash_out'
+                ELSE transaction_type
+            END,
+            account_id, to_account_id,
+            from_company_id, to_company_id, customer_name, customer_phone,
+            amount, commission_amount, customer_fee,
+            COALESCE(additional_fee_amount, 0.0),
+            balance_change, COALESCE(currency, 'MMK'), exchange_rate, fee_account_id,
+            screenshot_path, note, created_by, created_at,
+            cash_approved_by, cash_approved_at,
+            COALESCE(status, 'COMPLETED'), vault_impact,
+            confirmed_by, confirmed_at,
+            COALESCE(change_given, 0), change_denominations
+        FROM transactions;
+
+        DROP TABLE transactions;
+        ALTER TABLE transactions_v19 RENAME TO transactions;
+        CREATE INDEX IF NOT EXISTS idx_txn_type       ON transactions(transaction_type);
+        CREATE INDEX IF NOT EXISTS idx_txn_created    ON transactions(created_at);
+        CREATE INDEX IF NOT EXISTS idx_txn_created_by ON transactions(created_by);
+        CREATE INDEX IF NOT EXISTS idx_pending_cash_ins ON transactions(status)
+            WHERE status = 'PENDING_CASHIER_CONFIRM';
+    """)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -1255,6 +1346,7 @@ def _run_migrations(conn):
         (16, "Require commission tier From amount above zero", _migrate_016),
         (17, "Reconcile master data seeds and validate tier links", _migrate_017),
         (18, "Remove non-canonical company master rows", _migrate_018),
+        (19, "Normalize transaction type constraints", _migrate_019),
     ]:
         if version not in applied:
             fn(conn)
