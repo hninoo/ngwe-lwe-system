@@ -76,15 +76,10 @@ class CashInRepository(TransactionOperationBase):
         if received_decimal < amount_decimal:
             raise ValueError("amount_received must be greater than or equal to amount.")
 
-        received_denoms = self._normalize_breakdown(received_breakdown, "received_breakdown")
         change_denoms = self._normalize_breakdown(change_breakdown, "change_breakdown")
         change_due = received_decimal - amount_decimal
 
-        if received_denoms and self._breakdown_total(received_denoms) != received_decimal:
-            raise ValueError("received_breakdown total must equal amount_received.")
         if change_due > 0:
-            if not received_denoms:
-                raise ValueError("received_breakdown is required when amount_received exceeds amount.")
             if self._breakdown_total(change_denoms) != change_due:
                 raise ValueError("change_breakdown total must equal amount_received minus amount.")
             if employee_id is None:
@@ -107,7 +102,7 @@ class CashInRepository(TransactionOperationBase):
         from_company_id = self._get_company_id(account.service_type_id)
 
         with self.atomic():
-            if not self._account_repo.increment_balance(account_id, -amount_decimal):
+            if not self._account_repo.decrement_balance(account_id, amount_decimal):
                 raise RuntimeError(
                     f"Unable to deduct Cash In balance for active account #{account_id}."
                 )
@@ -156,11 +151,10 @@ class CashInRepository(TransactionOperationBase):
                     "amount": float(amount_decimal),
                     "amount_received": float(received_decimal),
                     "change_due": float(change_due),
-                    "received_breakdown": {str(k): v for k, v in received_denoms.items()},
                     "change_breakdown": {str(k): v for k, v in change_denoms.items()},
                     "message": (
-                        "Employee returned overpayment change from their float. "
-                        "Cashier must confirm the net Cash In amount only."
+                        "Employee exchanged customer notes and returned overpayment "
+                        "change from their float. Cashier must receive the exact Cash In amount."
                     ),
                 })
         return self._txn_repo.get_by_id(txn_id)

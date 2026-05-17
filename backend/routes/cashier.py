@@ -569,16 +569,22 @@ def confirm_pending_cash_in(
     gives_total = sum(d * q for d, q in gives_denoms.items())
     receives_total = sum(d * q for d, q in receives_denoms.items())
 
-    if gives_total == 0 and receives_total == 0:
-        raise HTTPException(400, "At least one of gives or receives must have denominations")
+    if gives_total > 0:
+        raise HTTPException(
+            400,
+            "Cash In confirmation only accepts received denominations. "
+            "Employee note-change must be handled from the employee mini vault.",
+        )
+    if receives_total == 0:
+        raise HTTPException(400, "Received denominations are required")
 
-    # Cash in: vault gains = receives − gives must match transaction amount
-    net = Decimal(str(receives_total)) - Decimal(str(gives_total))
+    # Cash in: cashier receives the exact Cash In amount after employee note-change.
+    net = Decimal(str(receives_total))
     expected = Decimal(str(txn.amount or 0))
     diff = net - expected
     if abs(diff) > Decimal(CASH_TOLERANCE_MMK):
         raise HTTPException(422, detail={
-            "message": "Net cash total (Receives − Gives) does not match Cash In amount",
+            "message": "Received cash total does not match Cash In amount",
             "expected": float(expected),
             "entered": float(net),
             "difference": float(diff),
@@ -599,23 +605,6 @@ def confirm_pending_cash_in(
                     500,
                     f"Fee credit failed: Fee account #{txn.fee_account_id} not found or inactive.",
                 )
-        # Change given to customer (vault out)
-        if gives_denoms:
-            available = _denom_repo.get_vault_balance()
-            for denom, qty in gives_denoms.items():
-                if qty > available.get(denom, 0):
-                    raise HTTPException(
-                        409,
-                        f"Insufficient {denom:,} MMK for change: "
-                        f"available {available.get(denom, 0)}, requested {qty}",
-                    )
-            _denom_repo.record_bulk_entry(
-                entry_type="vault_out",
-                denominations=gives_denoms,
-                created_by=current_user["user_id"],
-                transaction_id=txn_id,
-                note=body.note or f"Change given for Cash In Txn #{txn_id}",
-            )
         # Cash received from customer (vault in)
         if receives_denoms:
             _denom_repo.record_bulk_entry(

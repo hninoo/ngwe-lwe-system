@@ -1495,7 +1495,7 @@ class PendingCashInConfirmDialog(QDialog):
 
         layout.addWidget(_section_label(f"Cash In Txn #{self._txn.get('id', '')}"))
         info = QLabel(
-            f"Expected (Receives − Gives): <b>{self._expected:,.0f} MMK</b>  |  "
+            f"Expected received cash: <b>{self._expected:,.0f} MMK</b>  |  "
             f"Customer: {self._txn.get('customer_name', '—')}"
         )
         info.setTextFormat(Qt.TextFormat.RichText)
@@ -1507,32 +1507,14 @@ class PendingCashInConfirmDialog(QDialog):
         sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
         layout.addWidget(sep)
 
-        # Two denomination widgets side by side
-        widgets_row = QHBoxLayout()
-        widgets_row.setSpacing(16)
-
-        self._gives_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="Cashier Gives (Out from Vault)",
-        )
-        self._gives_widget.total_changed.connect(self._update_total)
-        widgets_row.addWidget(self._gives_widget)
-
-        vsep = QFrame()
-        vsep.setFrameShape(QFrame.Shape.VLine)
-        vsep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
-        widgets_row.addWidget(vsep)
-
         self._receives_widget = DenominationInputWidget(
             sorted(DENOMINATIONS, reverse=True),
-            title="Cashier Receives (In to Vault)",
+            title="Cashier Receives (Exact Cash In Amount)",
         )
         self._receives_widget.total_changed.connect(self._update_total)
-        widgets_row.addWidget(self._receives_widget)
+        layout.addWidget(self._receives_widget)
 
-        layout.addLayout(widgets_row)
-
-        self._net_label = QLabel("Net (Receives − Gives): 0 MMK")
+        self._net_label = QLabel("Received: 0 MMK")
         self._net_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self._net_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
         layout.addWidget(self._net_label)
@@ -1569,14 +1551,13 @@ class PendingCashInConfirmDialog(QDialog):
         self._update_total()
 
     def _update_total(self) -> None:
-        gives = self._gives_widget.total() if self._gives_widget else 0
         receives = self._receives_widget.total() if self._receives_widget else 0
-        net = receives - gives
+        net = receives
         diff = net - self._expected
         within_tolerance = abs(diff) <= CASH_TOLERANCE
 
         if self._net_label:
-            self._net_label.setText(f"Net (Receives − Gives): {net:,.0f} MMK")
+            self._net_label.setText(f"Received: {net:,.0f} MMK")
         if self._diff_label:
             sign = "+" if diff > 0 else ""
             status = "✓" if within_tolerance else "✗"
@@ -1584,14 +1565,14 @@ class PendingCashInConfirmDialog(QDialog):
             self._diff_label.setText(f"Difference: {sign}{diff:,.0f} MMK  {status}")
             self._diff_label.setStyleSheet(f"color: {color};")
         if self._submit_btn:
-            self._submit_btn.setEnabled(within_tolerance and (gives > 0 or receives > 0))
+            self._submit_btn.setEnabled(within_tolerance and receives > 0)
 
     def _on_submit(self) -> None:
         pin = self._pin_input.text().strip() if self._pin_input else ""
         if len(pin) != 6 or not pin.isdigit():
             self._show_error(t("pin_invalid"))
             return
-        gives = self._gives_widget.breakdown() if self._gives_widget else {}
+        gives = {}
         receives = self._receives_widget.breakdown() if self._receives_widget else {}
         note = self._note_input.text().strip() if self._note_input else None
         try:

@@ -176,7 +176,7 @@ def test_employee_cash_in_is_pending_and_does_not_touch_mini_vault():
             employee_id=7,
         )
 
-    account_repo.increment_balance.assert_any_call(1, -25000.0)
+    account_repo.decrement_balance.assert_any_call(1, Decimal("25000.0"))
     float_repo.add_float_balance.assert_not_called()
     created = vm._txn_repo.create.call_args.args[0]
     assert created["balance_change"] == -25000.0
@@ -199,7 +199,6 @@ def test_employee_cash_in_overpayment_deducts_change_from_float():
             account_id=1,
             amount=25000.0,
             amount_received=30000.0,
-            received_breakdown=[{"denomination_id": 10000, "quantity": 3}],
             change_breakdown=[{"denomination_id": 5000, "quantity": 1}],
             customer_name="A",
             customer_phone="09",
@@ -207,7 +206,7 @@ def test_employee_cash_in_overpayment_deducts_change_from_float():
             employee_id=7,
         )
 
-    account_repo.increment_balance.assert_any_call(1, -25000.0)
+    account_repo.decrement_balance.assert_any_call(1, Decimal("25000.0"))
     float_repo.deduct_denominations.assert_called_once_with(5, {5000: 1})
     float_repo.deduct_float_balance.assert_called_once_with(7, 5000.0)
     created = vm._txn_repo.create.call_args.args[0]
@@ -226,7 +225,6 @@ def test_employee_cash_in_overpayment_requires_matching_change_breakdown():
             account_id=1,
             amount=25000.0,
             amount_received=30000.0,
-            received_breakdown={"10000": 3},
             change_breakdown={"1000": 1},
             customer_name="A",
             customer_phone="09",
@@ -254,7 +252,7 @@ def test_owner_cash_in_starts_pending_checker_flow():
             employee_id=None,
         )
 
-    account_repo.increment_balance.assert_any_call(1, -25000.0)
+    account_repo.decrement_balance.assert_any_call(1, Decimal("25000.0"))
     float_repo.add_float_balance.assert_not_called()
     created = vm._txn_repo.create.call_args.args[0]
     assert created["status"] == "PENDING_CASHIER_CONFIRM"

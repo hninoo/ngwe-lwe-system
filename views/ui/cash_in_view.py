@@ -97,18 +97,12 @@ class CashInView(BaseFormView):
         overpay_grid.addWidget(self._overpayment_hint, 0, 4, 1, 8)
 
         denoms = self._load_denominations()
-        self._received_breakdown = DenominationInputWidget(
-            denoms,
-            title="Customer cash received",
-        )
         self._change_breakdown = DenominationInputWidget(
             denoms,
             title="Change from employee float",
         )
-        self._received_breakdown.total_changed.connect(lambda _total: self._update_overpayment_hint())
         self._change_breakdown.total_changed.connect(lambda _total: self._update_overpayment_hint())
-        overpay_grid.addWidget(self._received_breakdown, 1, 0, 1, 6)
-        overpay_grid.addWidget(self._change_breakdown, 1, 6, 1, 6)
+        overpay_grid.addWidget(self._change_breakdown, 1, 0, 1, 12)
         lo.addLayout(overpay_grid)
         self._make_note_screenshot(lo)
 
@@ -142,14 +136,12 @@ class CashInView(BaseFormView):
             text = "No overpayment change"
             color = TEXT_MUTED
         else:
-            received_total = self._received_breakdown.total()
             change_total = self._change_breakdown.total()
             text = (
                 f"Change due: {change_due:,.0f} MMK | "
-                f"Received breakdown: {received_total:,.0f} | "
                 f"Change breakdown: {change_total:,.0f}"
             )
-            color = ACCENT_GREEN if change_due == change_total and received == received_total else ACCENT_RED
+            color = ACCENT_GREEN if change_due == change_total else ACCENT_RED
         self._overpayment_hint.setText(text)
         self._overpayment_hint.setStyleSheet(f"color: {color}; font-size: 12px;")
 
@@ -160,7 +152,6 @@ class CashInView(BaseFormView):
             return {}
         return {
             "amount_received": received,
-            "received_breakdown": self._received_breakdown.breakdown(),
             "change_breakdown": self._change_breakdown.breakdown(),
         }
 
@@ -174,8 +165,6 @@ class CashInView(BaseFormView):
         if received == amount:
             return None
         change_due = received - amount
-        if self._received_breakdown.total() != int(received):
-            return "Received breakdown total must match Amount Received."
         if self._change_breakdown.total() != int(change_due):
             return "Change breakdown total must match overpayment change due."
         return None
@@ -183,8 +172,6 @@ class CashInView(BaseFormView):
     def _clear_cash_in_overpayment(self) -> None:
         if hasattr(self, "_amount_received_input"):
             self._amount_received_input.clear()
-        if hasattr(self, "_received_breakdown"):
-            self._received_breakdown.clear()
         if hasattr(self, "_change_breakdown"):
             self._change_breakdown.clear()
         if hasattr(self, "_overpayment_hint"):

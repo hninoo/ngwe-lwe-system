@@ -99,3 +99,10 @@ class AccountRepository(BaseRepository):
                 (str(delta_decimal), account_id),
             )
             return cursor.rowcount > 0
+
+    def decrement_balance(self, account_id: int, amount: float | Decimal) -> bool:
+        """Atomically decrease an active account balance by amount."""
+        amount_decimal = Decimal(str(amount))
+        if amount_decimal < 0:
+            raise ValueError("amount must be non-negative")
+        return self.increment_balance(account_id, -amount_decimal)
