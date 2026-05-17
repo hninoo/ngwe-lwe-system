@@ -398,10 +398,12 @@ INSERT OR IGNORE INTO companies (name, category, is_active) VALUES
 
 -- Service types per company (Pay: WST + Pay_To_Pay / Bank: Pay_To_Pay + Transfer + Exchange)
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
-SELECT id, 'WST',       'All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
+SELECT id, 'WST',       'All' FROM companies
+WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
-SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
+SELECT id, 'Pay_To_Pay','All' FROM companies
+WHERE name IN ('KBZ Pay','Wave Money','True Money','AYA Pay');
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'Pay_To_Pay','All' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');
@@ -411,3 +413,9 @@ SELECT id, 'Transfer',  'Transfer' FROM companies WHERE name IN ('KBZ Bank','AYA
 
 INSERT OR IGNORE INTO service_types (company_id, name, operation)
 SELECT id, 'Exchange',  'Exchange' FROM companies WHERE name IN ('KBZ Bank','AYA Bank','CB Bank','Thai Bank');
+
+INSERT INTO exchange_rates (base_currency, quote_currency, base_amount, buy_rate, sell_rate)
+SELECT 'THB', 'MMK', 1.0, 128.21, 128.21
+WHERE NOT EXISTS (
+    SELECT 1 FROM exchange_rates WHERE base_currency = 'THB' AND quote_currency = 'MMK'
+);

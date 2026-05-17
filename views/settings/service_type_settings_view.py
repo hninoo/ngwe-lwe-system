@@ -68,9 +68,13 @@ def _ghost_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:
 class _AddServiceTypeDialog(QDialog):
     """Dialog to create a new service type."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        service_type: Optional[dict] = None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(t("add_service_type"))
+        self.setWindowTitle("Edit Service Type" if service_type else t("add_service_type"))
         self.setMinimumWidth(320)
         self.setStyleSheet(f"background-color: {BG_DARK}; color: {TEXT_PRIMARY};")
 
@@ -80,6 +84,8 @@ class _AddServiceTypeDialog(QDialog):
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText(t("service_name_ph"))
+        if service_type:
+            self._name_edit.setText(str(service_type.get("name") or ""))
         self._name_edit.setStyleSheet(
             f"QLineEdit {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
             f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
@@ -89,6 +95,8 @@ class _AddServiceTypeDialog(QDialog):
         self._operation_combo = QComboBox()
         add_placeholder(self._operation_combo)
         self._operation_combo.addItems(OPERATIONS)
+        if service_type and service_type.get("operation") in OPERATIONS:
+            self._operation_combo.setCurrentText(service_type.get("operation"))
         self._operation_combo.setStyleSheet(
             f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
             f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
@@ -301,6 +309,9 @@ class ServiceTypeSettingsView(QWidget):
                 deact_btn.clicked.connect(
                     lambda _, sid=st_id, sname=name: self._on_deactivate(sid, sname)
                 )
+                edit_btn = _ghost_btn("Edit", ACCENT_BLUE)
+                edit_btn.clicked.connect(lambda _, row_data=st: self._on_edit(row_data))
+                al.addWidget(edit_btn)
                 al.addWidget(deact_btn)
                 al.addStretch()
                 self._table.setCellWidget(row, self.COL_ACTIONS, actions_widget)
@@ -325,6 +336,20 @@ class ServiceTypeSettingsView(QWidget):
                 self._selected_company_id, dlg.service_name, dlg.operation
             )
             self._show_status(t("service_type_created"))
+            self._on_company_selected(self._company_combo.currentIndex())
+        except Exception as e:
+            self._show_status(str(e), error=True)
+
+    def _on_edit(self, service_type: dict) -> None:
+        dlg = _AddServiceTypeDialog(self, service_type)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._api.update_service_type(
+                int(service_type["id"]),
+                {"name": dlg.service_name, "operation": dlg.operation},
+            )
+            self._show_status("Service type updated.")
             self._on_company_selected(self._company_combo.currentIndex())
         except Exception as e:
             self._show_status(str(e), error=True)

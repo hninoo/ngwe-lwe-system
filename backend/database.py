@@ -167,7 +167,7 @@ def _migrate_004(conn):
 
     Steps (all in a single transaction):
       1.  Create companies table + trigger
-      2.  Seed 14 canonical + legacy companies
+      2.  Seed 8 canonical companies
       3.  Create service_types table + trigger
       4.  Seed service_types per company
       5.  Pre-migration validation: ensure every (service_type, account_type)
@@ -199,7 +199,7 @@ def _migrate_004(conn):
         BEGIN UPDATE companies SET updated_at = datetime('now') WHERE id = NEW.id; END;
     """)
 
-    # ── 2. Seed 14 companies ─────────────────────────────────────────────
+    # ── 2. Seed 8 canonical companies ────────────────────────────────────
     companies_seed = [
         # Canonical Pay companies
         ("KBZ Pay",       "Pay"),
@@ -209,15 +209,7 @@ def _migrate_004(conn):
         ("KBZ Bank",      "Bank"),
         ("AYA Bank",      "Bank"),
         ("CB Bank",       "Bank"),
-        # Legacy Pay companies (migrated from services table)
-        ("MPT Pay",       "Pay"),
-        ("OK Dollar",     "Pay"),
-        ("One Pay",       "Pay"),
         ("AYA Pay",       "Pay"),
-        ("Yoma Pay",      "Pay"),
-        ("City Express",  "Pay"),
-        ("KBZ Express",   "Pay"),
-        # Legacy Bank company
         ("Thai Bank",     "Bank"),
     ]
     for name, category in companies_seed:
@@ -260,9 +252,7 @@ def _migrate_004(conn):
 
     # Pay companies → WST (All) + Pay_To_Pay (All)
     pay_companies = [
-        "KBZ Pay", "Wave Money", "True Money",
-        "MPT Pay", "OK Dollar", "One Pay", "AYA Pay",
-        "Yoma Pay", "City Express", "KBZ Express",
+        "KBZ Pay", "Wave Money", "True Money", "AYA Pay",
     ]
     for company_name in pay_companies:
         cid = _company_id(company_name)
@@ -1102,6 +1092,144 @@ def _migrate_016(conn):
     conn.commit()
 
 
+def _migrate_017(conn):
+    """Reconcile master data seeds for companies, service types, tiers, and rates."""
+    pay_companies = [
+        "KBZ Pay", "Wave Money", "True Money", "AYA Pay",
+    ]
+    bank_companies = ["KBZ Bank", "AYA Bank", "CB Bank", "Thai Bank"]
+
+    for name in pay_companies:
+        conn.execute(
+            "INSERT OR IGNORE INTO companies (name, category, is_active) VALUES (?, 'Pay', 1)",
+            (name,),
+        )
+    for name in bank_companies:
+        conn.execute(
+            "INSERT OR IGNORE INTO companies (name, category, is_active) VALUES (?, 'Bank', 1)",
+            (name,),
+        )
+
+    def company_id(name: str) -> int:
+        row = conn.execute("SELECT id FROM companies WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            raise RuntimeError(f"Master company '{name}' was not created")
+        return row["id"]
+
+    for company_name in pay_companies:
+        cid = company_id(company_name)
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation, is_active) "
+            "VALUES (?, 'WST', 'All', 1)",
+            (cid,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation, is_active) "
+            "VALUES (?, 'Pay_To_Pay', 'All', 1)",
+            (cid,),
+        )
+
+    for company_name in bank_companies:
+        cid = company_id(company_name)
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation, is_active) "
+            "VALUES (?, 'Pay_To_Pay', 'All', 1)",
+            (cid,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation, is_active) "
+            "VALUES (?, 'Transfer', 'Transfer', 1)",
+            (cid,),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO service_types (company_id, name, operation, is_active) "
+            "VALUES (?, 'Exchange', 'Exchange', 1)",
+            (cid,),
+        )
+
+    orphan_tiers = conn.execute("""
+        SELECT ct.id
+        FROM commission_tiers ct
+        LEFT JOIN service_types st ON st.id = ct.service_type_id
+        WHERE st.id IS NULL
+    """).fetchall()
+    if orphan_tiers:
+        ids = ", ".join(str(row["id"]) for row in orphan_tiers)
+        raise RuntimeError(f"commission_tiers has invalid service_type_id rows: {ids}")
+
+    conn.execute("""
+        UPDATE exchange_rates
+        SET base_currency = UPPER(TRIM(base_currency)),
+            quote_currency = UPPER(TRIM(quote_currency))
+    """)
+    conn.execute("""
+        INSERT INTO exchange_rates
+            (base_currency, quote_currency, base_amount, buy_rate, sell_rate)
+        SELECT 'THB', 'MMK', 1.0, 128.21, 128.21
+        WHERE NOT EXISTS (
+            SELECT 1 FROM exchange_rates
+            WHERE base_currency = 'THB' AND quote_currency = 'MMK'
+        )
+    """)
+    conn.commit()
+
+
+def _migrate_018(conn):
+    """Remove non-canonical company master rows added by an earlier seed."""
+    extras = [
+        "MPT Pay", "OK Dollar", "One Pay",
+        "Yoma Pay", "City Express", "KBZ Express",
+    ]
+    placeholders = ",".join("?" for _ in extras)
+    params = tuple(extras)
+
+    conn.execute(
+        f"""
+        UPDATE service_types
+        SET is_active = 0
+        WHERE company_id IN (
+            SELECT id FROM companies WHERE name IN ({placeholders})
+        )
+        """,
+        params,
+    )
+    conn.execute(
+        f"UPDATE companies SET is_active = 0 WHERE name IN ({placeholders})",
+        params,
+    )
+
+    conn.execute(
+        f"""
+        DELETE FROM service_types
+        WHERE company_id IN (
+            SELECT id FROM companies WHERE name IN ({placeholders})
+        )
+          AND NOT EXISTS (
+              SELECT 1 FROM accounts a WHERE a.service_type_id = service_types.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM commission_tiers ct WHERE ct.service_type_id = service_types.id
+          )
+        """,
+        params,
+    )
+    conn.execute(
+        f"""
+        DELETE FROM companies
+        WHERE name IN ({placeholders})
+          AND NOT EXISTS (
+              SELECT 1 FROM service_types st WHERE st.company_id = companies.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM transactions t
+              WHERE t.from_company_id = companies.id OR t.to_company_id = companies.id
+          )
+        """,
+        params,
+    )
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -1125,6 +1253,8 @@ def _run_migrations(conn):
         (14, "Add transaction_id to denomination logs for settlement tracking", _migrate_014),
         (15, "Normalize commission tier range and fee columns", _migrate_015),
         (16, "Require commission tier From amount above zero", _migrate_016),
+        (17, "Reconcile master data seeds and validate tier links", _migrate_017),
+        (18, "Remove non-canonical company master rows", _migrate_018),
     ]:
         if version not in applied:
             fn(conn)

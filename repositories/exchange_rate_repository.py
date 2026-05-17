@@ -36,3 +36,13 @@ class ExchangeRateRepository(BaseRepository):
             )
             row = cursor.fetchone()
         return self._row_to_model(row) if row else None
+
+    def get_all_recent(self, limit: int = 50) -> list[ExchangeRate]:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM exchange_rates "
+                "ORDER BY updated_at DESC, id DESC LIMIT ?",
+                (limit,),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_model(row) for row in rows]

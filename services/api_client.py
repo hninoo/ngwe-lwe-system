@@ -81,6 +81,16 @@ class ApiClient:
         self._raise_for_status(resp)
         return resp.json()
 
+    def _put(self, path: str, data: Optional[dict] = None) -> Any:
+        resp = requests.put(f"{BASE_URL}{path}", headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT)
+        self._raise_for_status(resp)
+        return resp.json()
+
+    def _delete(self, path: str) -> Any:
+        resp = requests.delete(f"{BASE_URL}{path}", headers=self._headers(), timeout=REQUEST_TIMEOUT)
+        self._raise_for_status(resp)
+        return resp.json()
+
     # ── Auth ──
 
     def get_ws_ticket(self) -> str:
@@ -117,6 +127,9 @@ class ApiClient:
         """PATCH /companies/{id} — update company fields (owner only)."""
         return self._patch(f"/companies/{company_id}", data)
 
+    def delete_company(self, company_id: int) -> dict:
+        return self._delete(f"/companies/{company_id}")
+
     # ── Company Logos ──
 
     def get_logo(self, company_id: int) -> bytes:
@@ -140,6 +153,9 @@ class ApiClient:
     def update_service_type(self, service_type_id: int, data: dict) -> dict:
         """PATCH /service-types/{id} — update service type (owner only)."""
         return self._patch(f"/service-types/{service_type_id}", data)
+
+    def delete_service_type(self, service_type_id: int) -> dict:
+        return self._delete(f"/service-types/{service_type_id}")
 
     # ── Accounts ──
 
@@ -448,6 +464,12 @@ class ApiClient:
     def get_exchange_rate(self, base: str = "THB", quote: str = "MMK") -> dict:
         return self._get("/exchange-rates/latest", params={"base": base, "quote": quote})
 
+    def get_exchange_rates(self, limit: int = 50) -> list[dict]:
+        return self._get("/exchange-rates/", params={"limit": limit})
+
+    def get_exchange_rate_by_id(self, rate_id: int) -> dict:
+        return self._get(f"/exchange-rates/{rate_id}")
+
     def update_exchange_rate(
         self,
         buy_rate: float,
@@ -463,6 +485,12 @@ class ApiClient:
             "buy_rate": buy_rate,
             "sell_rate": sell_rate,
         })
+
+    def patch_exchange_rate(self, rate_id: int, data: dict) -> dict:
+        return self._patch(f"/exchange-rates/{rate_id}", data)
+
+    def delete_exchange_rate(self, rate_id: int) -> dict:
+        return self._delete(f"/exchange-rates/{rate_id}")
 
     # ── Reports ──
 
@@ -499,20 +527,10 @@ class ApiClient:
         return self._post("/commission-tiers/", data)
 
     def update_commission_tier(self, tier_id: int, data: dict) -> dict:
-        resp = requests.put(
-            f"{BASE_URL}/commission-tiers/{tier_id}",
-            headers=self._headers(), json=data, timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        return self._put(f"/commission-tiers/{tier_id}", data)
 
     def delete_commission_tier(self, tier_id: int) -> dict:
-        resp = requests.delete(
-            f"{BASE_URL}/commission-tiers/{tier_id}",
-            headers=self._headers(), timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        return self._delete(f"/commission-tiers/{tier_id}")
 
     # ── Cashier ──
 

@@ -1,11 +1,12 @@
 import os
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from sqlite3 import IntegrityError
 
 from backend.auth import get_current_user
 from viewmodels.company_viewmodel import CompanyViewModel
@@ -22,19 +23,45 @@ LOGO_DIR = Path("assets/logos")
 
 
 class CompanyCreate(BaseModel):
-    name: str
-    category: str
+    name: str = Field(min_length=1)
+    category: Literal["Pay", "Bank", "Both"]
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Company name is required.")
+        return value
 
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
-    category: Optional[str] = None
+    category: Optional[Literal["Pay", "Bank", "Both"]] = None
     is_active: Optional[bool] = None
+
+    @field_validator("name")
+    @classmethod
+    def optional_name_not_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Company name is required.")
+        return value
 
 
 class ServiceTypeCreate(BaseModel):
-    name: str
-    operation: str
+    name: str = Field(min_length=1)
+    operation: Literal["CashIn", "CashOut", "Transfer", "Exchange", "All"]
+
+    @field_validator("name")
+    @classmethod
+    def service_name_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Service type name is required.")
+        return value
 
 
 # ── GET /companies/ ──────────────────────────────────────────────────────────
@@ -56,7 +83,10 @@ def create_company(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    company = _company_vm.create_company(body.name, body.category)
+    try:
+        company = _company_vm.create_company(body.name, body.category)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Company already exists") from exc
     return {"id": company.id, "message": "Company created"}
 
 
@@ -90,9 +120,15 @@ def update_company(
         raise HTTPException(status_code=400, detail="No fields to update")
     # If deactivating, use cascade deactivate
     if data.get("is_active") is False or data.get("is_active") == 0:
-        _company_vm.deactivate_company(company_id)
+        if not _company_vm.deactivate_company(company_id):
+            raise HTTPException(status_code=404, detail="Company not found")
         return {"message": "Company deactivated"}
-    _company_vm.update_company(company_id, data)
+    try:
+        updated = _company_vm.update_company(company_id, data)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Company already exists") from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Company not found")
     return {"message": "Company updated"}
 
 
@@ -106,6 +142,9 @@ async def upload_logo(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    from repositories.company_repository import CompanyRepository
+    if CompanyRepository().get_by_id(company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
 
     # Validate MIME type
     content_type = file.content_type or ""
@@ -138,7 +177,8 @@ async def upload_logo(
 
     # Update DB
     relative_path = str(logo_path)
-    _company_vm.upload_logo_path(company_id, relative_path)
+    if not _company_vm.upload_logo_path(company_id, relative_path):
+        raise HTTPException(status_code=404, detail="Company not found")
 
     return {"message": "Logo uploaded", "logo_path": relative_path}
 
@@ -180,6 +220,9 @@ def get_service_types(
     company_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
+    from repositories.company_repository import CompanyRepository
+    if CompanyRepository().get_by_id(company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
     sts = _company_vm.get_service_types(company_id)
     return [asdict(st) for st in sts]
 
@@ -194,5 +237,23 @@ def create_service_type(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    st = _service_type_vm.create_service_type(company_id, body.name, body.operation)
+    from repositories.company_repository import CompanyRepository
+    if CompanyRepository().get_by_id(company_id) is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+    try:
+        st = _service_type_vm.create_service_type(company_id, body.name, body.operation)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="ServiceType already exists") from exc
     return {"id": st.id, "message": "ServiceType created"}
+
+
+@router.delete("/{company_id}")
+def delete_company(
+    company_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if current_user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+    if not _company_vm.deactivate_company(company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    return {"message": "Company deactivated"}

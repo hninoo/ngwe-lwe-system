@@ -249,6 +249,8 @@ class ExchangeRateSubView(QWidget):
     def __init__(self, api: ApiClient) -> None:
         super().__init__()
         self._api = api
+        self._rates_data: list[dict] = []
+        self._editing_rate_id: int | None = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -272,6 +274,16 @@ class ExchangeRateSubView(QWidget):
 
         # Base amount row
         row0 = QHBoxLayout()
+        row0.addWidget(QLabel("Base"))
+        self._base_currency_input = QLineEdit()
+        self._base_currency_input.setText("THB")
+        self._base_currency_input.setFixedWidth(70)
+        row0.addWidget(self._base_currency_input)
+        row0.addWidget(QLabel("Quote"))
+        self._quote_currency_input = QLineEdit()
+        self._quote_currency_input.setText("MMK")
+        self._quote_currency_input.setFixedWidth(70)
+        row0.addWidget(self._quote_currency_input)
         row0.addWidget(QLabel(t("base_amount_thb")))
         self._base_input = QLineEdit()
         self._base_input.setPlaceholderText("1")
@@ -297,9 +309,25 @@ class ExchangeRateSubView(QWidget):
         row1.addStretch()
         lo.addLayout(row1)
 
+        save_row = QHBoxLayout()
         save_btn = _accent_btn(t("save_rate"))
         save_btn.clicked.connect(self._on_save)
-        lo.addWidget(save_btn)
+        save_row.addWidget(save_btn)
+        clear_btn = _accent_btn("New", ACCENT_YELLOW)
+        clear_btn.clicked.connect(self._clear_edit)
+        save_row.addWidget(clear_btn)
+        save_row.addStretch()
+        lo.addLayout(save_row)
+
+        cols = ["ID", "Pair", "Base", "Buy", "Sell", "Updated", "Edit", "Delete"]
+        self._rate_table = QTableWidget(0, len(cols))
+        self._rate_table.setHorizontalHeaderLabels(cols)
+        self._rate_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._rate_table.verticalHeader().setVisible(False)
+        hdr = self._rate_table.horizontalHeader()
+        for i in range(len(cols)):
+            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        lo.addWidget(self._rate_table)
 
         self._status = _status_lbl()
         lo.addWidget(self._status)
@@ -324,8 +352,34 @@ class ExchangeRateSubView(QWidget):
             self._buy_input.setText(f"{buy:.4f}" if buy else "")
             self._sell_input.setText(f"{sell:.4f}" if sell else "")
             self._update_hint(base, sell)
-        except Exception:
-            pass
+            self._base_currency_input.setText(str(rate.get("base_currency") or "THB"))
+            self._quote_currency_input.setText(str(rate.get("quote_currency") or "MMK"))
+            self._load_rate_table()
+        except Exception as e:
+            _set_err(self._status, f"Error: {e}")
+
+    def _load_rate_table(self) -> None:
+        self._rates_data = self._api.get_exchange_rates()
+        self._rate_table.setRowCount(len(self._rates_data))
+        for row, rate in enumerate(self._rates_data):
+            cells = [
+                str(rate.get("id", "")),
+                f"{rate.get('base_currency', '')}/{rate.get('quote_currency', '')}",
+                f"{float(rate.get('base_amount') or 0):g}",
+                f"{float(rate.get('buy_rate') or 0):.4f}",
+                f"{float(rate.get('sell_rate') or 0):.4f}",
+                str(rate.get("updated_at") or ""),
+            ]
+            for col, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._rate_table.setItem(row, col, item)
+            edit_btn = QPushButton("Edit")
+            edit_btn.clicked.connect(lambda _, r=rate: self._edit_rate(r))
+            self._rate_table.setCellWidget(row, 6, edit_btn)
+            del_btn = QPushButton("Delete")
+            del_btn.clicked.connect(lambda _, rid=rate.get("id"): self._delete_rate(int(rid)))
+            self._rate_table.setCellWidget(row, 7, del_btn)
 
     def _on_input_changed(self) -> None:
         try:
@@ -351,11 +405,49 @@ class ExchangeRateSubView(QWidget):
             base = float(self._base_input.text() or 1)
             buy  = float(self._buy_input.text())
             sell = float(self._sell_input.text())
-            self._api.update_exchange_rate(buy, sell, base_amount=base)
+            data = {
+                "base_currency": self._base_currency_input.text().strip() or "THB",
+                "quote_currency": self._quote_currency_input.text().strip() or "MMK",
+                "base_amount": base,
+                "buy_rate": buy,
+                "sell_rate": sell,
+            }
+            if self._editing_rate_id is None:
+                self._api.update_exchange_rate(
+                    buy, sell, base_amount=base,
+                    base=data["base_currency"], quote=data["quote_currency"],
+                )
+            else:
+                self._api.patch_exchange_rate(self._editing_rate_id, data)
             _set_ok(self._status, t("rate_saved"))
+            self._editing_rate_id = None
             self.load_data()
         except Exception as e:
             _set_err(self._status, f"Error: {e}")
+
+    def _edit_rate(self, rate: dict) -> None:
+        self._editing_rate_id = int(rate["id"])
+        self._base_currency_input.setText(str(rate.get("base_currency") or "THB"))
+        self._quote_currency_input.setText(str(rate.get("quote_currency") or "MMK"))
+        self._base_input.setText(f"{float(rate.get('base_amount') or 1):g}")
+        self._buy_input.setText(f"{float(rate.get('buy_rate') or 0):.4f}")
+        self._sell_input.setText(f"{float(rate.get('sell_rate') or 0):.4f}")
+
+    def _delete_rate(self, rate_id: int) -> None:
+        try:
+            self._api.delete_exchange_rate(rate_id)
+            _set_ok(self._status, "Rate deleted.")
+            self.load_data()
+        except Exception as e:
+            _set_err(self._status, f"Error: {e}")
+
+    def _clear_edit(self) -> None:
+        self._editing_rate_id = None
+        self._base_currency_input.setText("THB")
+        self._quote_currency_input.setText("MMK")
+        self._base_input.setText("1")
+        self._buy_input.clear()
+        self._sell_input.clear()
 
 
 # ════════════════════════════════════════════════════════════
@@ -544,8 +636,8 @@ class CommissionTierSubView(QWidget):
                 )
                 del_btn.clicked.connect(lambda _, tid=tier["id"]: self._on_delete(tid))
                 self._table.setCellWidget(row, 13, del_btn)
-        except Exception:
-            pass
+        except Exception as e:
+            _set_err(self._status, f"Error: {e}")
 
     def _on_add(self) -> None:
         st_id = self._st_sel.selected_service_type_id()

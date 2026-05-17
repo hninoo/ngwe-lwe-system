@@ -78,9 +78,13 @@ def _ghost_btn(text: str, color: str = ACCENT_BLUE) -> QPushButton:
 class _AddCompanyDialog(QDialog):
     """Simple dialog to create a new company (name + category)."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        company: Optional[dict] = None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(t("add_company"))
+        self.setWindowTitle("Edit Company" if company else t("add_company"))
         self.setMinimumWidth(320)
         self.setStyleSheet(f"background-color: {BG_DARK}; color: {TEXT_PRIMARY};")
 
@@ -90,6 +94,8 @@ class _AddCompanyDialog(QDialog):
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText(t("company_name_ph"))
+        if company:
+            self._name_edit.setText(str(company.get("name") or ""))
         self._name_edit.setStyleSheet(
             f"QLineEdit {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
             f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
@@ -99,6 +105,8 @@ class _AddCompanyDialog(QDialog):
         self._category_combo = QComboBox()
         add_placeholder(self._category_combo)
         self._category_combo.addItems(CATEGORIES)
+        if company and company.get("category") in CATEGORIES:
+            self._category_combo.setCurrentText(company.get("category"))
         self._category_combo.setStyleSheet(
             f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
             f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
@@ -269,6 +277,10 @@ class CompanySettingsView(QWidget):
             logo_btn.clicked.connect(lambda _, cid=company_id, cname=name: self._on_upload_logo(cid, cname))
             actions_layout.addWidget(logo_btn)
 
+            edit_btn = _ghost_btn("Edit", ACCENT_YELLOW)
+            edit_btn.clicked.connect(lambda _, c=company: self._on_edit(c))
+            actions_layout.addWidget(edit_btn)
+
             if is_active:
                 deact_btn = _ghost_btn(t("deactivate"), ACCENT_RED)
                 deact_btn.clicked.connect(lambda _, cid=company_id, cname=name: self._on_deactivate(cid, cname))
@@ -324,6 +336,20 @@ class CompanySettingsView(QWidget):
             mime = MIME_MAP.get(suffix, "image/png")
             self._api.upload_logo(company_id, file_bytes, mime)
             self._show_status(t("logo_uploaded"))
+            self.load_data()
+        except Exception as e:
+            self._show_status(str(e), error=True)
+
+    def _on_edit(self, company: dict) -> None:
+        dlg = _AddCompanyDialog(self, company)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._api.update_company(
+                int(company["id"]),
+                {"name": dlg.company_name, "category": dlg.category},
+            )
+            self._show_status("Company updated.")
             self.load_data()
         except Exception as e:
             self._show_status(str(e), error=True)

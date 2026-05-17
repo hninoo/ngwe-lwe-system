@@ -7,10 +7,12 @@ from pydantic import BaseModel
 from backend.auth import get_current_user
 from backend.money import normalize_money
 from repositories.commission_tier_repository import CommissionTierRepository
+from repositories.service_type_repository import ServiceTypeRepository
 
 router = APIRouter(prefix="/commission-tiers", tags=["commission_tiers"])
 
 _tier_repo = CommissionTierRepository()
+_service_type_repo = ServiceTypeRepository()
 
 
 def _money(value: Optional[float]) -> Optional[float]:
@@ -31,7 +33,10 @@ def _amount(value: Optional[float], field_name: str) -> float:
 
 def _money_or_default(value: Optional[float], default: float = 0.0) -> float:
     normalized = _money(value)
-    return default if normalized is None else normalized
+    normalized = default if normalized is None else normalized
+    if normalized < 0:
+        raise HTTPException(status_code=422, detail="Money values cannot be negative.")
+    return normalized
 
 
 def _first_present(*values: Optional[float]) -> Optional[float]:
@@ -52,6 +57,11 @@ def _tier_to_dict(tier) -> dict:
         "additional_fee_withdraw_amount": data["additional_fee_cash_out_amount"],
     })
     return data
+
+
+def _require_service_type(service_type_id: int) -> None:
+    if _service_type_repo.get_by_id(service_type_id) is None:
+        raise HTTPException(status_code=404, detail="ServiceType not found")
 
 
 class TierRequest(BaseModel):
@@ -80,6 +90,7 @@ def get_tiers(
     service_type_id: int,
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
+    _require_service_type(service_type_id)
     tiers = _tier_repo.get_by_service_type(service_type_id)
     return [_tier_to_dict(t) for t in tiers]
 
@@ -90,6 +101,8 @@ def lookup_tier(
     amount: float,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
+    amount = _amount(amount, "amount")
+    _require_service_type(service_type_id)
     tier = _tier_repo.get_tier_for_amount(service_type_id, amount)
     if tier is None:
         return {
@@ -109,6 +122,7 @@ def create_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    _require_service_type(body.service_type_id)
     amount_from = _amount(body.amount_from, "amount_from")
     amount_to = _amount(body.amount_to, "amount_to")
     err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to)
@@ -151,6 +165,9 @@ def update_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
+    if _tier_repo.get_by_id(tier_id) is None:
+        raise HTTPException(status_code=404, detail="Tier not found")
+    _require_service_type(body.service_type_id)
     amount_from = _amount(body.amount_from, "amount_from")
     amount_to = _amount(body.amount_to, "amount_to")
     err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to, exclude_id=tier_id)
@@ -192,5 +209,6 @@ def delete_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    _tier_repo.delete(tier_id)
+    if not _tier_repo.delete(tier_id):
+        raise HTTPException(status_code=404, detail="Tier not found")
     return {"message": "Tier deleted"}
