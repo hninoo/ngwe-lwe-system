@@ -196,6 +196,8 @@ async def create_cash_out(
         active = _float_repo.get_active_float_for_employee(current_user["user_id"])
         if active is None:
             raise HTTPException(403, "No active float. Receive your float from the cashier first.")
+        if body.denominations is None:
+            raise HTTPException(422, "Employees must provide denomination breakdown for Cash Out.")
     employee_id = current_user["user_id"] if current_user["role"] == "employee" else None
     try:
         txn = _txn_vm.create_cash_out(

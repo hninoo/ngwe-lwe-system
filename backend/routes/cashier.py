@@ -394,6 +394,19 @@ def get_float_denomination_balance(
     if current_user["role"] == "employee" and cash_float.employee_id != current_user["user_id"]:
         raise HTTPException(403, "Access denied")
     balance = _vault_service.get_float_denomination_balance(float_id)
+    current_balance = int(cash_float.current_balance or 0)
+    raw_total = sum(d * q for d, q in balance.items())
+    if current_balance <= 0:
+        balance = {}
+    elif raw_total > current_balance:
+        remaining = current_balance
+        capped: dict[int, int] = {}
+        for denom in sorted(DENOMINATIONS, reverse=True):
+            qty = min(int(balance.get(denom, 0) or 0), remaining // denom)
+            if qty > 0:
+                capped[denom] = qty
+                remaining -= denom * qty
+        balance = capped
     total = sum(d * q for d, q in balance.items())
     return {
         "float_id": float_id,

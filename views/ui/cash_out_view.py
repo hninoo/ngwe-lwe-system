@@ -1,5 +1,7 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QGridLayout, QLineEdit, QTableWidgetItem
+from typing import Optional
+
+from PyQt6.QtWidgets import QGridLayout, QLineEdit, QTableWidgetItem, QVBoxLayout, QWidget
 
 from i18n import t
 from views.ui.base_form_view import BaseFormView
@@ -10,6 +12,10 @@ from views.transaction_view import (
     format_datetime,
 )
 from views.widgets.company_selector import ServiceTypeSelector
+from views.widgets.denomination_input import DenominationInputWidget
+
+
+DENOMINATIONS = [20000, 10000, 5000, 1000, 500, 200, 100, 50]
 
 
 class CashOutView(BaseFormView):
@@ -20,6 +26,8 @@ class CashOutView(BaseFormView):
     _TXN_STRETCH: set = {1, 2}
 
     def __init__(self, api, navigate, repository=None) -> None:
+        self._cash_out_denom_container: Optional[QWidget] = None
+        self._cash_out_denom_widget: Optional[DenominationInputWidget] = None
         super().__init__(
             api,
             navigate,
@@ -70,7 +78,75 @@ class CashOutView(BaseFormView):
 
         lo.addLayout(grid)
         lo.addLayout(self._make_fee_grid())
+        self._cash_out_denom_container = QWidget()
+        self._cash_out_denom_container.setLayout(QVBoxLayout())
+        self._cash_out_denom_container.layout().setContentsMargins(0, 0, 0, 0)
+        self._cash_out_denom_container.layout().setSpacing(0)
+        lo.addWidget(self._cash_out_denom_container)
+        self._set_cash_out_denom_widget()
         self._make_note_screenshot(lo)
+
+    def load_data(self) -> None:
+        super().load_data()
+        self._refresh_cash_out_denominations()
+
+    def _refresh_cash_out_denominations(self) -> None:
+        if not self._cash_out_denom_container:
+            return
+        try:
+            active_float = getattr(self, "_active_float", None)
+            if not active_float:
+                return
+            balance = self._repository.get_float_denomination_balance(active_float["id"])
+            max_quantities = balance.get("denominations", {}) or {}
+            current = self._cash_out_denom_widget.breakdown()
+            self._set_cash_out_denom_widget(max_quantities)
+            self._cash_out_denom_widget.set_breakdown(current)
+        except Exception:
+            pass
+
+    def _set_cash_out_denom_widget(self, max_quantities: Optional[dict] = None) -> None:
+        if not self._cash_out_denom_container:
+            return
+        layout = self._cash_out_denom_container.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self._cash_out_denom_widget = DenominationInputWidget(
+            DENOMINATIONS,
+            title="Mini Vault Cash Out Denominations",
+            max_quantities=max_quantities,
+        )
+        self._cash_out_denom_widget.total_changed.connect(lambda _total: self._on_amount_changed())
+        layout.addWidget(self._cash_out_denom_widget)
+
+    def _cash_out_denominations_payload(self) -> Optional[dict[str, int]]:
+        if self._repository.current_user.get("role") != "employee":
+            return None
+        return self._cash_out_denom_widget.breakdown() if self._cash_out_denom_widget else None
+
+    def _validate_cash_out_denominations(self) -> Optional[str]:
+        if self._repository.current_user.get("role") != "employee":
+            return None
+        if not self._cash_out_denom_widget:
+            return "Mini Vault denomination breakdown is required."
+        total = self._cash_out_denom_widget.total()
+        amount = int(self._parse_amount())
+        if total <= 0:
+            return "Mini Vault denomination breakdown is required."
+        if total != amount:
+            return (
+                f"Mini Vault denomination total {total:,.0f} MMK must match "
+                f"Cash Out amount {amount:,.0f} MMK."
+            )
+        return None
+
+    def _clear_cash_out_denominations(self) -> None:
+        if self._cash_out_denom_widget:
+            self._cash_out_denom_widget.clear()
+            self._refresh_cash_out_denominations()
 
     # ── Table ────────────────────────────────────────────────────────────────
 

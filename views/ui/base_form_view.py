@@ -193,6 +193,15 @@ class BaseFormView(QWidget):
     def _clear_cash_in_overpayment(self) -> None:
         return None
 
+    def _cash_out_denominations_payload(self) -> Optional[dict[str, int]]:
+        return None
+
+    def _validate_cash_out_denominations(self) -> Optional[str]:
+        return None
+
+    def _clear_cash_out_denominations(self) -> None:
+        return None
+
     # ── Shared field-building helpers ───────────────────────────────────────
 
     @staticmethod
@@ -814,6 +823,7 @@ class BaseFormView(QWidget):
                 additional_fee_amount=additional,
                 fee_account_id=fee_acc,
                 note=note,
+                denominations=self._cash_out_denominations_payload(),
             )
         elif action == "transfer":
             to_acc_id = self._to_account_selector.selected_account_id() if self._to_account_selector else None
@@ -891,6 +901,10 @@ class BaseFormView(QWidget):
                 overpayment_error = self._validate_cash_in_overpayment()
                 if overpayment_error:
                     return overpayment_error
+            if self._selected_action == "cash_out":
+                denomination_error = self._validate_cash_out_denominations()
+                if denomination_error:
+                    return denomination_error
 
         if self._selected_action == "transfer":
             if self._to_account_selector is None:
@@ -951,6 +965,7 @@ class BaseFormView(QWidget):
             self._screenshot_label.setText(t("no_file_selected"))
             self._screenshot_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         self._clear_cash_in_overpayment()
+        self._clear_cash_out_denominations()
 
     def _show_status(self, msg: str, error: bool = False) -> None:
         self._status_label.setText(msg)

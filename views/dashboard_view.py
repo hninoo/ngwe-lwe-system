@@ -317,6 +317,7 @@ class DashboardPage(QWidget):
             ("Transfer", "Bank-to-bank movement.", "TR", ACCENT_BLUE, 1, "transfer"),
             ("Exchange", "Currency conversion.", "EX", ACCENT_YELLOW, 1, "exchange"),
             ("Vault", "Denominations and cash total.", "VA", ACCENT_TEAL, 4, "vault"),
+            ("Account Overview", "View account balances.", "AC", ACCENT_BLUE, 5, "accounts"),
             ("History", "View all past records.", "HI", ACCENT_MAUVE, 2, None),
             ("Profile", "User settings and account info.", "PR", ACCENT_TEAL, 3, None),
         ]
@@ -1108,6 +1109,12 @@ class DashboardView(QMainWindow):
         if transaction_type == "vault":
             from views.ui.vault_view import VaultView
             self._next = VaultView(self._api)
+            self._next.show()
+            self.close()
+            return
+        if transaction_type == "accounts":
+            from views.ui.account_overview_view import AccountOverviewWindow
+            self._next = AccountOverviewWindow(self._api)
             self._next.show()
             self.close()
             return
