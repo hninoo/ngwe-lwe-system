@@ -101,6 +101,7 @@ class CashInView(BaseFormView):
             denoms,
             title="Change from employee float",
         )
+        self._change_breakdown.setEnabled(False)
         self._change_breakdown.total_changed.connect(lambda _total: self._update_overpayment_hint())
         overpay_grid.addWidget(self._change_breakdown, 1, 0, 1, 12)
         lo.addLayout(overpay_grid)
@@ -131,19 +132,38 @@ class CashInView(BaseFormView):
     def _update_overpayment_hint(self) -> None:
         amount = self._parse_amount()
         received = self._parse_amount_received()
-        change_due = max(received - amount, 0)
+
         if received <= 0:
             text = "No overpayment change"
             color = TEXT_MUTED
+            self._set_change_breakdown_enabled(False)
+        elif received < amount:
+            text = "Amount received must be greater than or equal to Cash In amount."
+            color = ACCENT_RED
+            self._set_change_breakdown_enabled(False)
+        elif received == amount:
+            text = "No overpayment change"
+            color = TEXT_MUTED
+            self._set_change_breakdown_enabled(False)
         else:
+            self._set_change_breakdown_enabled(True)
+            change_due = received - amount
             change_total = self._change_breakdown.total()
             text = (
-                f"Change due: {change_due:,.0f} MMK | "
-                f"Change breakdown: {change_total:,.0f}"
+                f"Cash change due: {change_due:,.0f} MMK | "
+                f"Breakdown: {change_total:,.0f} | "
+                f"Digital account change: {-amount:,.0f}"
             )
             color = ACCENT_GREEN if change_due == change_total else ACCENT_RED
         self._overpayment_hint.setText(text)
         self._overpayment_hint.setStyleSheet(f"color: {color}; font-size: 12px;")
+
+    def _set_change_breakdown_enabled(self, enabled: bool) -> None:
+        if not hasattr(self, "_change_breakdown"):
+            return
+        if not enabled and self._change_breakdown.total() != 0:
+            self._change_breakdown.clear()
+        self._change_breakdown.setEnabled(enabled)
 
     def _cash_in_overpayment_payload(self) -> dict:
         received = self._parse_amount_received()

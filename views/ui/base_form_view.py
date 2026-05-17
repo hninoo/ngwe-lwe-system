@@ -441,7 +441,8 @@ class BaseFormView(QWidget):
             if self._total_charge_display:
                 self._total_charge_display.setText("0")
             if self._balance_change_display:
-                self._balance_change_display.setText(f"{amount:,.0f}")
+                balance_change = -amount if self._selected_action in ("cash_in", "transfer") else amount
+                self._balance_change_display.setText(f"{balance_change:,.0f}")
             if self._fee_hint:
                 self._fee_hint.setText(t("no_tier"))
                 self._fee_hint.setStyleSheet(
@@ -467,11 +468,11 @@ class BaseFormView(QWidget):
         commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
         additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
 
-        # cash_out credits the selected digital account; only transfer debits it.
-        if self._selected_action in ("cash_in", "cash_out", "exchange"):
-            balance_change = amount
-        else:
+        # Match repository balance effects: Cash In and Transfer debit the selected account.
+        if self._selected_action in ("cash_in", "transfer"):
             balance_change = -amount
+        else:
+            balance_change = amount
 
         total_fee = fee_amount + additional
         customer_total = amount + total_fee
@@ -568,10 +569,10 @@ class BaseFormView(QWidget):
     def _calc_projected(self, balance: float, amount: float) -> float:
         if amount <= 0:
             return balance
-        # cash_out credits the selected digital account; only transfer debits it.
-        if self._selected_action in ("cash_in", "cash_out", "exchange"):
-            return balance + amount
-        return balance - amount
+        # Match repository balance effects: Cash In and Transfer debit the selected account.
+        if self._selected_action in ("cash_in", "transfer"):
+            return balance - amount
+        return balance + amount
 
     def _update_balance_hint(self) -> None:
         if not self._balance_hint:

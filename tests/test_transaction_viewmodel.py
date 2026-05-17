@@ -207,6 +207,7 @@ def test_employee_cash_in_overpayment_deducts_change_from_float():
         )
 
     account_repo.decrement_balance.assert_any_call(1, Decimal("25000.0"))
+    account_repo.increment_balance.assert_not_called()
     float_repo.deduct_denominations.assert_called_once_with(5, {5000: 1})
     float_repo.deduct_float_balance.assert_called_once_with(7, 5000.0)
     created = vm._txn_repo.create.call_args.args[0]
