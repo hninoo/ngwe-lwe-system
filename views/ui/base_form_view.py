@@ -467,8 +467,8 @@ class BaseFormView(QWidget):
         commission = round(amount * comm_raw, 2) if comm_type_val == "PERCENTAGE" else comm_raw
         additional = round(amount * add_raw, 2) if add_type == "PERCENTAGE" else add_raw
 
-        # cash_in/exchange: account balance increases; cash_out/transfer: decreases
-        if self._selected_action in ("cash_in", "exchange"):
+        # cash_out credits the selected digital account; only transfer debits it.
+        if self._selected_action in ("cash_in", "cash_out", "exchange"):
             balance_change = amount
         else:
             balance_change = -amount
@@ -568,8 +568,8 @@ class BaseFormView(QWidget):
     def _calc_projected(self, balance: float, amount: float) -> float:
         if amount <= 0:
             return balance
-        # cash_in/exchange: balance increases; cash_out/transfer: decreases
-        if self._selected_action in ("cash_in", "exchange"):
+        # cash_out credits the selected digital account; only transfer debits it.
+        if self._selected_action in ("cash_in", "cash_out", "exchange"):
             return balance + amount
         return balance - amount
 
@@ -901,8 +901,8 @@ class BaseFormView(QWidget):
             if to_acc_id == self._account_selector.selected_account_id():
                 return t("err_same_account")
 
-        # Insufficient-balance check for actions that decrease the account balance
-        if self._selected_action in ("cash_out", "transfer"):
+        # Insufficient-balance check for actions that decrease the account balance.
+        if self._selected_action == "transfer":
             account = self._get_selected_account()
             if account:
                 balance = self._get_fresh_balance(account["id"])
