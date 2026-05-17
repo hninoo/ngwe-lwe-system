@@ -16,11 +16,15 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QTableWidget,
@@ -110,6 +114,132 @@ def _set_err(lbl: QLabel, msg: str) -> None:
     lbl.setText(msg)
     lbl.setStyleSheet(f"color: {ACCENT_RED};")
     lbl.setVisible(True)
+
+
+def _styled_line(text: str = "") -> QLineEdit:
+    line = QLineEdit(text)
+    line.setStyleSheet(
+        f"QLineEdit {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+        f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
+    )
+    return line
+
+
+def _styled_combo(required: bool = False) -> QComboBox:
+    combo = QComboBox()
+    if not required:
+        add_placeholder(combo)
+    combo.addItems(["FIXED", "PERCENTAGE"])
+    combo.setStyleSheet(
+        f"QComboBox {{ background: {BG_INPUT}; color: {TEXT_PRIMARY}; "
+        f"border: 1px solid {INPUT_BORDER}; border-radius: 4px; padding: 6px 10px; }}"
+    )
+    return combo
+
+
+def _set_combo_text(combo: QComboBox, value: str | None) -> None:
+    if not value:
+        return
+    idx = combo.findText(value)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+
+
+class _TierEditDialog(QDialog):
+    def __init__(self, tier: dict, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit Commission Tier")
+        self.setMinimumWidth(420)
+        self.setStyleSheet(f"background-color: {BG_DARK}; color: {TEXT_PRIMARY};")
+
+        form = QFormLayout(self)
+        form.setContentsMargins(20, 20, 20, 20)
+        form.setSpacing(10)
+
+        self._from = _styled_line(str(tier.get("amount_from") or 0))
+        self._to = _styled_line(str(tier.get("amount_to") or 0))
+        self._fee_type = _styled_combo(required=True)
+        self._fee_dep = _styled_line(str(tier.get("fee_amount_deposit") or 0))
+        self._fee_with = _styled_line(str(tier.get("fee_amount_withdraw") or 0))
+        self._comm_type = _styled_combo()
+        self._comm_dep = _styled_line(str(tier.get("comm_deposit") or 0))
+        self._comm_with = _styled_line(str(tier.get("comm_withdraw") or 0))
+        self._add_type = _styled_combo()
+        self._add_dep = _styled_line(str(tier.get("additional_fee_deposit_amount") or 0))
+        self._add_with = _styled_line(str(tier.get("additional_fee_withdraw_amount") or 0))
+
+        _set_combo_text(self._fee_type, tier.get("fee_amount_type") or "FIXED")
+        _set_combo_text(self._comm_type, tier.get("comm_type"))
+        _set_combo_text(self._add_type, tier.get("additional_fee_type"))
+
+        form.addRow(t("tier_from_amount"), self._from)
+        form.addRow(t("tier_to_amount"), self._to)
+        form.addRow(t("tier_fee_type"), self._fee_type)
+        form.addRow(t("tier_fee_dep"), self._fee_dep)
+        form.addRow(t("tier_fee_with"), self._fee_with)
+        form.addRow(t("tier_comm_type"), self._comm_type)
+        form.addRow(t("tier_comm_dep"), self._comm_dep)
+        form.addRow(t("tier_comm_with"), self._comm_with)
+        form.addRow(t("tier_add_type"), self._add_type)
+        form.addRow(t("tier_add_dep"), self._add_dep)
+        form.addRow(t("tier_add_with"), self._add_with)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _float(self, line: QLineEdit, default: float | None = 0.0) -> float | None:
+        text = line.text().strip()
+        if not text and default is None:
+            return None
+        if not text:
+            return default
+        return float(text)
+
+    def _on_accept(self) -> None:
+        try:
+            amount_from = self._float(self._from, default=None)
+            amount_to = self._float(self._to, default=None)
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Amounts must be valid numbers.")
+            return
+        if amount_from is None or amount_from <= 0:
+            QMessageBox.warning(self, "Error", t("err_tier_from_required"))
+            return
+        if amount_to is None or amount_to == 0:
+            QMessageBox.warning(self, "Error", t("err_tier_to_required"))
+            return
+        if amount_to <= amount_from:
+            QMessageBox.warning(self, "Error", t("err_tier_range_order"))
+            return
+        self.accept()
+
+    @property
+    def data(self) -> dict:
+        return {
+            "amount_from": self._float(self._from, default=0.0),
+            "amount_to": self._float(self._to, default=0.0),
+            "fee_amount_type": self._fee_type.currentText(),
+            "fee_amount_deposit": self._float(self._fee_dep, default=0.0),
+            "fee_amount_withdraw": self._float(self._fee_with, default=0.0),
+            "comm_type": (
+                self._comm_type.currentText()
+                if self._comm_type.currentIndex() > 0
+                else "FIXED"
+            ),
+            "comm_deposit": self._float(self._comm_dep, default=0.0),
+            "comm_withdraw": self._float(self._comm_with, default=0.0),
+            "additional_fee_type": (
+                self._add_type.currentText()
+                if self._add_type.currentIndex() > 0
+                else "FIXED"
+            ),
+            "additional_fee_deposit_amount": self._float(self._add_dep, default=0.0),
+            "additional_fee_withdraw_amount": self._float(self._add_with, default=0.0),
+        }
 
 
 # ════════════════════════════════════════════════════════════
@@ -270,7 +400,7 @@ class CommissionTierSubView(QWidget):
             t("tier_col_fee_type"), t("tier_col_fee_dep"), t("tier_col_fee_with"),
             t("tier_col_comm_type"), t("tier_col_comm_dep"), t("tier_col_comm_with"),
             t("tier_col_add_type"), t("tier_col_add_dep"), t("tier_col_add_with"),
-            t("tier_col_delete"),
+            "Edit", t("tier_col_delete"),
         ]
         self._table = QTableWidget(0, len(_COLS))
         self._table.setHorizontalHeaderLabels(_COLS)
@@ -384,19 +514,28 @@ class CommissionTierSubView(QWidget):
                     f"{float(af):,.0f}" if af is not None else "—",
                     f"{float(at_):,.0f}" if at_ is not None else "—",
                     tier.get("fee_amount_type") or "FIXED",
-                    f"{float(tier.get('fee_amount_cash_in') or 0):,.4g}",
-                    f"{float(tier.get('fee_amount_cash_out') or 0):,.4g}",
+                    f"{float(tier.get('fee_amount_deposit') or 0):,.4g}",
+                    f"{float(tier.get('fee_amount_withdraw') or 0):,.4g}",
                     tier.get("comm_type") or "FIXED",
-                    f"{float(tier.get('comm_cash_in') or 0):,.4g}",
-                    f"{float(tier.get('comm_cash_out') or 0):,.4g}",
+                    f"{float(tier.get('comm_deposit') or 0):,.4g}",
+                    f"{float(tier.get('comm_withdraw') or 0):,.4g}",
                     tier.get("additional_fee_type") or "FIXED",
-                    f"{float(tier.get('additional_fee_cash_in_amount') or 0):,.4g}",
-                    f"{float(tier.get('additional_fee_cash_out_amount') or 0):,.4g}",
+                    f"{float(tier.get('additional_fee_deposit_amount') or 0):,.4g}",
+                    f"{float(tier.get('additional_fee_withdraw_amount') or 0):,.4g}",
                 ]
                 for col, text in enumerate(cells):
                     item = QTableWidgetItem(text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     self._table.setItem(row, col, item)
+                edit_btn = QPushButton("Edit")
+                edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                edit_btn.setStyleSheet(
+                    f"QPushButton {{ background: {BG_DARK}; color: {ACCENT_BLUE}; "
+                    f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}"
+                )
+                edit_btn.clicked.connect(lambda _, tr=tier: self._on_edit(tr))
+                self._table.setCellWidget(row, 12, edit_btn)
+
                 del_btn = QPushButton(t("tier_col_delete"))
                 del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 del_btn.setStyleSheet(
@@ -404,7 +543,7 @@ class CommissionTierSubView(QWidget):
                     f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; }}"
                 )
                 del_btn.clicked.connect(lambda _, tid=tier["id"]: self._on_delete(tid))
-                self._table.setCellWidget(row, 12, del_btn)
+                self._table.setCellWidget(row, 13, del_btn)
         except Exception:
             pass
 
@@ -413,15 +552,13 @@ class CommissionTierSubView(QWidget):
         if st_id is None:
             _set_err(self._status, t("err_select_service_type"))
             return
-        if (self._new_fee_type.currentIndex() <= 0
-                or self._new_comm_type.currentIndex() <= 0
-                or self._new_add_type.currentIndex() <= 0):
-            _set_err(self._status, "Please select all fee/commission types.")
+        if self._new_fee_type.currentIndex() <= 0:
+            _set_err(self._status, t("err_select_fee_type"))
             return
         # Client-side range validation
         af_text = self._new_from.text().strip()
         at_text = self._new_to.text().strip()
-        if not af_text or float(af_text) == 0:
+        if not af_text:
             _set_err(self._status, t("err_tier_from_required"))
             return
         if not at_text or float(at_text) == 0:
@@ -429,6 +566,9 @@ class CommissionTierSubView(QWidget):
             return
         af_val = float(af_text)
         at_val = float(at_text)
+        if af_val <= 0:
+            _set_err(self._status, t("err_tier_from_required"))
+            return
         if at_val <= af_val:
             _set_err(self._status, t("err_tier_range_order"))
             return
@@ -436,6 +576,8 @@ class CommissionTierSubView(QWidget):
             ef = tier.get("amount_from")
             et = tier.get("amount_to")
             if ef is None or et is None:
+                continue
+            if float(ef) == 1 and float(et) >= 999999999999:
                 continue
             if af_val < float(et) and at_val > float(ef):
                 _set_err(self._status, t("err_tier_overlap").format(
@@ -449,20 +591,63 @@ class CommissionTierSubView(QWidget):
                 "amount_from": af_val,
                 "amount_to":   at_val,
                 "fee_amount_type":     self._new_fee_type.currentText(),
-                "fee_amount_cash_in":  float(self._new_fee.text()   or 0),
-                "fee_amount_cash_out": float(self._new_fee_w.text()  or 0),
-                "comm_type":           self._new_comm_type.currentText(),
-                "comm_cash_in":        float(self._new_comm_dep.text() or 0),
-                "comm_cash_out":       float(self._new_comm_w.text()   or 0),
-                "additional_fee_type":             self._new_add_type.currentText(),
-                "additional_fee_cash_in_amount":   float(self._new_add_dep.text() or 0),
-                "additional_fee_cash_out_amount":  float(self._new_add_w.text()   or 0),
+                "fee_amount_deposit":  float(self._new_fee.text()   or 0),
+                "fee_amount_withdraw": float(self._new_fee_w.text()  or 0),
+                "comm_type": (
+                    self._new_comm_type.currentText()
+                    if self._new_comm_type.currentIndex() > 0
+                    else "FIXED"
+                ),
+                "comm_deposit":        float(self._new_comm_dep.text() or 0),
+                "comm_withdraw":       float(self._new_comm_w.text()   or 0),
+                "additional_fee_type": (
+                    self._new_add_type.currentText()
+                    if self._new_add_type.currentIndex() > 0
+                    else "FIXED"
+                ),
+                "additional_fee_deposit_amount":   float(self._new_add_dep.text() or 0),
+                "additional_fee_withdraw_amount":  float(self._new_add_w.text()   or 0),
             }
             self._api.create_commission_tier(data)
             for w in (self._new_from, self._new_to, self._new_fee, self._new_fee_w,
                       self._new_comm_dep, self._new_comm_w, self._new_add_dep, self._new_add_w):
                 w.clear()
             _set_ok(self._status, t("tier_added"))
+            self._load_tiers()
+        except Exception as e:
+            _set_err(self._status, f"Error: {e}")
+
+    def _on_edit(self, tier: dict) -> None:
+        st_id = tier.get("service_type_id") or self._st_sel.selected_service_type_id()
+        if st_id is None:
+            _set_err(self._status, t("err_select_service_type"))
+            return
+        dlg = _TierEditDialog(tier, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        data = dlg.data
+        data["service_type_id"] = st_id
+
+        af_val = float(data["amount_from"])
+        at_val = float(data["amount_to"])
+        for existing in self._tiers_data:
+            if existing.get("id") == tier.get("id"):
+                continue
+            ef = existing.get("amount_from")
+            et = existing.get("amount_to")
+            if ef is None or et is None:
+                continue
+            if float(ef) == 1 and float(et) >= 999999999999:
+                continue
+            if af_val < float(et) and at_val > float(ef):
+                _set_err(self._status, t("err_tier_overlap").format(
+                    af=f"{af_val:,.0f}", at=f"{at_val:,.0f}",
+                    ef=f"{float(ef):,.0f}", et=f"{float(et):,.0f}",
+                ))
+                return
+        try:
+            self._api.update_commission_tier(int(tier["id"]), data)
+            _set_ok(self._status, "Commission tier updated successfully.")
             self._load_tiers()
         except Exception as e:
             _set_err(self._status, f"Error: {e}")

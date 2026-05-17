@@ -107,3 +107,55 @@ def test_tier_lookup_no_match(seeded_db):
         tier = repo.get_tier_for_amount(service_type_id=fake_id, amount=50000)
 
     assert tier is None, "Should return None for an unknown service_type_id"
+
+
+def test_tier_lookup_uses_next_adjacent_range_at_boundary(seeded_db):
+    """Adjacent ranges are half-open: [from, to), so amount == to uses the next tier."""
+    from repositories.commission_tier_repository import CommissionTierRepository
+
+    st_id = _get_service_type_id(seeded_db, "Wave Money", "Pay_To_Pay")
+    seeded_db.execute(
+        "INSERT INTO commission_tiers "
+        "(service_type_id, amount_from, amount_to, comm_deposit, comm_withdraw) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (st_id, 100000, 200000, 111.0, 111.0),
+    )
+    seeded_db.execute(
+        "INSERT INTO commission_tiers "
+        "(service_type_id, amount_from, amount_to, comm_deposit, comm_withdraw) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (st_id, 200000, 300000, 222.0, 222.0),
+    )
+    seeded_db.commit()
+
+    with _patch_db(seeded_db):
+        repo = CommissionTierRepository()
+        tier = repo.get_tier_for_amount(service_type_id=st_id, amount=200000)
+
+    assert tier is not None
+    assert tier.amount_from == 200000
+    assert tier.amount_to == 300000
+    assert tier.comm_cash_in == 222.0
+
+
+def test_tier_lookup_prefers_bounded_range_over_catch_all(seeded_db):
+    """Migrated catch-all tiers should not hide newly configured From/To ranges."""
+    from repositories.commission_tier_repository import CommissionTierRepository
+
+    st_id = _get_service_type_id(seeded_db, "Wave Money", "Pay_To_Pay")
+    seeded_db.execute(
+        "INSERT INTO commission_tiers "
+        "(service_type_id, amount_from, amount_to, comm_deposit, comm_withdraw) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (st_id, 400000, 500000, 444.0, 444.0),
+    )
+    seeded_db.commit()
+
+    with _patch_db(seeded_db):
+        repo = CommissionTierRepository()
+        tier = repo.get_tier_for_amount(service_type_id=st_id, amount=450000)
+
+    assert tier is not None
+    assert tier.amount_from == 400000
+    assert tier.amount_to == 500000
+    assert tier.comm_cash_in == 444.0

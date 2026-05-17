@@ -18,14 +18,14 @@ class CommissionTierRepository(BaseRepository):
             amount_from=float(row["amount_from"]) if row["amount_from"] is not None else None,
             amount_to=float(row["amount_to"]) if row["amount_to"] is not None else None,
             fee_amount_type=row["fee_amount_type"] or "FIXED",
-            fee_amount_cash_in=float(row["fee_amount_cash_in"]),
-            fee_amount_cash_out=float(row["fee_amount_cash_out"]),
+            fee_amount_cash_in=float(row["fee_amount_deposit"]),
+            fee_amount_cash_out=float(row["fee_amount_withdraw"]),
             comm_type=row["comm_type"] or "FIXED",
-            comm_cash_in=float(row["comm_cash_in"]),
-            comm_cash_out=float(row["comm_cash_out"]),
+            comm_cash_in=float(row["comm_deposit"] or 0.0),
+            comm_cash_out=float(row["comm_withdraw"] or 0.0),
             additional_fee_type=row["additional_fee_type"] or "FIXED",
-            additional_fee_cash_in_amount=float(row["additional_fee_cash_in_amount"]),
-            additional_fee_cash_out_amount=float(row["additional_fee_cash_out_amount"]),
+            additional_fee_cash_in_amount=float(row["additional_fee_deposit_amount"] or 0.0),
+            additional_fee_cash_out_amount=float(row["additional_fee_withdraw_amount"] or 0.0),
             is_active=bool(row["is_active"]),
         )
 
@@ -39,7 +39,10 @@ class CommissionTierRepository(BaseRepository):
                 "SELECT * FROM commission_tiers "
                 "WHERE service_type_id = ? AND is_active = 1 "
                 "AND (amount_from IS NULL OR amount_from <= ?) "
-                "AND (amount_to IS NULL OR amount_to >= ?) "
+                "AND (amount_to IS NULL OR amount_to > ?) "
+                "ORDER BY "
+                "CASE WHEN amount_from = 1 AND amount_to >= 999999999999 THEN 1 ELSE 0 END, "
+                "amount_from ASC, id ASC "
                 "LIMIT 1",
                 (service_type_id, amount, amount),
             )
@@ -54,10 +57,10 @@ class CommissionTierRepository(BaseRepository):
         exclude_id: Optional[int] = None,
     ) -> Optional[str]:
         """Validate range rules. Returns an error string on failure, None on success."""
-        if amount_from is None or amount_from == 0:
-            return "From amount must not be null or zero."
+        if amount_from is None or amount_from <= 0:
+            return "From amount must be greater than zero."
         if amount_to is None or amount_to == 0:
-            return "To amount must not be null or zero."
+            return "To amount must be greater than zero."
         if amount_to <= amount_from:
             return "To amount must be greater than From amount."
 
@@ -78,6 +81,8 @@ class CommissionTierRepository(BaseRepository):
             ef = float(row["amount_from"]) if row["amount_from"] is not None else None
             et = float(row["amount_to"])   if row["amount_to"]   is not None else None
             if ef is None or et is None:
+                continue
+            if ef == 1 and et >= 999999999999:
                 continue
             # Standard interval overlap: [af, at) overlaps [ef, et) when af < et AND at > ef
             if amount_from < et and amount_to > ef:

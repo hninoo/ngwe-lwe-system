@@ -262,9 +262,11 @@ def seeded_db(tmp_db):
     Extends tmp_db by running _migrate_004 so that companies, service_types
     are present and accounts/commission_tiers use service_type_id FKs.
     """
-    from backend.database import _migrate_004, _migrate_010
+    from backend.database import _migrate_004, _migrate_010, _migrate_015, _migrate_016
     _migrate_004(tmp_db)
     _migrate_010(tmp_db)
+    _migrate_015(tmp_db)
+    _migrate_016(tmp_db)
     yield tmp_db
 
 

@@ -521,20 +521,20 @@ def _migrate_004(conn):
         CREATE TABLE IF NOT EXISTS commission_tiers_v2 (
             id                             INTEGER PRIMARY KEY AUTOINCREMENT,
             service_type_id                INTEGER NOT NULL REFERENCES service_types(id),
-            amount_from                    REAL,
-            amount_to                      REAL,
+            amount_from                    REAL NOT NULL,
+            amount_to                      REAL NOT NULL,
             fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED'
                                            CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
-            fee_amount_cash_in             REAL NOT NULL DEFAULT 0.0,
-            fee_amount_cash_out            REAL NOT NULL DEFAULT 0.0,
-            comm_type                      TEXT NOT NULL DEFAULT 'FIXED'
+            fee_amount_deposit             REAL NOT NULL DEFAULT 0.0,
+            fee_amount_withdraw            REAL NOT NULL DEFAULT 0.0,
+            comm_type                      TEXT DEFAULT 'FIXED'
                                            CHECK(comm_type IN ('FIXED','PERCENTAGE')),
-            comm_cash_in                   REAL NOT NULL DEFAULT 0.0,
-            comm_cash_out                  REAL NOT NULL DEFAULT 0.0,
-            additional_fee_type            TEXT NOT NULL DEFAULT 'FIXED'
+            comm_deposit                   REAL DEFAULT 0.0,
+            comm_withdraw                  REAL DEFAULT 0.0,
+            additional_fee_type            TEXT DEFAULT 'FIXED'
                                            CHECK(additional_fee_type IN ('FIXED','PERCENTAGE')),
-            additional_fee_cash_in_amount  REAL NOT NULL DEFAULT 0.0,
-            additional_fee_cash_out_amount REAL NOT NULL DEFAULT 0.0,
+            additional_fee_deposit_amount  REAL DEFAULT 0.0,
+            additional_fee_withdraw_amount REAL DEFAULT 0.0,
             is_active                      INTEGER NOT NULL DEFAULT 1,
             created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -545,15 +545,16 @@ def _migrate_004(conn):
         conn.execute("""
             INSERT INTO commission_tiers_v2
                 (service_type_id, amount_from, amount_to,
-                 fee_amount_type, fee_amount_cash_in, fee_amount_cash_out,
-                 comm_type, comm_cash_in, comm_cash_out,
-                 additional_fee_type, additional_fee_cash_in_amount,
-                 additional_fee_cash_out_amount, is_active, created_at)
+                 fee_amount_type, fee_amount_deposit, fee_amount_withdraw,
+                 comm_type, comm_deposit, comm_withdraw,
+                 additional_fee_type, additional_fee_deposit_amount,
+                 additional_fee_withdraw_amount, is_active, created_at)
             SELECT
                 (SELECT st.id FROM service_types st
                  JOIN companies c ON c.id = st.company_id
                  WHERE c.name = ? AND st.name = ? LIMIT 1),
-                ct.amount_from, ct.amount_to,
+                CASE WHEN ct.amount_from IS NULL OR ct.amount_from <= 0 THEN 1 ELSE ct.amount_from END,
+                COALESCE(ct.amount_to, 999999999999),
                 ct.fee_amount_type, ct.fee_amount_cash_in, ct.fee_amount_cash_out,
                 ct.comm_type, ct.comm_cash_in, ct.comm_cash_out,
                 ct.additional_fee_type, ct.additional_fee_cash_in_amount,
@@ -1005,6 +1006,102 @@ def _migrate_014(conn):
         pass  # column already exists
 
 
+def _migrate_015(conn):
+    """Normalize commission_tiers schema to required ranges and deposit/withdraw columns."""
+    cols = {
+        row["name"]: row
+        for row in conn.execute("PRAGMA table_info(commission_tiers)").fetchall()
+    }
+    if not cols:
+        return
+
+    needs_rebuild = (
+        "fee_amount_cash_in" in cols
+        or cols.get("amount_from", {}).get("notnull") != 1
+        or cols.get("amount_to", {}).get("notnull") != 1
+        or cols.get("comm_type", {}).get("notnull") == 1
+        or cols.get("additional_fee_type", {}).get("notnull") == 1
+    )
+    if not needs_rebuild:
+        return
+
+    def source(*names: str, default: str = "0.0") -> str:
+        for name in names:
+            if name in cols:
+                return name
+        return default
+
+    fee_dep = source("fee_amount_deposit", "fee_amount_cash_in")
+    fee_with = source("fee_amount_withdraw", "fee_amount_cash_out")
+    comm_dep = source("comm_deposit", "comm_cash_in")
+    comm_with = source("comm_withdraw", "comm_cash_out")
+    add_dep = source("additional_fee_deposit_amount", "additional_fee_cash_in_amount")
+    add_with = source("additional_fee_withdraw_amount", "additional_fee_cash_out_amount")
+
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS commission_tiers_new (
+            id                             INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_type_id                INTEGER NOT NULL REFERENCES service_types(id),
+            amount_from                    REAL NOT NULL,
+            amount_to                      REAL NOT NULL,
+            fee_amount_type                TEXT NOT NULL DEFAULT 'FIXED'
+                                           CHECK(fee_amount_type IN ('FIXED','PERCENTAGE')),
+            fee_amount_deposit             REAL NOT NULL DEFAULT 0.0,
+            fee_amount_withdraw            REAL NOT NULL DEFAULT 0.0,
+            comm_type                      TEXT DEFAULT 'FIXED'
+                                           CHECK(comm_type IN ('FIXED','PERCENTAGE')),
+            comm_deposit                   REAL DEFAULT 0.0,
+            comm_withdraw                  REAL DEFAULT 0.0,
+            additional_fee_type            TEXT DEFAULT 'FIXED'
+                                           CHECK(additional_fee_type IN ('FIXED','PERCENTAGE')),
+            additional_fee_deposit_amount  REAL DEFAULT 0.0,
+            additional_fee_withdraw_amount REAL DEFAULT 0.0,
+            is_active                      INTEGER NOT NULL DEFAULT 1,
+            created_at                     TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+    conn.execute(f"""
+        INSERT INTO commission_tiers_new
+            (id, service_type_id, amount_from, amount_to,
+             fee_amount_type, fee_amount_deposit, fee_amount_withdraw,
+             comm_type, comm_deposit, comm_withdraw,
+             additional_fee_type, additional_fee_deposit_amount,
+             additional_fee_withdraw_amount, is_active, created_at)
+        SELECT
+            id, service_type_id,
+            CASE WHEN amount_from IS NULL OR amount_from <= 0 THEN 1 ELSE amount_from END,
+            COALESCE(amount_to, 999999999999),
+            COALESCE(fee_amount_type, 'FIXED'),
+            COALESCE({fee_dep}, 0.0),
+            COALESCE({fee_with}, 0.0),
+            COALESCE(comm_type, 'FIXED'),
+            COALESCE({comm_dep}, 0.0),
+            COALESCE({comm_with}, 0.0),
+            COALESCE(additional_fee_type, 'FIXED'),
+            COALESCE({add_dep}, 0.0),
+            COALESCE({add_with}, 0.0),
+            is_active,
+            created_at
+        FROM commission_tiers
+    """)
+    conn.executescript("""
+        DROP TABLE commission_tiers;
+        ALTER TABLE commission_tiers_new RENAME TO commission_tiers;
+        CREATE INDEX IF NOT EXISTS idx_tier_lookup
+            ON commission_tiers(service_type_id, is_active);
+    """)
+    conn.commit()
+
+
+def _migrate_016(conn):
+    """Commission tier ranges must start above zero."""
+    conn.execute(
+        "UPDATE commission_tiers SET amount_from = 1 "
+        "WHERE amount_from IS NULL OR amount_from <= 0"
+    )
+    conn.commit()
+
+
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -1026,6 +1123,8 @@ def _run_migrations(conn):
         (11, "Add denomination payment and vault balance tables", _migrate_011),
         (12, "Add 20,000 MMK denomination support", _migrate_012),
         (14, "Add transaction_id to denomination logs for settlement tracking", _migrate_014),
+        (15, "Normalize commission tier range and fee columns", _migrate_015),
+        (16, "Require commission tier From amount above zero", _migrate_016),
     ]:
         if version not in applied:
             fn(conn)

@@ -22,19 +22,57 @@ def _money(value: Optional[float]) -> Optional[float]:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+def _amount(value: Optional[float], field_name: str) -> float:
+    normalized = _money(value)
+    if normalized is None or normalized <= 0:
+        raise HTTPException(status_code=422, detail=f"{field_name} is required.")
+    return normalized
+
+
+def _money_or_default(value: Optional[float], default: float = 0.0) -> float:
+    normalized = _money(value)
+    return default if normalized is None else normalized
+
+
+def _first_present(*values: Optional[float]) -> Optional[float]:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _tier_to_dict(tier) -> dict:
+    data = asdict(tier)
+    data.update({
+        "fee_amount_deposit": data["fee_amount_cash_in"],
+        "fee_amount_withdraw": data["fee_amount_cash_out"],
+        "comm_deposit": data["comm_cash_in"],
+        "comm_withdraw": data["comm_cash_out"],
+        "additional_fee_deposit_amount": data["additional_fee_cash_in_amount"],
+        "additional_fee_withdraw_amount": data["additional_fee_cash_out_amount"],
+    })
+    return data
+
+
 class TierRequest(BaseModel):
     service_type_id: int
     amount_from: Optional[float] = None
     amount_to: Optional[float] = None
-    fee_amount_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    fee_amount_cash_in: float = 0.0
-    fee_amount_cash_out: float = 0.0
-    comm_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    comm_cash_in: float = 0.0
-    comm_cash_out: float = 0.0
-    additional_fee_type: Literal["FIXED", "PERCENTAGE"] = "FIXED"
-    additional_fee_cash_in_amount: float = 0.0
-    additional_fee_cash_out_amount: float = 0.0
+    fee_amount_type: Literal["FIXED", "PERCENTAGE"]
+    fee_amount_deposit: Optional[float] = None
+    fee_amount_withdraw: Optional[float] = None
+    fee_amount_cash_in: Optional[float] = None
+    fee_amount_cash_out: Optional[float] = None
+    comm_type: Optional[Literal["FIXED", "PERCENTAGE"]] = "FIXED"
+    comm_deposit: Optional[float] = None
+    comm_withdraw: Optional[float] = None
+    comm_cash_in: Optional[float] = None
+    comm_cash_out: Optional[float] = None
+    additional_fee_type: Optional[Literal["FIXED", "PERCENTAGE"]] = "FIXED"
+    additional_fee_deposit_amount: Optional[float] = None
+    additional_fee_withdraw_amount: Optional[float] = None
+    additional_fee_cash_in_amount: Optional[float] = None
+    additional_fee_cash_out_amount: Optional[float] = None
 
 
 @router.get("/")
@@ -43,7 +81,7 @@ def get_tiers(
     current_user: dict = Depends(get_current_user),
 ) -> list[dict]:
     tiers = _tier_repo.get_by_service_type(service_type_id)
-    return [asdict(t) for t in tiers]
+    return [_tier_to_dict(t) for t in tiers]
 
 
 @router.get("/lookup")
@@ -55,10 +93,13 @@ def lookup_tier(
     tier = _tier_repo.get_tier_for_amount(service_type_id, amount)
     if tier is None:
         return {
+            "fee_amount_deposit": 0, "fee_amount_withdraw": 0,
+            "comm_deposit": 0, "comm_withdraw": 0,
+            "additional_fee_deposit_amount": 0, "additional_fee_withdraw_amount": 0,
             "fee_amount_cash_in": 0, "fee_amount_cash_out": 0,
             "comm_cash_in": 0, "comm_cash_out": 0,
         }
-    return asdict(tier)
+    return _tier_to_dict(tier)
 
 
 @router.post("/")
@@ -68,8 +109,8 @@ def create_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    amount_from = _money(body.amount_from)
-    amount_to = _money(body.amount_to)
+    amount_from = _amount(body.amount_from, "amount_from")
+    amount_to = _amount(body.amount_to, "amount_to")
     err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to)
     if err:
         raise HTTPException(status_code=422, detail=err)
@@ -78,14 +119,26 @@ def create_tier(
         "amount_from": amount_from,
         "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_cash_in": _money(body.fee_amount_cash_in),
-        "fee_amount_cash_out": _money(body.fee_amount_cash_out),
-        "comm_type": body.comm_type,
-        "comm_cash_in": _money(body.comm_cash_in),
-        "comm_cash_out": _money(body.comm_cash_out),
-        "additional_fee_type": body.additional_fee_type,
-        "additional_fee_cash_in_amount": _money(body.additional_fee_cash_in_amount),
-        "additional_fee_cash_out_amount": _money(body.additional_fee_cash_out_amount),
+        "fee_amount_deposit": _money_or_default(
+            _first_present(body.fee_amount_deposit, body.fee_amount_cash_in)
+        ),
+        "fee_amount_withdraw": _money_or_default(
+            _first_present(body.fee_amount_withdraw, body.fee_amount_cash_out)
+        ),
+        "comm_type": body.comm_type or "FIXED",
+        "comm_deposit": _money_or_default(
+            _first_present(body.comm_deposit, body.comm_cash_in)
+        ),
+        "comm_withdraw": _money_or_default(
+            _first_present(body.comm_withdraw, body.comm_cash_out)
+        ),
+        "additional_fee_type": body.additional_fee_type or "FIXED",
+        "additional_fee_deposit_amount": _money_or_default(
+            _first_present(body.additional_fee_deposit_amount, body.additional_fee_cash_in_amount)
+        ),
+        "additional_fee_withdraw_amount": _money_or_default(
+            _first_present(body.additional_fee_withdraw_amount, body.additional_fee_cash_out_amount)
+        ),
     })
     return {"message": "Tier created", "id": tier_id}
 
@@ -98,8 +151,8 @@ def update_tier(
 ) -> dict:
     if current_user["role"] != "owner":
         raise HTTPException(status_code=403, detail="Owner only")
-    amount_from = _money(body.amount_from)
-    amount_to = _money(body.amount_to)
+    amount_from = _amount(body.amount_from, "amount_from")
+    amount_to = _amount(body.amount_to, "amount_to")
     err = _tier_repo.check_overlap(body.service_type_id, amount_from, amount_to, exclude_id=tier_id)
     if err:
         raise HTTPException(status_code=422, detail=err)
@@ -108,14 +161,26 @@ def update_tier(
         "amount_from": amount_from,
         "amount_to": amount_to,
         "fee_amount_type": body.fee_amount_type,
-        "fee_amount_cash_in": _money(body.fee_amount_cash_in),
-        "fee_amount_cash_out": _money(body.fee_amount_cash_out),
-        "comm_type": body.comm_type,
-        "comm_cash_in": _money(body.comm_cash_in),
-        "comm_cash_out": _money(body.comm_cash_out),
-        "additional_fee_type": body.additional_fee_type,
-        "additional_fee_cash_in_amount": _money(body.additional_fee_cash_in_amount),
-        "additional_fee_cash_out_amount": _money(body.additional_fee_cash_out_amount),
+        "fee_amount_deposit": _money_or_default(
+            _first_present(body.fee_amount_deposit, body.fee_amount_cash_in)
+        ),
+        "fee_amount_withdraw": _money_or_default(
+            _first_present(body.fee_amount_withdraw, body.fee_amount_cash_out)
+        ),
+        "comm_type": body.comm_type or "FIXED",
+        "comm_deposit": _money_or_default(
+            _first_present(body.comm_deposit, body.comm_cash_in)
+        ),
+        "comm_withdraw": _money_or_default(
+            _first_present(body.comm_withdraw, body.comm_cash_out)
+        ),
+        "additional_fee_type": body.additional_fee_type or "FIXED",
+        "additional_fee_deposit_amount": _money_or_default(
+            _first_present(body.additional_fee_deposit_amount, body.additional_fee_cash_in_amount)
+        ),
+        "additional_fee_withdraw_amount": _money_or_default(
+            _first_present(body.additional_fee_withdraw_amount, body.additional_fee_cash_out_amount)
+        ),
     })
     return {"message": "Tier updated"}
 

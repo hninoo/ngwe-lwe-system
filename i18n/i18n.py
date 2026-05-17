@@ -480,6 +480,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "err_service_name_empty": {"mm": "ဝန်ဆောင်မှုအမည် ထည့်ပါ။",  "en": "Service name is required."},
     "err_select_company":     {"mm": "ကုမ္ပဏီ ရွေးပါ",            "en": "Please select a company"},
     "err_select_service_type":{"mm": "ဝန်ဆောင်မှုအမျိုးအစား ရွေးပါ","en": "Please select a service type"},
+    "err_select_fee_type":    {"mm": "ကြေးအမျိုးအစား ရွေးပါ", "en": "Please select a fee type"},
     "err_tier_from_required": {"mm": "From amount သည် သုညထက် ကြီးရမည်။",
                                "en": "From amount must be greater than zero."},
     "err_tier_to_required":   {"mm": "To amount သည် သုညထက် ကြီးရမည်။",
