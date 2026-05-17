@@ -113,53 +113,6 @@ class TransactionDenominationRequest(BaseModel):
         return _validate_non_negative_denominations(value)
 
 
-class QuickExchangeRequest(BaseModel):
-    """Standalone denomination swap — no transaction involved."""
-    gives: dict[str, int]
-    receives: dict[str, int]
-    note: Optional[str] = None
-
-    @field_validator("gives", "receives")
-    @classmethod
-    def denominations_must_not_be_negative(cls, value: dict[str, int]) -> dict[str, int]:
-        return _validate_non_negative_denominations(value)
-
-
-class DenominationExchangeRequest(BaseModel):
-    employee_id: Optional[int] = None
-    float_id: Optional[int] = None
-    exchange_type: str = "BREAK_DOWN"
-    given: Optional[dict[str, int]] = None
-    received: Optional[list[dict[str, int]]] = None
-    from_denominations: Optional[dict[str, int]] = None
-    to_denominations: Optional[dict[str, int]] = None
-    note: Optional[str] = None
-
-    @field_validator("given", "from_denominations", "to_denominations")
-    @classmethod
-    def denominations_must_not_be_negative(
-        cls,
-        value: Optional[dict[str, int]],
-    ) -> Optional[dict[str, int]]:
-        if value is None:
-            return value
-        return _validate_non_negative_denominations(value)
-
-    @field_validator("received")
-    @classmethod
-    def received_must_not_be_negative(
-        cls,
-        value: Optional[list[dict[str, int]]],
-    ) -> Optional[list[dict[str, int]]]:
-        if value is None:
-            return value
-        for item in value:
-            qty = int(item.get("qty", item.get("quantity", 0)) or 0)
-            if qty < 0:
-                raise ValueError("Received denomination quantity cannot be negative")
-        return value
-
-
 class TransactionPaymentRequest(BaseModel):
     fee_amount: Optional[int] = None
     received_denominations: dict[str, int]
@@ -275,35 +228,6 @@ def _validate_cash_in_denominations_total(
     return entered_total, expected, diff
 
 
-def _normalize_exchange_denominations(
-    body: DenominationExchangeRequest,
-) -> tuple[dict[str, int], dict[str, int]]:
-    if body.given is not None:
-        denom = body.given.get("denom", body.given.get("denomination"))
-        qty = body.given.get("qty", body.given.get("quantity"))
-        if denom is None or qty is None:
-            raise HTTPException(422, "given must include denom and qty")
-        from_denoms = {str(int(denom)): int(qty)}
-    else:
-        from_denoms = body.from_denominations or {}
-
-    if body.received is not None:
-        to_denoms: dict[str, int] = {}
-        for item in body.received:
-            denom = item.get("denom", item.get("denomination"))
-            qty = item.get("qty", item.get("quantity"))
-            if denom is None or qty is None:
-                raise HTTPException(422, "received items must include denom and qty")
-            key = str(int(denom))
-            to_denoms[key] = to_denoms.get(key, 0) + int(qty)
-    else:
-        to_denoms = body.to_denominations or {}
-
-    if not from_denoms or not to_denoms:
-        raise HTTPException(422, "Exchange requires given/from and received/to denominations")
-    return from_denoms, to_denoms
-
-
 def _publish_ws(method_name: str, *args) -> None:
     if ws_manager is None:
         return
@@ -381,56 +305,6 @@ def get_vault_denominations(current_user: dict = Depends(get_current_user)) -> d
         "denominations": {str(d): balance.get(d, 0) for d in DENOMINATIONS},
         "total": sum(d * balance.get(d, 0) for d in DENOMINATIONS),
     }
-
-
-@router.post("/denomination/exchange")
-def exchange_denomination(
-    body: DenominationExchangeRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    if current_user["role"] not in ("employee", "cashier"):
-        raise HTTPException(403, "Employee or cashier access only")
-    employee_id = body.employee_id or current_user["user_id"]
-    if current_user["role"] == "employee" and int(employee_id) != int(current_user["user_id"]):
-        raise HTTPException(403, "Employees can only exchange their own float denominations")
-    cash_float = (
-        _float_repo.get_float(body.float_id)
-        if body.float_id is not None
-        else _float_repo.get_active_float_for_employee(employee_id)
-    )
-    if cash_float is None:
-        raise HTTPException(404, "Active float not found")
-    from_denoms, to_denoms = _normalize_exchange_denominations(body)
-    try:
-        result = _vault_service.exchange_denomination(
-            float_id=cash_float.id,
-            employee_id=employee_id,
-            from_denominations=from_denoms,
-            to_denominations=to_denoms,
-            performed_by=current_user["user_id"],
-            exchange_type=body.exchange_type,
-            note=body.note,
-        )
-    except Exception as e:
-        raise _service_error(e)
-    _publish_ws(
-        "broadcast_to_roles",
-        ["cashier", "owner"],
-        {
-            "type": "denomination_exchange",
-            "exchange": result,
-        },
-    )
-    if current_user["role"] == "cashier":
-        _publish_ws(
-            "broadcast_to_user",
-            employee_id,
-            {
-                "type": "denomination_exchange",
-                "exchange": result,
-            },
-        )
-    return result
 
 
 # ── Float endpoints ──
@@ -967,75 +841,6 @@ def approve_transaction(
         },
     )
     return result
-
-
-@router.post("/quick-exchange")
-def quick_exchange(
-    body: QuickExchangeRequest,
-    current_user: dict = Depends(get_current_user),
-) -> dict:
-    """Standalone denomination swap — customer swaps notes with no transaction."""
-    if current_user["role"] != "cashier":
-        raise HTTPException(403, "Cashier access only")
-
-    gives_denoms = _parse_denominations(body.gives)
-    receives_denoms = _parse_denominations(body.receives)
-    gives_total = sum(d * q for d, q in gives_denoms.items())
-    receives_total = sum(d * q for d, q in receives_denoms.items())
-
-    if gives_total == 0 or receives_total == 0:
-        raise HTTPException(400, "Both gives and receives must have denominations")
-    if gives_total != receives_total:
-        raise HTTPException(422, {
-            "message": "Total gives must equal total receives for a quick exchange",
-            "gives_total": gives_total,
-            "receives_total": receives_total,
-            "difference": gives_total - receives_total,
-        })
-
-    with atomic():
-        available = _denom_repo.get_vault_balance()
-        for denom, qty in gives_denoms.items():
-            if qty > available.get(denom, 0):
-                raise HTTPException(
-                    409,
-                    f"Insufficient {denom:,} MMK in vault: "
-                    f"available {available.get(denom, 0)}, requested {qty}",
-                )
-        _denom_repo.record_bulk_entry(
-            entry_type="vault_out",
-            denominations=gives_denoms,
-            created_by=current_user["user_id"],
-            note=body.note or "Quick exchange (vault out)",
-        )
-        _denom_repo.record_bulk_entry(
-            entry_type="vault_in",
-            denominations=receives_denoms,
-            created_by=current_user["user_id"],
-            note=body.note or "Quick exchange (vault in)",
-        )
-        with get_cursor(commit=True) as cur:
-            cur.execute(
-                "INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) "
-                "VALUES (?, 'quick_exchange', 'vault', NULL, ?)",
-                (
-                    current_user["user_id"],
-                    json.dumps({
-                        "gives": body.gives,
-                        "receives": body.receives,
-                        "total": gives_total,
-                        "note": body.note,
-                    }),
-                ),
-            )
-
-    balance = _denom_repo.get_vault_balance()
-    return {
-        "gives_total": gives_total,
-        "receives_total": receives_total,
-        "balance": _vault_summary(balance),
-        "note": body.note,
-    }
 
 
 @router.post("/transactions/{txn_id}/payment")

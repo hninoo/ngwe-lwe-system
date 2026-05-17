@@ -80,12 +80,13 @@ def test_calculate_change_raises_when_exact_change_unavailable():
 
 
 def test_record_transaction_payment_updates_vault_and_payment_rows():
-    from backend.database import _migrate_011
+    from backend.database import _migrate_011, _migrate_014
     from repositories.cash_denomination_repository import CashDenominationRepository
     from services.vault_service import VaultService
 
     conn = _connection()
     _migrate_011(conn)
+    _migrate_014(conn)
     conn.execute("INSERT INTO transactions (id, customer_fee) VALUES (1, 5000)")
     conn.commit()
 
@@ -128,95 +129,3 @@ def test_record_transaction_payment_updates_vault_and_payment_rows():
     txn = conn.execute("SELECT change_given, change_denominations FROM transactions WHERE id = 1").fetchone()
     assert txn["change_given"] == 5000
     assert txn["change_denominations"] == '{"5000": 1}'
-
-
-def test_exchange_denomination_moves_cash_between_float_and_vault():
-    from backend.database import _migrate_013
-    from services.vault_service import VaultService
-
-    conn = sqlite3.connect(":memory:", check_same_thread=False)
-    conn.row_factory = lambda cur, row: dict(zip([col[0] for col in cur.description], row))
-    conn.executescript("""
-        CREATE TABLE users (id INTEGER PRIMARY KEY);
-        CREATE TABLE cash_float_assignments (id INTEGER PRIMARY KEY);
-        CREATE TABLE activity_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            action TEXT NOT NULL,
-            entity_type TEXT NOT NULL,
-            entity_id INTEGER,
-            details TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-    """)
-    _migrate_013(conn)
-
-    class FloatObj:
-        id = 7
-        employee_id = 2
-        status = "ACTIVE"
-
-    class FloatRepo:
-        def __init__(self) -> None:
-            self.balance = {10000: 1, 5000: 0}
-
-        def get_float(self, float_id):
-            return FloatObj() if float_id == 7 else None
-
-        def get_denomination_balance(self, float_id):
-            return dict(self.balance)
-
-        def deduct_denominations(self, float_id, denominations):
-            for denom, qty in denominations.items():
-                self.balance[denom] = self.balance.get(denom, 0) - qty
-
-        def add_denominations(self, float_id, denominations):
-            for denom, qty in denominations.items():
-                self.balance[denom] = self.balance.get(denom, 0) + qty
-
-    class DenomRepo:
-        def __init__(self) -> None:
-            self.vault = {10000: 0, 5000: 2}
-
-        def get_vault_balance(self):
-            return dict(self.vault)
-
-        def record_bulk_entry(self, entry_type, denominations, created_by, float_id=None, note=None):
-            sign = 1 if entry_type in ("vault_in", "float_returned", "adjustment") else -1
-            for denom, qty in denominations.items():
-                self.vault[denom] = self.vault.get(denom, 0) + sign * qty
-
-    class VaultTxnRepo:
-        def record_bulk(self, **kwargs):
-            return None
-
-    float_repo = FloatRepo()
-    denom_repo = DenomRepo()
-
-    def fake_cursor(commit: bool = False):
-        return _cursor_for(conn, commit=commit)
-
-    with patch("services.vault_service.get_cursor", fake_cursor), \
-         patch("services.vault_service.atomic", lambda: _atomic_for(conn)):
-        result = VaultService(
-            float_repo=float_repo,
-            denom_repo=denom_repo,
-            vault_txn_repo=VaultTxnRepo(),
-        ).exchange_denomination(
-            float_id=7,
-            employee_id=2,
-            from_denominations={"10000": 1},
-            to_denominations={"5000": 2},
-            performed_by=3,
-        )
-
-    assert result["success"] is True
-    assert result["exchange_id"] == 1
-    assert float_repo.balance == {10000: 0, 5000: 2}
-    assert denom_repo.vault == {10000: 1, 5000: 0}
-
-    row = conn.execute("SELECT * FROM denomination_exchanges").fetchone()
-    assert row["exchange_type"] == "BREAK_DOWN"
-    assert row["given_denom"] == 10000
-    assert row["given_quantity"] == 1
-    assert row["total_amount"] == 10000

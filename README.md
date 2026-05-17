@@ -110,9 +110,7 @@ Cashier issues float
     -> Main vault is credited and float closes
 ```
 
-### Denomination Exchange And Change
-
-Cashiers and employees can record denomination-only exchanges without changing the float total. The backend validates that the outgoing and incoming note totals match, checks that the active float has the note being given and the main vault has the notes being returned, then atomically moves denominations between the employee float and main vault. Each exchange is saved in `denomination_exchanges` and activity logs.
+### Denomination Change
 
 Cashiers can also record fee payments with change:
 
@@ -302,7 +300,6 @@ Cashier and vault:
 | GET | `/cashier/vault/inventory` | Main vault plus employee float inventory |
 | GET | `/cashier/vault/denominations` | Main vault denomination balance for change |
 | GET | `/cashier/denominations` | Configured MMK note denominations |
-| POST | `/cashier/denomination/exchange` | Exchange denominations in an active employee float |
 | GET | `/cashier/floats` | Float assignments |
 | POST | `/cashier/floats` | Issue float |
 | GET | `/cashier/floats/my-pending` | Employee pending float |
@@ -351,7 +348,6 @@ Important tables:
 - `note_denominations`
 - `vault_denomination_balances`
 - `transaction_payment_denominations`
-- `denomination_exchanges`
 - `vault_transactions`
 - `daily_reconciliation_logs`
 - `activity_logs`

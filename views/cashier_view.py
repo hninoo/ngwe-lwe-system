@@ -472,137 +472,6 @@ class FloatDetailDialog(QDialog):
 
 
 # ════════════════════════════════════════════
-# QuickExchangeDialog
-# ════════════════════════════════════════════
-class QuickExchangeDialog(QDialog):
-    """Standalone denomination swap — customer swaps notes without a transaction."""
-
-    def __init__(self, api: ApiClient, parent=None) -> None:
-        super().__init__(parent)
-        self._api = api
-        self._gives_widget: Optional[DenominationInputWidget] = None
-        self._receives_widget: Optional[DenominationInputWidget] = None
-        self._validation_label: Optional[QLabel] = None
-        self._error_label: Optional[QLabel] = None
-        self._submit_btn: Optional[QPushButton] = None
-        self._init_ui()
-
-    def _init_ui(self) -> None:
-        self.setWindowTitle("Quick Exchange")
-        self.setMinimumWidth(720)
-        self.setStyleSheet(STYLESHEET)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-
-        title = _section_label("Quick Exchange")
-        title.setStyleSheet(f"color: {ACCENT_YELLOW};")
-        layout.addWidget(title)
-
-        hint = QLabel(
-            "Swap notes without a transaction — e.g., 10,000 × 1 for 5,000 × 2.\n"
-            "Total Out from Vault MUST equal Total In to Vault."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
-        layout.addWidget(hint)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
-        layout.addWidget(sep)
-
-        widgets_row = QHBoxLayout()
-        widgets_row.setSpacing(16)
-
-        self._gives_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="Cashier Gives (Out from Vault)",
-        )
-        self._gives_widget.total_changed.connect(self._update_validation)
-        widgets_row.addWidget(self._gives_widget)
-
-        vsep = QFrame()
-        vsep.setFrameShape(QFrame.Shape.VLine)
-        vsep.setStyleSheet(f"border: 1px solid {BORDER_COLOR};")
-        widgets_row.addWidget(vsep)
-
-        self._receives_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="Cashier Receives (In to Vault)",
-        )
-        self._receives_widget.total_changed.connect(self._update_validation)
-        widgets_row.addWidget(self._receives_widget)
-
-        layout.addLayout(widgets_row)
-
-        self._validation_label = QLabel("Enter denominations on both sides")
-        self._validation_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self._validation_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        layout.addWidget(self._validation_label)
-
-        layout.addWidget(QLabel(t("note_optional")))
-        self._note_input = QLineEdit()
-        self._note_input.setPlaceholderText("e.g., Customer requested change")
-        layout.addWidget(self._note_input)
-
-        self._error_label = QLabel("")
-        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
-        self._error_label.setVisible(False)
-        layout.addWidget(self._error_label)
-
-        btn_row = QHBoxLayout()
-        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
-        cancel.clicked.connect(self.reject)
-        self._submit_btn = _accent_btn("Confirm Exchange", ACCENT_YELLOW)
-        self._submit_btn.clicked.connect(self._on_submit)
-        self._submit_btn.setEnabled(False)
-        btn_row.addWidget(cancel)
-        btn_row.addStretch()
-        btn_row.addWidget(self._submit_btn)
-        layout.addLayout(btn_row)
-
-    def _update_validation(self) -> None:
-        gives = self._gives_widget.total() if self._gives_widget else 0
-        receives = self._receives_widget.total() if self._receives_widget else 0
-        diff = gives - receives
-
-        if gives == 0 and receives == 0:
-            text = "Enter denominations on both sides"
-            color = TEXT_SECONDARY
-            valid = False
-        elif diff == 0:
-            text = f"Gives: {gives:,} MMK  =  Receives: {receives:,} MMK  ✓  Balanced"
-            color = ACCENT_GREEN
-            valid = True
-        else:
-            sign = "+" if diff > 0 else ""
-            text = f"Gives: {gives:,} MMK  |  Receives: {receives:,} MMK  |  Difference: {sign}{diff:,} MMK  ✗"
-            color = ACCENT_RED
-            valid = False
-
-        if self._validation_label:
-            self._validation_label.setText(text)
-            self._validation_label.setStyleSheet(f"color: {color};")
-        if self._submit_btn:
-            self._submit_btn.setEnabled(valid)
-
-    def _on_submit(self) -> None:
-        if not self._gives_widget or not self._receives_widget:
-            return
-        gives = self._gives_widget.breakdown()
-        receives = self._receives_widget.breakdown()
-        note = self._note_input.text().strip() or None
-        try:
-            self._api.quick_exchange(gives, receives, note)
-            self.accept()
-        except Exception as exc:
-            if self._error_label:
-                self._error_label.setText(str(exc))
-                self._error_label.setVisible(True)
-
-
-# ════════════════════════════════════════════
 # Page 0: Vault
 # ════════════════════════════════════════════
 class VaultPage(QWidget):
@@ -628,11 +497,8 @@ class VaultPage(QWidget):
         refresh_btn.clicked.connect(self.load_data)
         entry_btn = _accent_btn(t("record_vault_entry"), ACCENT_GREEN)
         entry_btn.clicked.connect(self._open_vault_entry)
-        exchange_btn = _accent_btn("Quick Exchange", ACCENT_YELLOW)
-        exchange_btn.clicked.connect(self._open_quick_exchange)
         title_row.addWidget(refresh_btn)
         title_row.addWidget(entry_btn)
-        title_row.addWidget(exchange_btn)
         layout.addLayout(title_row)
 
         # Denomination cards grid
@@ -714,11 +580,6 @@ class VaultPage(QWidget):
 
     def _open_vault_entry(self) -> None:
         dlg = VaultEntryDialog(self._api, entry_type="vault_in", parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.load_data()
-
-    def _open_quick_exchange(self) -> None:
-        dlg = QuickExchangeDialog(self._api, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.load_data()
 
@@ -878,133 +739,6 @@ class ReturnFloatDialog(QDialog):
             QMessageBox.warning(self, t("error"), str(exc))
 
 
-class DenominationExchangeDialog(QDialog):
-    def __init__(self, api: ApiClient, float_data: dict, balance: dict, parent=None) -> None:
-        super().__init__(parent)
-        self._api = api
-        self._float_data = float_data
-        self._balance = balance.get("denominations", {}) or {}
-        self._given_combo: Optional[QComboBox] = None
-        self._given_qty: Optional[QSpinBox] = None
-        self._to_widget: Optional[DenominationInputWidget] = None
-        self._diff_label: Optional[QLabel] = None
-        self._note_input: Optional[QLineEdit] = None
-        self._init_ui()
-
-    def _init_ui(self) -> None:
-        self.setWindowTitle("Denomination Exchange")
-        self.setMinimumWidth(560)
-        self.setStyleSheet(STYLESHEET)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        layout.addWidget(_section_label("Denomination Exchange"))
-
-        summary = " | ".join(
-            f"{d:,}: {int(self._balance.get(str(d), 0) or 0)}"
-            for d in sorted(DENOMINATIONS, reverse=True)
-        )
-        summary_label = QLabel(f"Float Summary: {summary}")
-        summary_label.setWordWrap(True)
-        summary_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
-        layout.addWidget(summary_label)
-
-        given_row = QHBoxLayout()
-        given_row.addWidget(QLabel("Given note"))
-        self._given_combo = QComboBox()
-        for denom in sorted(DENOMINATIONS, reverse=True):
-            self._given_combo.addItem(
-                f"{denom:,} MMK ({int(self._balance.get(str(denom), 0) or 0)} available)",
-                denom,
-            )
-        self._given_combo.currentIndexChanged.connect(lambda _i: self._sync_given_limit())
-        given_row.addWidget(self._given_combo)
-        self._given_qty = QSpinBox()
-        self._given_qty.setRange(0, 0)
-        self._given_qty.valueChanged.connect(lambda _v: self._update_diff())
-        given_row.addWidget(self._given_qty)
-        layout.addLayout(given_row)
-        self._sync_given_limit()
-
-        self._to_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="Receive as denominations",
-        )
-        self._to_widget.total_changed.connect(lambda _v: self._update_diff())
-        layout.addWidget(self._to_widget)
-
-        self._diff_label = QLabel("Difference: 0 MMK")
-        self._diff_label.setStyleSheet(f"color: {ACCENT_GREEN}; font-weight: bold;")
-        layout.addWidget(self._diff_label)
-
-        self._note_input = QLineEdit()
-        self._note_input.setPlaceholderText(t("note_optional"))
-        layout.addWidget(self._note_input)
-
-        btn_row = QHBoxLayout()
-        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
-        cancel.clicked.connect(self.reject)
-        submit = _accent_btn("Confirm Exchange", ACCENT_GREEN)
-        submit.clicked.connect(self._on_submit)
-        btn_row.addWidget(cancel)
-        btn_row.addStretch()
-        btn_row.addWidget(submit)
-        layout.addLayout(btn_row)
-
-    def _update_diff(self) -> None:
-        from_total = self._given_total()
-        to_total = self._to_widget.total() if self._to_widget else 0
-        diff = to_total - from_total
-        if self._diff_label:
-            self._diff_label.setText(f"Difference: {diff:+,} MMK")
-            self._diff_label.setStyleSheet(
-                f"color: {ACCENT_GREEN if diff == 0 else ACCENT_RED}; font-weight: bold;"
-            )
-
-    def _given_total(self) -> int:
-        if not self._given_combo or not self._given_qty:
-            return 0
-        return int(self._given_combo.currentData() or 0) * self._given_qty.value()
-
-    def _given_breakdown(self) -> dict[str, int]:
-        if not self._given_combo or not self._given_qty:
-            return {}
-        qty = self._given_qty.value()
-        if qty <= 0:
-            return {}
-        return {str(int(self._given_combo.currentData() or 0)): qty}
-
-    def _sync_given_limit(self) -> None:
-        if not self._given_combo or not self._given_qty:
-            return
-        denom = int(self._given_combo.currentData() or 0)
-        available = int(self._balance.get(str(denom), 0) or 0)
-        self._given_qty.setRange(0, available)
-        self._update_diff()
-
-    def _on_submit(self) -> None:
-        if not self._to_widget:
-            return
-        from_total = self._given_total()
-        to_total = self._to_widget.total()
-        if from_total <= 0 or to_total <= 0:
-            QMessageBox.warning(self, t("error"), t("total_nonzero"))
-            return
-        if from_total != to_total:
-            QMessageBox.warning(self, t("error"), "Exchange totals must match.")
-            return
-        try:
-            self._api.exchange_denominations(
-                from_denominations=self._given_breakdown(),
-                to_denominations=self._to_widget.breakdown(),
-                float_id=self._float_data.get("id"),
-                note=self._note_input.text().strip() if self._note_input else None,
-            )
-            self.accept()
-        except Exception as exc:
-            QMessageBox.warning(self, t("error"), str(exc))
-
-
 class EmployeeVaultPage(QWidget):
     def __init__(self, api: ApiClient, go_back=None) -> None:
         super().__init__()
@@ -1032,12 +766,9 @@ class EmployeeVaultPage(QWidget):
         receive_btn.clicked.connect(self._receive_pending_float)
         return_btn = _accent_btn("Return Cash", ACCENT_YELLOW)
         return_btn.clicked.connect(self._return_active_float)
-        exchange_btn = _accent_btn("Exchange Notes", ACCENT_BLUE)
-        exchange_btn.clicked.connect(self._exchange_denominations)
         title_row.addWidget(refresh_btn)
         title_row.addWidget(receive_btn)
         title_row.addWidget(return_btn)
-        title_row.addWidget(exchange_btn)
         if self._go_back:
             back_btn = _accent_btn("Back", ACCENT_BLUE)
             back_btn.clicked.connect(self._go_back)
@@ -1157,17 +888,6 @@ class EmployeeVaultPage(QWidget):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             QMessageBox.information(self, "Return Cash", "Return request sent to cashier.")
             self.load_data()
-
-    def _exchange_denominations(self) -> None:
-        if not self._active_float:
-            QMessageBox.information(self, "Exchange Notes", "No active vault cash to exchange.")
-            return
-        balance = self._api.get_float_denomination_balance(self._active_float["id"])
-        dlg = DenominationExchangeDialog(self._api, self._active_float, balance, parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            QMessageBox.information(self, "Exchange Notes", "Denomination exchange recorded.")
-            self.load_data()
-
 
 class EmployeeVaultView(QMainWindow):
     def __init__(self, api: ApiClient) -> None:

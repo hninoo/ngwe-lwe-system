@@ -363,13 +363,6 @@ class ApiClient:
             "note": note,
         })
 
-    def quick_exchange(self, gives: dict, receives: dict, note: str | None = None) -> dict:
-        return self._post("/cashier/quick-exchange", {
-            "gives": gives,
-            "receives": receives,
-            "note": note,
-        })
-
     def cancel_cash_in(self, txn_id: int, pin: str, note: str | None = None) -> dict:
         return self._post(f"/cashier/transactions/{txn_id}/cancel-cash-in", {
             "pin": pin,
@@ -614,24 +607,6 @@ class ApiClient:
     def get_vault_denominations(self) -> dict:
         """Main vault denomination balance for change-making."""
         return self._get("/cashier/vault/denominations")
-
-    def exchange_denominations(
-        self,
-        from_denominations: dict[str, int],
-        to_denominations: dict[str, int],
-        employee_id: Optional[int] = None,
-        float_id: Optional[int] = None,
-        exchange_type: str = "BREAK_DOWN",
-        note: Optional[str] = None,
-    ) -> dict:
-        return self._post("/cashier/denomination/exchange", {
-            "employee_id": employee_id,
-            "float_id": float_id,
-            "exchange_type": exchange_type,
-            "from_denominations": from_denominations,
-            "to_denominations": to_denominations,
-            "note": note,
-        })
 
     def record_transaction_payment(
         self,

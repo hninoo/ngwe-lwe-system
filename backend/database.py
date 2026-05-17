@@ -1005,32 +1005,6 @@ def _migrate_014(conn):
         pass  # column already exists
 
 
-def _migrate_013(conn):
-    """Create denomination exchange audit table."""
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS denomination_exchanges (
-            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-            cashier_id         INTEGER,
-            employee_id        INTEGER NOT NULL,
-            float_id           INTEGER,
-            exchange_type      TEXT NOT NULL DEFAULT 'BREAK_DOWN'
-                               CHECK(exchange_type IN ('BREAK_DOWN','COMBINE','CHANGE')),
-            given_denom        INTEGER NOT NULL CHECK(given_denom IN (50,100,200,500,1000,5000,10000,20000)),
-            given_quantity     INTEGER NOT NULL CHECK(given_quantity > 0),
-            received_breakdown TEXT NOT NULL,
-            total_amount       INTEGER NOT NULL CHECK(total_amount > 0),
-            timestamp          TEXT NOT NULL DEFAULT (datetime('now')),
-            note               TEXT,
-            FOREIGN KEY (cashier_id)  REFERENCES users(id),
-            FOREIGN KEY (employee_id) REFERENCES users(id),
-            FOREIGN KEY (float_id)    REFERENCES cash_float_assignments(id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_denom_exchange_employee
-            ON denomination_exchanges(employee_id, timestamp);
-    """)
-    conn.commit()
-
-
 def _run_migrations(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -1051,7 +1025,6 @@ def _run_migrations(conn):
         (10, "Add transaction status and vault impact fields", _migrate_010),
         (11, "Add denomination payment and vault balance tables", _migrate_011),
         (12, "Add 20,000 MMK denomination support", _migrate_012),
-        (13, "Add denomination exchange audit table", _migrate_013),
         (14, "Add transaction_id to denomination logs for settlement tracking", _migrate_014),
     ]:
         if version not in applied:

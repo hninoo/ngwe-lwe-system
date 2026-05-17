@@ -319,26 +319,6 @@ CREATE TABLE IF NOT EXISTS transaction_payment_denominations (
 CREATE INDEX IF NOT EXISTS idx_payment_denoms_txn
     ON transaction_payment_denominations(transaction_id);
 
-CREATE TABLE IF NOT EXISTS denomination_exchanges (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    cashier_id         INTEGER,
-    employee_id        INTEGER NOT NULL,
-    float_id           INTEGER,
-    exchange_type      TEXT NOT NULL DEFAULT 'BREAK_DOWN'
-                       CHECK(exchange_type IN ('BREAK_DOWN','COMBINE','CHANGE')),
-    given_denom        INTEGER NOT NULL CHECK(given_denom IN (50,100,200,500,1000,5000,10000,20000)),
-    given_quantity     INTEGER NOT NULL CHECK(given_quantity > 0),
-    received_breakdown TEXT NOT NULL,
-    total_amount       INTEGER NOT NULL CHECK(total_amount > 0),
-    timestamp          TEXT NOT NULL DEFAULT (datetime('now')),
-    note               TEXT,
-    FOREIGN KEY (cashier_id)  REFERENCES users(id),
-    FOREIGN KEY (employee_id) REFERENCES users(id),
-    FOREIGN KEY (float_id)    REFERENCES cash_float_assignments(id)
-);
-CREATE INDEX IF NOT EXISTS idx_denom_exchange_employee
-    ON denomination_exchanges(employee_id, timestamp);
-
 -- ============================================================
 -- 15. daily_reconciliation_logs
 -- ============================================================
@@ -383,8 +363,7 @@ INSERT OR IGNORE INTO schema_version (version, description) VALUES
 (9, 'Add auth_version for token revocation'),
 (10, 'Add transaction status and vault impact fields'),
 (11, 'Add denomination payment and vault balance tables'),
-(12, 'Add 20,000 MMK denomination support'),
-(13, 'Add denomination exchange audit table');
+(12, 'Add 20,000 MMK denomination support');
 
 INSERT OR IGNORE INTO note_denominations (id, value, label_mm, label_en, is_active) VALUES
 (50, 50, '50 Kyats', '50 Kyats', 1),

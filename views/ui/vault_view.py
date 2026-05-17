@@ -31,7 +31,6 @@ from views.transaction_view import (
     ACCENT_BLUE,
     ACCENT_GREEN,
     ACCENT_RED,
-    ACCENT_TEAL,
     ACCENT_YELLOW,
     BG_CARD,
     BG_DARK,
@@ -321,152 +320,6 @@ class ConfirmReturnDialog(QDialog):
         self.accept()
 
 
-class QuickExchangeDialog(QDialog):
-    """Employee swaps their float denominations — total in must equal total out."""
-
-    def __init__(self, api: ApiClient, float_id: int, float_balance: dict, parent=None) -> None:
-        super().__init__(parent)
-        self._api = api
-        self._float_id = float_id
-        self._float_balance = {int(k): int(v) for k, v in float_balance.items() if int(v) > 0}
-        self._gives_widget: Optional[DenominationInputWidget] = None
-        self._receives_widget: Optional[DenominationInputWidget] = None
-        self._validation_label: Optional[QLabel] = None
-        self._error_label: Optional[QLabel] = None
-        self._submit_btn: Optional[QPushButton] = None
-        self._init_ui()
-
-    def _init_ui(self) -> None:
-        self.setWindowTitle("Quick Exchange")
-        self.setMinimumWidth(720)
-        self.setStyleSheet(
-            f"QDialog {{ background-color: {BG_DARK}; }}"
-            f"QWidget {{ color: #cdd6f4; background-color: {BG_DARK}; }}"
-            f"QLabel {{ background-color: transparent; }}"
-            f"QLineEdit, QSpinBox {{ background-color: {BG_INPUT}; color: #cdd6f4; "
-            f"border: 1px solid {INPUT_BORDER}; border-radius: 6px; padding: 6px 10px; }}"
-            f"QSpinBox::up-button, QSpinBox::down-button {{ background-color: {BG_INPUT}; border: none; width: 16px; }}"
-        )
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-
-        title = QLabel("Quick Exchange")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {ACCENT_YELLOW};")
-        layout.addWidget(title)
-
-        hint = QLabel(
-            "Swap your float denominations — e.g., 10,000 × 1 for 5,000 × 2.\n"
-            "Total Out MUST equal Total In."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: #a6adc8; font-size: 12px;")
-        layout.addWidget(hint)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"border: 1px solid #313244;")
-        layout.addWidget(sep)
-
-        widgets_row = QHBoxLayout()
-        widgets_row.setSpacing(16)
-
-        self._gives_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="You Give (Out from Float)",
-            max_quantities=self._float_balance,
-        )
-        self._gives_widget.total_changed.connect(self._update_validation)
-        widgets_row.addWidget(self._gives_widget)
-
-        vsep = QFrame()
-        vsep.setFrameShape(QFrame.Shape.VLine)
-        vsep.setStyleSheet(f"border: 1px solid #313244;")
-        widgets_row.addWidget(vsep)
-
-        self._receives_widget = DenominationInputWidget(
-            sorted(DENOMINATIONS, reverse=True),
-            title="You Receive (In to Float)",
-        )
-        self._receives_widget.total_changed.connect(self._update_validation)
-        widgets_row.addWidget(self._receives_widget)
-
-        layout.addLayout(widgets_row)
-
-        self._validation_label = QLabel("Enter denominations on both sides")
-        self._validation_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self._validation_label.setStyleSheet(f"color: #a6adc8;")
-        layout.addWidget(self._validation_label)
-
-        layout.addWidget(QLabel(t("note_optional")))
-        self._note_input = QLineEdit()
-        self._note_input.setPlaceholderText("e.g., Need smaller bills")
-        layout.addWidget(self._note_input)
-
-        self._error_label = QLabel("")
-        self._error_label.setStyleSheet(f"color: {ACCENT_RED}; font-size: 12px;")
-        self._error_label.setVisible(False)
-        layout.addWidget(self._error_label)
-
-        btn_row = QHBoxLayout()
-        cancel = _accent_btn(t("cancel"), TEXT_MUTED)
-        cancel.clicked.connect(self.reject)
-        self._submit_btn = _accent_btn("Confirm Exchange", ACCENT_YELLOW)
-        self._submit_btn.clicked.connect(self._on_submit)
-        self._submit_btn.setEnabled(False)
-        btn_row.addWidget(cancel)
-        btn_row.addStretch()
-        btn_row.addWidget(self._submit_btn)
-        layout.addLayout(btn_row)
-
-    def _update_validation(self) -> None:
-        gives = self._gives_widget.total() if self._gives_widget else 0
-        receives = self._receives_widget.total() if self._receives_widget else 0
-        diff = gives - receives
-
-        if gives == 0 and receives == 0:
-            text = "Enter denominations on both sides"
-            color = "#a6adc8"
-            valid = False
-        elif diff == 0:
-            text = f"Gives: {gives:,} MMK  =  Receives: {receives:,} MMK  ✓  Balanced"
-            color = ACCENT_GREEN
-            valid = True
-        else:
-            sign = "+" if diff > 0 else ""
-            text = f"Gives: {gives:,} MMK  |  Receives: {receives:,} MMK  |  Difference: {sign}{diff:,} MMK  ✗"
-            color = ACCENT_RED
-            valid = False
-
-        if self._validation_label:
-            self._validation_label.setText(text)
-            self._validation_label.setStyleSheet(f"color: {color};")
-        if self._submit_btn:
-            self._submit_btn.setEnabled(valid)
-
-    def _on_submit(self) -> None:
-        if not self._gives_widget or not self._receives_widget:
-            return
-        gives = self._gives_widget.breakdown()
-        receives = self._receives_widget.breakdown()
-        note = self._note_input.text().strip() or None
-        try:
-            self._api.exchange_denominations(
-                from_denominations=gives,
-                to_denominations=receives,
-                float_id=self._float_id,
-                note=note,
-            )
-            self.accept()
-        except Exception as exc:
-            if self._error_label:
-                self._error_label.setText(str(exc))
-                self._error_label.setVisible(True)
-
-
 class VaultPage(QWidget):
     def __init__(self, api: ApiClient, go_back=None) -> None:
         super().__init__()
@@ -508,12 +361,9 @@ class VaultPage(QWidget):
         receive.clicked.connect(self._receive_float)
         return_btn = _accent_btn("Return Cash", ACCENT_YELLOW)
         return_btn.clicked.connect(self._return_cash)
-        exchange_btn = _accent_btn("Quick Exchange", ACCENT_TEAL)
-        exchange_btn.clicked.connect(self._quick_exchange)
         top.addWidget(refresh)
         top.addWidget(receive)
         top.addWidget(return_btn)
-        top.addWidget(exchange_btn)
         if self._go_back:
             back = _accent_btn("Back", ACCENT_BLUE)
             back.clicked.connect(self._go_back)
@@ -875,18 +725,6 @@ class VaultPage(QWidget):
             self.load_data()
         except Exception as exc:
             QMessageBox.warning(self, t("error"), str(exc))
-
-    def _quick_exchange(self) -> None:
-        if not self._active_float:
-            QMessageBox.information(self, "Quick Exchange", "No active float. Receive a float first.")
-            return
-        float_id = self._active_float["id"]
-        balance_data = self._repo.get_float_balance(float_id)
-        float_balance = balance_data.get("denominations", {}) or {}
-        dlg = QuickExchangeDialog(self._repo.api, float_id, float_balance, parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.load_data()
-
 
 class VaultView(QMainWindow):
     def __init__(self, api: ApiClient) -> None:
